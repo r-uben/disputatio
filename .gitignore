@@ -3,6 +3,7 @@ __pycache__/
 dist/
 build/
 .env
-workspace/
 *.pyc
 .ruff_cache/
+# workspace/ is NOT gitignored — agents (gemini CLI) treat gitignored paths as unreadable.
+# Instead, just don't stage workspace files when committing.

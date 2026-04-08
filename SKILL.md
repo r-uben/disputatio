@@ -148,18 +148,25 @@ Use `agent-ctl` to manage sessions:
 ```bash
 A="python3 ~/.claude/skills/agent_ctl.py"
 
-# Start an agent with a role prompt
-$A start codex "PROMPT" --cwd <workspace> --flags -s read-only --timeout 300
-$A start gemini "PROMPT" --cwd <workspace> --timeout 300
+# Start agents (codex runs with --full-auto by default, can write files)
+$A start codex "PROMPT" --cwd <workspace> --timeout 600
+$A start gemini "PROMPT" --cwd <workspace> --timeout 600
+
+# Wait for agents to finish (blocks until done — no polling needed)
+$A wait 01 02
+
+# Get results
+$A result 01
+$A result 02
 
 # Claude executes its role directly (no agent-ctl needed)
-
-# Monitor and collect
-$A status
-$A result <session-id>
 ```
 
-Each agent writes output to a specific file in the workspace. Claude polls for the file, then reads it.
+**Context injection**: When sending prompts to Codex/Gemini, always include the relevant content inline in the prompt (paper text, issue state, prior arguments). Do NOT rely on agents being able to read workspace files — inject the content directly. Agents should ALSO write their output to workspace files, but the prompt must be self-contained.
+
+**Output verification**: After each agent call, verify the output file exists. If missing, parse the result from `$A result <id>` and write it yourself. Agents may fail to write files due to sandbox or filesystem issues — always have a fallback.
+
+**Retry logic**: If an agent fails (rate limits, timeout), retry once. If it fails again, default to KEEP and move on.
 
 ## Checkpointing
 
@@ -178,6 +185,56 @@ Role-agnostic templates are in `templates/`:
 - `defend.md` — steelman the defense
 - `synthesize.md` — produce updated issue state
 - `discover.md` — find candidate issues (used for codex/gemini discovery)
+
+## Live report (Obsidian)
+
+Maintain a live Obsidian note that updates as the review progresses. This lets the user watch the debate unfold in real time.
+
+**Location**: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/<paper-slug>.md`
+
+**Format**:
+
+```markdown
+---
+tags: [referee-report, disputatio]
+paper: "<full paper title>"
+authors: "<authors>"
+venue: "<journal>"
+status: "<discovery|debate|complete>"
+date: <YYYY-MM-DD>
+---
+
+# Referee Report: <short title>
+
+## Status
+<current phase and progress>
+
+## Discovery
+<summary of issues found by each agent, merged count>
+
+## Debate
+
+### Issue 1: <title>
+**Original claim**: ...
+**Round 1**: Prosecutor (Claude) | Defender (Codex) | Synthesizer (Gemini)
+- Prosecution: <1-2 sentence summary>
+- Defense: <1-2 sentence summary>
+- Synthesis: <outcome — what was accepted, refuted, still open>
+- Status: converged | continue | split | escalate
+
+**Round 2** (if needed): ...
+
+### Issue 2: <title>
+...
+
+## Final Assessment
+<surviving issues rendered as reviewer comments>
+```
+
+Update the note after each step:
+1. After discovery → write the discovery section
+2. After each debate round → append the round summary
+3. After final synthesis → write the final assessment and set status to `complete`
 
 ## Review criteria
 

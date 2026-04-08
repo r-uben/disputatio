@@ -55,9 +55,20 @@ workspace/<paper-slug>/
 - **Fast path** -- unanimously weak issues die in round 1. Only contested issues get full rotation
 - **Fail-safe** -- if an agent dies, default to KEEP. Don't lose findings to infrastructure issues
 - **Checkpointing** -- every round is saved. Resume from where you left off
+- **Context injection** -- always paste content into agent prompts inline. Don't rely on file reads
+- **Live Obsidian report** -- update a note in `notes/work/referee-reports/` as the review unfolds
+
+### Lessons from testing
+
+- Codex needs `--full-auto` (now default in agent-ctl) to write files. Without it, sandbox is read-only
+- Gemini CLI treats gitignored paths as unreadable. Don't gitignore the workspace
+- Gemini can hit server-side 429s (capacity exhausted, not quota). Retry with backoff
+- Agents may claim they wrote a file when they didn't (hallucinated success). Always verify file exists
+- OCR'd papers have noise (hallucinated text blocks, garbled symbols). Discovery prompts must warn about this
+- Use `$A wait <ids>` to block until agents finish. No more sleep/poll loops
 
 ### Prerequisites
 
 - `codex` CLI installed and authenticated (ChatGPT Pro)
 - `gemini` CLI installed and authenticated (Google OAuth)
-- `agent-ctl` (`~/.claude/skills/agent_ctl.py`)
+- `agent-ctl` (`~/.claude/skills/agent_ctl.py`) with `wait` subcommand

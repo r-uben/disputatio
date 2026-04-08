@@ -20,6 +20,8 @@ Only flag concrete errors: wrong math, logical contradictions, notation inconsis
 
 Do NOT flag: style, grammar, missing citations, subjective significance judgments, or standard field conventions.
 
+**OCR warning**: This paper was OCR'd from PDF. Ignore formatting artifacts, garbled characters, clearly injected text from unrelated documents, and broken LaTeX. Focus only on the paper's actual mathematical and logical content. If a formula looks garbled, try to reconstruct the intended expression from context before flagging it as an error.
+
 ## Criteria
 
 {{criteria}}
