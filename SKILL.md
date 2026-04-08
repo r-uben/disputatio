@@ -1,11 +1,11 @@
 ---
 name: disputatio
-description: High-precision academic paper review via multi-agent adversarial debate
+description: High-precision academic paper review via multi-agent dialectic debate
 ---
 
 # Disputatio
 
-Review an academic paper using adversarial debate between independent AI agents.
+Review an academic paper using dialectic debate between independent AI agents.
 
 ## Usage
 
@@ -15,60 +15,131 @@ Review an academic paper using adversarial debate between independent AI agents.
 
 ## Protocol
 
-### Phase 1 — Discovery
+### Phase 1 — Discovery (parallel, all models)
 
-Read the paper and find candidate issues passage by passage. For each passage:
+All three agents read the paper independently and find candidate issues. This prevents single-model attention blind spots.
 
-1. Read the passage + surrounding context (±3 passages)
-2. Maintain a running summary of definitions, notation, equations, and key claims
-3. Find concrete, verifiable errors (wrong math, inconsistent notation, logical contradictions, parameter mismatches, unjustified claims)
-4. Write each comment to `workspace/comments/comment_NNN.json`
+1. Parse the paper to `workspace/<paper-slug>/paper.md`
+2. Launch all three agents in parallel, each reading the full paper
+3. Each agent writes issues to `workspace/discovery/<agent>/issue_NNN.json`
+4. Merge and deduplicate across agents into `workspace/issues/issue_NNN.json`
 
-Do NOT flag style, readability, or subjective issues. Only flag things that are concretely wrong or misleading.
+Each issue is a **falsifiable hypothesis**, not a comment:
 
-### Phase 2 — Adversarial Debate
+```json
+{
+  "id": "issue_NNN",
+  "claim": "what is concretely wrong",
+  "quote": "the passage in question",
+  "evidence": "why this is wrong, with specific references",
+  "falsifier": "what evidence would kill this claim",
+  "impact": "material | local | unclear",
+  "source": "claude | codex | gemini",
+  "paragraph_index": 42
+}
+```
 
-For each candidate comment, run a debate:
+Do NOT flag style, readability, or subjective issues. Only flag things that are concretely wrong or misleading. See `references/criteria.md`.
 
-1. **Challenge** — send the comment + paper context to `/codex`. Codex tries to REFUTE the criticism: find resolving context, cite conventions, show it's a misreading. Codex writes its challenge to `workspace/challenges/comment_NNN.json`
+### Phase 2 — Dialectic Rounds
 
-2. **Verdict** — send the comment + challenge + paper context to `/gemini`. Gemini renders an impartial verdict: keep, drop, or rewrite. Gemini writes its verdict to `workspace/verdicts/comment_NNN.json`
+Each issue enters a debate. Three roles rotate across three agents each round:
 
-3. **Record** — read both files, update `workspace/checkpoint.json`
+| Role | Job |
+|------|-----|
+| **Prosecutor** | Steelman the criticism. Say exactly what is wrong, why it matters, what evidence would kill the claim |
+| **Defender** | Steelman the defense. Give the best exculpatory reading, cite resolving context, say what evidence would kill the defense |
+| **Synthesizer** | Produce an updated issue state — not keep/drop, but a refined understanding |
 
-If an agent fails or times out, retry once. If it fails again, default to KEEP (don't lose findings to infrastructure issues).
+**Rotation schedule:**
 
-### Phase 3 — Merge
+| Round | Prosecutor | Defender | Synthesizer |
+|-------|-----------|----------|-------------|
+| 1 | Claude | Codex | Gemini |
+| 2 | Codex | Gemini | Claude |
+| 3 | Gemini | Claude | Codex |
 
-Deduplicate surviving comments. If two comments flag the same underlying error, merge them (keep the stronger explanation). Write final output to `workspace/final.json`.
+For each round:
+
+1. Send issue state + paper context to **Prosecutor** using `templates/prosecute.md`
+2. Send issue state + prosecution + paper context to **Defender** using `templates/defend.md`
+3. Send issue state + prosecution + defense + paper context to **Synthesizer** using `templates/synthesize.md`
+4. Synthesizer outputs the new issue state → becomes input for next round
+
+**Issue state** (evolves each round):
+
+```json
+{
+  "id": "issue_NNN",
+  "round": 2,
+  "current_claim": "best current formulation of the issue",
+  "accepted_facts": ["what both sides now agree on"],
+  "refuted_components": ["parts of the prior claim that died"],
+  "open_disputes": ["what remains unresolved"],
+  "impact": "material | local | none | unclear",
+  "next_question": "what would most reduce uncertainty",
+  "status": "continue | converged | split | escalate",
+  "history": [
+    {"round": 1, "prosecution": "...", "defense": "...", "synthesis": "..."}
+  ]
+}
+```
+
+**Fast path:** If round 1 synthesis produces `status: "converged"` with `impact: "none"`, skip further rounds.
+
+**Split:** If synthesis determines the issue contains multiple independent propositions, it may `split` into separate issues that enter debate independently.
+
+**Escalate:** If the dispute depends on external conventions, hidden derivations, or calculations agents cannot verify, mark `escalate` — these go to the final report with uncertainty preserved.
+
+### Convergence
+
+Stop when:
+- Synthesis stops changing materially (same claim, same evidence, same impact) → `converged`
+- Paper text directly resolves the dispute → `converged` with `impact: "none"`
+- Budget cap reached (default: 3 rounds) → take last synthesis as final
+- Issue was split → child issues enter debate independently
+
+### Phase 3 — Final Synthesis
+
+Collect all converged issue states. For each surviving issue (`impact` != `none`):
+
+1. Render as a structured reviewer comment with the full dialectic history
+2. Preserve uncertainty — if `escalate`, say so explicitly
+3. Include constructive suggestion where possible ("this could be fixed by...")
+
+Write final output to `workspace/final.json`.
 
 ## Workspace structure
 
 ```
 workspace/<paper-slug>/
-├── paper.md                  # parsed paper text
-├── checkpoint.json           # resumable session state
-├── comments/
-│   ├── comment_001.json      # {"title", "quote", "explanation", "comment_type", "paragraph_index"}
-│   └── ...
-├── challenges/
-│   ├── comment_001.json      # codex's counter-argument
-│   └── ...
-├── verdicts/
-│   ├── comment_001.json      # {"decision": "keep|drop|rewrite", "reason": "..."}
-│   └── ...
-└── final.json                # merged surviving comments
+├── paper.md                          # parsed paper text
+├── checkpoint.json                   # resumable session state
+├── discovery/
+│   ├── claude/issue_NNN.json         # claude's raw findings
+│   ├── codex/issue_NNN.json          # codex's raw findings
+│   └── gemini/issue_NNN.json         # gemini's raw findings
+├── issues/
+│   └── issue_NNN.json                # merged/deduplicated issues
+├── rounds/
+│   └── issue_NNN/
+│       ├── round_1_prosecute.json    # prosecution argument
+│       ├── round_1_defend.json       # defense argument
+│       ├── round_1_synthesize.json   # synthesis (new issue state)
+│       ├── round_2_prosecute.json
+│       └── ...
+└── final.json                        # surviving issues as reviewer comments
 ```
 
 ## Agent routing
 
-| Role | Agent | Why |
-|------|-------|-----|
-| Discoverer | Claude Code (you) | Direct paper access, progressive reading |
-| Challenger | `/codex` (GPT-5.4) | Independent model family, strong at finding counter-evidence |
-| Judge | `/gemini` (Gemini 2.5 Pro) | Independent model family, good at weighing arguments |
+| Agent | CLI | Model |
+|-------|-----|-------|
+| Claude | Claude Code (you) | opus/sonnet |
+| Codex | `/codex` via agent-ctl | GPT-5.4 |
+| Gemini | `/gemini` via agent-ctl | Gemini 2.5 Pro |
 
-The key property is **model independence**: the challenger and judge are different architectures from the discoverer. This prevents correlated errors where the same model endorses its own mistakes.
+All three agents take all three roles across rounds. The key property is **model independence**: different architectures prevent correlated errors.
 
 ## Agent communication
 
@@ -77,33 +148,36 @@ Use `agent-ctl` to manage sessions:
 ```bash
 A="python3 ~/.claude/skills/agent_ctl.py"
 
-# Start challenger
+# Start an agent with a role prompt
 $A start codex "PROMPT" --cwd <workspace> --flags -s read-only --timeout 300
-
-# Start judge
 $A start gemini "PROMPT" --cwd <workspace> --timeout 300
 
-# Check status
-$A status
+# Claude executes its role directly (no agent-ctl needed)
 
-# Get result
+# Monitor and collect
+$A status
 $A result <session-id>
 ```
 
-Each agent is instructed to write its output to a specific file in the workspace. Claude Code polls for the file to appear, then reads it.
+Each agent writes output to a specific file in the workspace. Claude polls for the file, then reads it.
 
 ## Checkpointing
 
-After each debate round completes, update `checkpoint.json` with:
-- Which comments have been challenged
-- Which verdicts have been rendered
-- Which comments survived
+After each round completes for each issue, update `checkpoint.json` with:
+- Which issues have been discovered and merged
+- Which rounds have completed per issue
+- Current issue states
+- Which issues have converged / split / escalated
 
-If the session is interrupted, read `checkpoint.json` and resume from the last completed debate.
+If the session is interrupted, read `checkpoint.json` and resume from the last completed step.
 
 ## Prompt templates
 
-Challenge and verdict prompt templates are in `templates/`.
+Role-agnostic templates are in `templates/`:
+- `prosecute.md` — steelman the criticism
+- `defend.md` — steelman the defense
+- `synthesize.md` — produce updated issue state
+- `discover.md` — find candidate issues (used for codex/gemini discovery)
 
 ## Review criteria
 
