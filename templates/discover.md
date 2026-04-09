@@ -1,43 +1,82 @@
 # Discovery prompt
 
-You are reviewing an academic paper for a top economics journal. Find concrete, verifiable errors.
+You have already produced a paper map in the previous step. Now you will run the five generative methods on the map and the paper. Each method is in a separate file under `templates/methods/`. You must run **every** method and produce separate issue files for each.
 
-## Paper
+## Inputs
 
-{{paper_text}}
+- Paper text: `{{paper_path}}`
+- Paper map: `{{paper_map_path}}`
+- Method templates: `templates/methods/m2_contradiction.md`, `m3_transformation.md`, `m4_counterexample.md`, `m5_immanent.md`, `m6_disentangling.md`
 
 ## Your task
 
-Read the paper carefully, passage by passage. For each issue you find:
+Run all five generative methods in sequence. For each method:
 
-1. State a **falsifiable claim** about what is wrong
-2. Quote the specific passage
-3. Explain why it is wrong, citing evidence from elsewhere in the paper or from the logic itself
-4. State what evidence would **kill** your claim (the falsifier)
-5. Assess impact: `material` (affects core results), `local` (contained error), or `unclear`
+1. Read the method template carefully
+2. Apply the method's procedure to the paper, using the paper map as your starting index
+3. Write each finding as a separate JSON issue file
 
-Only flag concrete errors: wrong math, logical contradictions, notation inconsistencies, parameter mismatches, unjustified claims, text-vs-formal mismatches. See the criteria below.
+Do **not** skip a method because you found enough issues with a previous one. Each method is designed to find issues the others miss. Running all five is the point.
 
-Do NOT flag: style, grammar, missing citations, subjective significance judgments, or standard field conventions.
+## Output directory structure
 
-**OCR warning**: This paper was OCR'd from PDF. Ignore formatting artifacts, garbled characters, clearly injected text from unrelated documents, and broken LaTeX. Focus only on the paper's actual mathematical and logical content. If a formula looks garbled, try to reconstruct the intended expression from context before flagging it as an error.
+```
+{{output_dir}}/
+├── m2/
+│   ├── issue_001.json
+│   └── ...
+├── m3/
+│   ├── issue_001.json
+│   └── ...
+├── m4/
+│   ├── issue_001.json
+│   └── ...
+├── m5/
+│   ├── issue_001.json
+│   └── ...
+└── m6/
+    ├── issue_001.json
+    └── ...
+```
 
-## Criteria
+## Issue file format
 
-{{criteria}}
-
-## Output
-
-Write each issue as a separate JSON file to: `{{output_dir}}/issue_NNN.json`
+Every issue file, regardless of which method produced it, uses the same schema:
 
 ```json
 {
-  "id": "issue_NNN",
-  "claim": "what is concretely wrong",
-  "quote": "the passage in question",
-  "evidence": "why this is wrong, with specific references",
-  "falsifier": "what evidence would kill this claim",
+  "id": "m5_issue_003",
+  "method": "m5",
+  "claim": "a falsifiable statement of what is wrong",
+  "quote": "exact quote from the paper",
+  "quote_location": "section/paragraph reference",
+  "evidence": "detailed reasoning for why the claim is correct, including any supporting quotes",
+  "falsifier": "what evidence would force you to withdraw this issue",
   "impact": "material | local | unclear",
-  "paragraph_index": 42
+  "confidence": "high | medium | low",
+  "paper_commitment": null,
+  "paper_commitment_location": null,
+  "needs_web_verification": false,
+  "verification_query": null
 }
 ```
+
+Notes:
+- `paper_commitment` and `paper_commitment_location` are used by Method 5 (self-measured critique) to record the specific commitment being violated. Other methods can leave them null.
+- `needs_web_verification` should be `true` if the issue requires checking a citation, an external data source, or an institutional fact. In that case, `verification_query` should state what to search for. A later pass will run web verification.
+- `confidence` is your own assessment: are you sure this is a real issue, or is it a candidate that deserves debate?
+
+## OCR warning
+
+The paper may contain OCR artifacts — hallucinated text blocks, garbled formulas, injected content from unrelated documents. These are **not paper content** and must not be treated as errors in the paper. If a suspicious passage could be an OCR artifact, do not flag it; instead note it in the paper map's `ocr_corrupted_sections` if it isn't already there.
+
+## Method priority
+
+All five methods must be run, but they have different strengths:
+- **M2 (contradictions)**: best for papers with many interacting claims
+- **M3 (transformations)**: mechanical, always productive, no creativity required
+- **M4 (counterexamples)**: best for papers with formal propositions
+- **M5 (self-measured)**: produces the highest-quality, most robust findings
+- **M6 (causal disentangling)**: best for empirical/interpretive sections
+
+Do not cut corners on any method. The value of disputatio comes from running all five.

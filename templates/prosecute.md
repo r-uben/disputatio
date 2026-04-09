@@ -1,10 +1,14 @@
 # Prosecution prompt
 
-You are prosecuting a criticism against an academic paper. Your job is to **steelman the criticism** — make it as strong and precise as possible.
+You are prosecuting a specific issue about an academic paper in a formal debate. Your job is to produce **objections** that the defender will be forced to reply to individually. Follow the structured disputation format described in `templates/methods/m1_disputation.md`.
 
-## Paper context
+## Inputs
 
-{{context}}
+- Paper text: `{{paper_path}}`
+- Paper map: `{{paper_map_path}}`
+- Issue state: the current claim, evidence, and any history from previous rounds (injected inline below)
+- Round number and previous history (injected inline)
+- Method templates: `templates/methods/m2_contradiction.md` through `m6_disentangling.md`
 
 ## Current issue state
 
@@ -16,26 +20,78 @@ You are prosecuting a criticism against an academic paper. Your job is to **stee
 
 ## Your task
 
-Build the strongest possible case that this issue is a real, concrete error in the paper:
+### Step 1: Formulate the quaestio
 
-1. State exactly what is wrong and where
-2. Explain why it matters — what conclusions are affected
-3. Cite specific passages, equations, or definitions that support the criticism
-4. Anticipate the strongest defense and preemptively address it
-5. State what evidence would **kill** your prosecution (be honest)
+State the point under debate as a precise yes/no question. If this is round 1, the quaestio is derived from the issue's claim. If this is a later round, the quaestio is derived from the refined claim from the previous synthesis.
 
-Be rigorous. Do not exaggerate. Do not argue from rhetoric — argue from evidence. If the criticism is genuinely weak, say so. A strong prosecution that fails honestly is more valuable than a weak one that pretends to succeed.
+### Step 2: Pick 2-3 methods
+
+Based on the type of issue, select **two methods** from M2-M6 that are most likely to produce strong objections. Add a third only if the issue is high-priority (rank score ≥ 10). Use this selection guide:
+
+- **Internal inconsistency, text-vs-model mismatch**: M2 + M5
+- **Theorem scope, boundary failure, hidden assumption**: M3 + M4
+- **Causal identification, calibration, omitted variable, mechanism**: M5 + M6
+- **Empirical proxy, variable construction, measurement**: M3 + M6
+- **Overclaiming, rhetorical stretch, interpretive drift**: M5 + M3
+
+State which methods you selected and why.
+
+### Step 3: Apply each method to the issue
+
+For each selected method, follow its procedure (see its template file) **focused on this specific issue**. You are not re-discovering the paper — you are deepening the attack on this particular point.
+
+### Step 4: Produce at least three objections
+
+Combine the outputs of the selected methods into a list of **at least three independent objections**. Each objection must:
+- Come from a different angle (not three restatements of the same point)
+- Have its own chain of reasoning
+- Cite a specific passage or equation in the paper
+- State what would force the defender to concede (the "pressure point")
+
+### Step 5: Anticipate the strongest defense
+
+For each objection, write one sentence describing the best defense the author could offer. This is not part of the objection — it is a check that the objection is not vulnerable to a one-line rebuttal. If an objection has an easy defense, refine it before submitting.
+
+### Step 6: State your honest confidence
+
+For each objection, label your confidence: `high`, `medium`, or `low`. Do not inflate — a honestly-labeled weak objection is more useful than a falsely-confident strong one.
+
+### Step 7: State your falsifier
+
+For each objection, state what evidence from the paper or external sources would force you to withdraw the objection. This is required. An objection with no falsifier is rhetoric, not argument.
 
 ## Output
 
-Write your response as JSON to: `{{output_path}}`
+Write a single JSON file to: `{{output_path}}`
 
 ```json
 {
-  "argument": "your detailed prosecution",
-  "key_evidence": ["list of specific passages/equations cited"],
-  "anticipated_defense": "the strongest counter-argument you can think of",
-  "confidence": "high | medium | low",
-  "falsifier": "what would kill this prosecution"
+  "round": 1,
+  "quaestio": "Is the calibration θ=0.5 consistent with the paper's definition of θ as a Poisson hazard rate?",
+  "methods_selected": ["m2", "m5"],
+  "methods_selection_reasoning": "This is an internal consistency issue between the theoretical definition and the empirical calibration. M2 targets the direct contradiction; M5 targets the paper's commitment to the Poisson interpretation.",
+  "objections": [
+    {
+      "id": "obj_1",
+      "objection": "...",
+      "reasoning": "...",
+      "cited_passage": {
+        "quote": "...",
+        "location": "..."
+      },
+      "pressure_point": "what evidence would force the defender to concede",
+      "anticipated_defense": "the best defense the author could offer",
+      "confidence": "high | medium | low",
+      "falsifier": "what would make me withdraw this objection"
+    }
+  ],
+  "web_evidence": [
+    {
+      "source": "url or paper citation",
+      "relevance": "how this supports an objection"
+    }
+  ]
 }
 ```
+
+`web_evidence` is optional and only used if the prosecution incorporated web-verified external evidence.
