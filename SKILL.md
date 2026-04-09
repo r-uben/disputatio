@@ -1,57 +1,104 @@
 ---
 name: disputatio
-description: High-precision academic paper review via multi-agent dialectic debate
+description: High-precision academic paper review via seven-method dialectic debate
 ---
 
 # Disputatio
 
-Review an academic paper using dialectic debate between independent AI agents.
+Review an academic paper as a top-journal referee would, using seven methods of critical dialectic executed by three independent AI agents. The goal is not to be polite — the goal is to subject the paper to the kind of scrutiny that makes it publishable.
 
 ## Usage
 
 ```
-/disputatio <path-to-paper>
+/disputatio <path-to-paper> [--top-n 8] [--max-rounds 3] [--skip-web]
 ```
+
+Options:
+- `--top-n N` — debate the top N merged issues (default 8)
+- `--max-rounds R` — maximum debate rounds per issue (default 3)
+- `--skip-web` — disable web verification (default: enabled)
+
+## The seven methods
+
+Each method is described in detail under `templates/methods/`. They are not labels — they are operational procedures.
+
+| # | Method | File | Role |
+|---|--------|------|------|
+| 1 | Structured disputation | `m1_disputation.md` | Gives every debate round its formal structure (quaestio → objections → sed contra → respondeo → replies) |
+| 2 | Interrogation by contradiction | `m2_contradiction.md` | Finds pairs of claims that cannot both be true |
+| 3 | Systematic transformation | `m3_transformation.md` | Runs each claim through eight mechanical transformations (negate, strengthen, weaken, substitute, reverse, consequence, boundary, analogy) |
+| 4 | Counterexample construction | `m4_counterexample.md` | Tries to construct a case satisfying the assumptions but violating the conclusion; exposes hidden lemmas |
+| 5 | Self-measured critique | `m5_immanent.md` | Finds the paper's own commitments and hunts for passages where the paper violates them. Strongest form of criticism |
+| 6 | Causal disentangling | `m6_disentangling.md` | For each causal claim, enumerates co-factors and co-effects the paper has not ruled out |
+| 7 | Iterative refinement | `m7_refinement.md` | Operates in synthesis: produces the refined claim after each round |
+
+Methods 2-6 are **generative** (they find issues). Method 1 is **structural** (it shapes each round). Method 7 is **iterative** (it refines claims across rounds).
 
 ## Protocol
 
-### Phase 1 — Discovery (parallel, all models)
+The review proceeds in five phases.
 
-All three agents read the paper independently and find candidate issues. This prevents single-model attention blind spots.
+### Phase 0 — Orientation (parallel, all agents)
 
-1. Parse the paper to `workspace/<paper-slug>/paper.md`
-2. Launch all three agents in parallel, each reading the full paper
-3. Each agent writes issues to `workspace/discovery/<agent>/issue_NNN.json`
-4. Merge and deduplicate across agents into `workspace/issues/issue_NNN.json`
+Each of the three agents reads the paper once and produces a neutral **paper map**: claims, equations, propositions, assumptions, parameters, datasets, citations, section anchors, and OCR-corrupted regions. No judgments yet.
 
-Each issue is a **falsifiable hypothesis**, not a comment:
-
-```json
-{
-  "id": "issue_NNN",
-  "claim": "what is concretely wrong",
-  "quote": "the passage in question",
-  "evidence": "why this is wrong, with specific references",
-  "falsifier": "what evidence would kill this claim",
-  "impact": "material | local | unclear",
-  "source": "claude | codex | gemini",
-  "paragraph_index": 42
-}
+```
+workspace/<paper-slug>/orientation/
+├── claude/paper_map.json
+├── codex/paper_map.json
+└── gemini/paper_map.json
 ```
 
-Do NOT flag style, readability, or subjective issues. Only flag things that are concretely wrong or misleading. See `references/criteria.md`.
+The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
 
-### Phase 2 — Dialectic Rounds
+Run all three agents in parallel. Estimated time: ~5 minutes each, so 5 minutes wall clock.
 
-Each issue enters a debate. Three roles rotate across three agents each round:
+### Phase 1 — Discovery (fan-out-fan-out parallel)
 
-| Role | Job |
-|------|-----|
-| **Prosecutor** | Steelman the criticism. Say exactly what is wrong, why it matters, what evidence would kill the claim |
-| **Defender** | Steelman the defense. Give the best exculpatory reading, cite resolving context, say what evidence would kill the defense |
-| **Synthesizer** | Produce an updated issue state — not keep/drop, but a refined understanding |
+Each agent runs **all five generative methods** (M2-M6) on the paper, using its own paper map as the cache. Each method produces its own set of candidate issues. Total: 3 agents × 5 methods = **15 discovery sweeps**.
 
-**Rotation schedule:**
+```
+workspace/<paper-slug>/discovery/
+├── claude/
+│   ├── m2/issue_*.json
+│   ├── m3/issue_*.json
+│   ├── m4/issue_*.json
+│   ├── m5/issue_*.json
+│   └── m6/issue_*.json
+├── codex/
+│   └── ... (same structure)
+└── gemini/
+    └── ... (same structure)
+```
+
+**Parallelism**: the 3 agents run in parallel. Within each agent, the 5 methods should also run in parallel where the CLI supports it (if not, sequential within the agent). Target wall clock: 10-15 minutes.
+
+**OCR-aware**: discovery prompts warn agents about OCR artifacts and instruct them not to flag corrupted passages as paper errors.
+
+**Web search**: not triggered in this phase. Closed-book discovery.
+
+### Phase 2 — Merge, rank, and verify
+
+After discovery, Claude executes the merge and rank procedure described in `templates/merge_and_rank.md`:
+
+1. **Triage** obvious non-issues (OCR artifacts, presentation-only complaints, low-confidence singletons)
+2. **Deduplicate** — cluster candidate issues that point to the same underlying concern
+3. **Rank** using the scoring function:
+   - **Centrality** (0-3): how close to the paper's main contribution
+   - **Cross-agent support** (0-3, weighted ×2): how many different agents found it
+   - **Evidence specificity** (0-3): quote + falsifier + reproduction steps
+   - **Severity** (0-3): what happens if the finding is correct
+   - **Score = centrality + 2·cross_agent_support + evidence_specificity + severity** (max 15)
+4. **Web verification**: Gemini fetches external evidence for issues marked `needs_web_verification: true`. Confirmed issues get +2 score; refuted issues get -3 and may be filtered out. See `templates/verify.md`.
+5. **Budget cut**: only the top N issues (default 8) enter the debate phase. Below-cutoff issues are preserved in the final report as "appendix concerns."
+
+**Ranking priority**: cross-agent support is weighted double because it is the strongest signal. Five methods on one model are correlated; agreement across different architectures is much more meaningful.
+
+### Phase 3 — Dialectic debate (parallel across issues)
+
+Each top-ranked issue enters a dialectic debate. The debate follows the structured disputation format (Method 1): quaestio → objections → sed contra → respondeo → replies → synthesis.
+
+**Role rotation** across rounds:
 
 | Round | Prosecutor | Defender | Synthesizer |
 |-------|-----------|----------|-------------|
@@ -59,87 +106,68 @@ Each issue enters a debate. Three roles rotate across three agents each round:
 | 2 | Codex | Gemini | Claude |
 | 3 | Gemini | Claude | Codex |
 
-For each round:
+The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` for the selection heuristic) and applies them to the issue. The defender uses Method 1 to reply to each objection individually. The synthesizer applies Method 7 to produce the refined claim.
 
-1. Send issue state + paper context to **Prosecutor** using `templates/prosecute.md`
-2. Send issue state + prosecution + paper context to **Defender** using `templates/defend.md`
-3. Send issue state + prosecution + defense + paper context to **Synthesizer** using `templates/synthesize.md`
-4. Synthesizer outputs the new issue state → becomes input for next round
+**Parallelism**: issues are debated in parallel, but within an issue the path is strictly sequential (prosecute → defend → synthesize). Cap concurrent issues at 2-3 to avoid rate-limiting the weaker model (typically Gemini).
 
-**Issue state** (evolves each round):
+**Short-circuit rules** (aggressive):
+- **Pre-debate triage**: if an issue scored below the cutoff, skip it
+- **Round 1 early-kill**: if the round 1 synthesis produces `impact: none`, stop — the issue dies
+- **Stalled debate**: if round N synthesis is materially identical to round N-1 synthesis, mark `converged` and stop
+- **Low priority cap**: issues in the bottom half of the top-N get at most 1 round; middle get 2; top 2-3 get the full 3 rounds
 
-```json
-{
-  "id": "issue_NNN",
-  "round": 2,
-  "current_claim": "best current formulation of the issue",
-  "accepted_facts": ["what both sides now agree on"],
-  "refuted_components": ["parts of the prior claim that died"],
-  "open_disputes": ["what remains unresolved"],
-  "impact": "material | local | none | unclear",
-  "next_question": "what would most reduce uncertainty",
-  "status": "continue | converged | split | escalate",
-  "history": [
-    {"round": 1, "prosecution": "...", "defense": "...", "synthesis": "..."}
-  ]
-}
-```
+### Phase 4 — Final report
 
-**Fast path:** If round 1 synthesis produces `status: "converged"` with `impact: "none"`, skip further rounds.
+Claude writes two outputs:
 
-**Split:** If synthesis determines the issue contains multiple independent propositions, it may `split` into separate issues that enter debate independently.
+1. **`workspace/<paper-slug>/final.json`** — structured final report:
+   - Surviving material issues with full debate history
+   - Surviving local issues with brief summary
+   - Dropped issues with the reason
+   - Appendix concerns (below-cutoff issues)
+   - Web-verified external evidence
+   - Overall assessment
 
-**Escalate:** If the dispute depends on external conventions, hidden derivations, or calculations agents cannot verify, mark `escalate` — these go to the final report with uncertainty preserved.
-
-### Convergence
-
-Stop when:
-- Synthesis stops changing materially (same claim, same evidence, same impact) → `converged`
-- Paper text directly resolves the dispute → `converged` with `impact: "none"`
-- Budget cap reached (default: 3 rounds) → take last synthesis as final
-- Issue was split → child issues enter debate independently
-
-### Phase 3 — Final Synthesis
-
-Collect all converged issue states. For each surviving issue (`impact` != `none`):
-
-1. Render as a structured reviewer comment with the full dialectic history
-2. Preserve uncertainty — if `escalate`, say so explicitly
-3. Include constructive suggestion where possible ("this could be fixed by...")
-
-Write final output to `workspace/final.json`.
+2. **Live Obsidian note** — `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`:
+   - Updated after each phase (orientation → discovery → merge → debate → final)
+   - Frontmatter includes status, date, paper metadata
+   - Debate section shows each round's prosecution, defense, and synthesis
+   - Final assessment at the bottom
 
 ## Workspace structure
 
 ```
 workspace/<paper-slug>/
-├── paper.md                          # parsed paper text
-├── checkpoint.json                   # resumable session state
+├── paper.md                             # parsed paper
+├── checkpoint.json                      # resumable state
+├── orientation/
+│   ├── claude/paper_map.json
+│   ├── codex/paper_map.json
+│   └── gemini/paper_map.json
 ├── discovery/
-│   ├── claude/issue_NNN.json         # claude's raw findings
-│   ├── codex/issue_NNN.json          # codex's raw findings
-│   └── gemini/issue_NNN.json         # gemini's raw findings
-├── issues/
-│   └── issue_NNN.json                # merged/deduplicated issues
+│   ├── claude/{m2,m3,m4,m5,m6}/issue_*.json
+│   ├── codex/{m2,m3,m4,m5,m6}/issue_*.json
+│   └── gemini/{m2,m3,m4,m5,m6}/issue_*.json
+├── triage.json                          # issues filtered out before ranking
+├── ranked_issues.json                   # merged + ranked list with web verification
 ├── rounds/
-│   └── issue_NNN/
-│       ├── round_1_prosecute.json    # prosecution argument
-│       ├── round_1_defend.json       # defense argument
-│       ├── round_1_synthesize.json   # synthesis (new issue state)
-│       ├── round_2_prosecute.json
+│   └── issue_<id>/
+│       ├── round_1_prosecute.json
+│       ├── round_1_defend.json
+│       ├── round_1_synthesize.json
 │       └── ...
-└── final.json                        # surviving issues as reviewer comments
+└── final.json
 ```
 
 ## Agent routing
 
-| Agent | CLI | Model |
-|-------|-----|-------|
-| Claude | Claude Code (you) | opus/sonnet |
-| Codex | `/codex` via agent-ctl | GPT-5.4 |
-| Gemini | `/gemini` via agent-ctl | Gemini 2.5 Pro |
+| Agent | CLI | Model | Special role |
+|-------|-----|-------|--------------|
+| Claude | Claude Code (you) | opus/sonnet | Orchestrator + runs discovery + role-rotates in debate |
+| Codex | `/codex` via agent-ctl | GPT-5.4 | Independent reader + runs discovery + role-rotates in debate |
+| Gemini | `/gemini` via agent-ctl | Gemini 2.5 Pro | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
 
-All three agents take all three roles across rounds. The key property is **model independence**: different architectures prevent correlated errors.
+Gemini's unique web search capability means it owns the verification step in Phase 2 — even for findings originally produced by other agents. This concentrates web search usage into a single agent that is specialized for it, rather than spreading it thin.
 
 ## Agent communication
 
@@ -148,94 +176,77 @@ Use `agent-ctl` to manage sessions:
 ```bash
 A="python3 ~/.claude/skills/agent_ctl.py"
 
-# Start agents (codex runs with --full-auto by default, can write files)
-$A start codex "PROMPT" --cwd <workspace> --timeout 600
-$A start gemini "PROMPT" --cwd <workspace> --timeout 600
+# Start agents (codex defaults to --full-auto and can write files)
+$A start codex "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
+$A start gemini "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
 
-# Wait for agents to finish (blocks until done — no polling needed)
-$A wait 01 02
+# Wait for agents to finish (blocking, no polling needed)
+$A wait 01 02 03
 
 # Get results
 $A result 01
-$A result 02
-
-# Claude executes its role directly (no agent-ctl needed)
 ```
 
-**Context injection**: When sending prompts to Codex/Gemini, always include the relevant content inline in the prompt (paper text, issue state, prior arguments). Do NOT rely on agents being able to read workspace files — inject the content directly. Agents should ALSO write their output to workspace files, but the prompt must be self-contained.
+**Prompt files**: for long prompts (with paper map content, prior round history, etc.), write the prompt to a temp file and pass `$(cat /tmp/prompt-file.md)` to agent-ctl. Inline prompts larger than a few KB will break shell escaping.
 
-**Output verification**: After each agent call, verify the output file exists. If missing, parse the result from `$A result <id>` and write it yourself. Agents may fail to write files due to sandbox or filesystem issues — always have a fallback.
+**Context injection**: always paste paper excerpts, issue state, and prior round content **inline** in the prompt. Do not rely on agents being able to read workspace files — some CLIs (Gemini) cannot write files even when given paths, and some cannot reliably read gitignored directories.
 
-**Retry logic**: If an agent fails (rate limits, timeout), retry once. If it fails again, default to KEEP and move on.
+**Output verification**: after each agent call, verify the output file exists before proceeding. If missing, parse the agent's stdout via `$A result <id>` and write the file manually. Both Codex and Gemini sometimes hallucinate file writes.
+
+**Retry logic**: if an agent fails (timeout, rate limit, hallucinated success), retry once with a simplified prompt. If it fails again, default to KEEP (preserve the issue as-is, note the failure in the checkpoint, continue).
 
 ## Checkpointing
 
-After each round completes for each issue, update `checkpoint.json` with:
-- Which issues have been discovered and merged
-- Which rounds have completed per issue
-- Current issue states
-- Which issues have converged / split / escalated
+After every phase and every debate round, update `workspace/<paper-slug>/checkpoint.json`:
 
-If the session is interrupted, read `checkpoint.json` and resume from the last completed step.
-
-## Prompt templates
-
-Role-agnostic templates are in `templates/`:
-- `prosecute.md` — steelman the criticism
-- `defend.md` — steelman the defense
-- `synthesize.md` — produce updated issue state
-- `discover.md` — find candidate issues (used for codex/gemini discovery)
-
-## Live report (Obsidian)
-
-Maintain a live Obsidian note that updates as the review progresses. This lets the user watch the debate unfold in real time.
-
-**Location**: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/<paper-slug>.md`
-
-**Format**:
-
-```markdown
----
-tags: [referee-report, disputatio]
-paper: "<full paper title>"
-authors: "<authors>"
-venue: "<journal>"
-status: "<discovery|debate|complete>"
-date: <YYYY-MM-DD>
----
-
-# Referee Report: <short title>
-
-## Status
-<current phase and progress>
-
-## Discovery
-<summary of issues found by each agent, merged count>
-
-## Debate
-
-### Issue 1: <title>
-**Original claim**: ...
-**Round 1**: Prosecutor (Claude) | Defender (Codex) | Synthesizer (Gemini)
-- Prosecution: <1-2 sentence summary>
-- Defense: <1-2 sentence summary>
-- Synthesis: <outcome — what was accepted, refuted, still open>
-- Status: converged | continue | split | escalate
-
-**Round 2** (if needed): ...
-
-### Issue 2: <title>
-...
-
-## Final Assessment
-<surviving issues rendered as reviewer comments>
+```json
+{
+  "paper": "...",
+  "phase": "orientation | discovery | merge | debate | final",
+  "phase_progress": {
+    "orientation": {"claude": "done", "codex": "done", "gemini": "done"},
+    "discovery": {"claude": {"m2": "done", ...}, ...},
+    "merge": "done",
+    "debate": {
+      "issue_001": {"rounds_completed": 2, "status": "continue"},
+      ...
+    }
+  },
+  "timestamp": "..."
+}
 ```
 
-Update the note after each step:
-1. After discovery → write the discovery section
-2. After each debate round → append the round summary
-3. After final synthesis → write the final assessment and set status to `complete`
+If the session is interrupted, read the checkpoint and resume from the last completed step.
+
+## Budget defaults
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Top-N for debate | 8 | Top 3 get full 3 rounds, middle 3 get 2 rounds, bottom 2 get 1 round |
+| Max rounds per issue | 3 | Short-circuit rules can end earlier |
+| Orientation timeout | 5 min | per agent |
+| Discovery timeout | 15 min | per agent, per method |
+| Debate round timeout | 10 min | per agent, per role |
+| Web search budget | 5 queries | per issue |
+| Total runtime | ~2 hours | wall clock, parallelized |
 
 ## Review criteria
 
-The criteria for what constitutes a valid issue are in `references/criteria.md`.
+The methods determine what counts as an issue. No external criteria file is needed — each method's template defines what it flags.
+
+## Live report (Obsidian)
+
+Maintain a live Obsidian note at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`. Update after each phase. Frontmatter:
+
+```yaml
+---
+tags: [referee-report, disputatio]
+paper: "..."
+authors: "..."
+venue: "..."
+status: orientation | discovery | merge | debate | complete
+date: YYYY-MM-DD
+---
+```
+
+The note body should have sections for each phase, with live updates as they complete.
