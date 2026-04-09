@@ -2,9 +2,11 @@
 
 High-precision academic paper review via seven-method dialectic debate. This is a Claude Code skill, not a Python package — Claude Code is the runtime.
 
+**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`workspace/<slug>/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. The entire review is resumable, auditable, and reproducible. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
+
 ### How it works
 
-`/disputatio paper.pdf` runs a five-phase pipeline:
+`/disputatio paper.pdf` runs a five-phase pipeline orchestrated as a ticket DAG. Claude generates tickets in waves; `agent-ctl run-dag` executes each wave; between waves Claude inspects outputs and emits the next wave.
 
 0. **Orientation** — each of 3 agents reads the paper once and produces a neutral paper map (claims, equations, propositions, assumptions, parameters, citations). Paper maps are NOT merged — each agent uses its own as a cache to preserve model independence
 1. **Discovery** — each agent runs all 5 generative methods (M2-M6) on the paper using its own cache. Fan-out-fan-out parallelism: 3 agents × 5 methods = 15 concurrent discovery sweeps
@@ -33,6 +35,7 @@ disputatio/
 ├── SKILL.md                         # full protocol
 ├── CLAUDE.md                        # this file
 ├── templates/
+│   ├── emit_tickets.md              # ticket schema and wave protocol
 │   ├── orient.md                    # produce paper map
 │   ├── discover.md                  # run all 5 generative methods
 │   ├── merge_and_rank.md            # merge, dedupe, rank
@@ -53,7 +56,8 @@ disputatio/
 
 ### Key design decisions
 
-- **No Python runtime** — Claude Code orchestrates, agents communicate via files
+- **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, reproducible
+- **No Python runtime** for the skill logic — Claude Code orchestrates, agents communicate via files, agent-ctl is the only moving part
 - **Three independent readers** — each agent produces its own paper map; maps are never merged. Cross-agent consensus on issues is the strongest signal
 - **Methods, not labels** — prompts describe procedures operationally. Agents execute the method without knowing its philosophical lineage
 - **Five generative + one structural + one iterative = 7 methods** — every method has a natural slot, none is redundant
@@ -61,6 +65,7 @@ disputatio/
 - **Cross-agent support weighted ×2** — the strongest ranking signal (more robust than cross-method within one agent)
 - **Pre-debate triage + round-1 early-kill + stalled-debate termination** — aggressive short-circuits keep runtime bounded
 - **Role rotation with 3-round cap** — different agents prosecute, defend, synthesize across rounds
+- **Deterministic ticket emission** — only Claude (via the wave protocol) emits new tickets. Agents never self-schedule more work
 
 ### Lessons from testing
 
@@ -76,4 +81,4 @@ disputatio/
 
 - `codex` CLI installed and authenticated (ChatGPT Pro)
 - `gemini` CLI installed and authenticated (Google OAuth)
-- `agent-ctl` (`~/.claude/skills/agent_ctl.py`) with `wait` subcommand and `--full-auto` default for Codex
+- `agent-ctl` (`~/.claude/skills/agent_ctl.py`) with `wait`, `run-dag`, and `dag-status` subcommands, and `--full-auto` default for Codex

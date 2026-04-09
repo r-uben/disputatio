@@ -7,6 +7,8 @@ description: High-precision academic paper review via seven-method dialectic deb
 
 Review an academic paper as a top-journal referee would, using seven methods of critical dialectic executed by three independent AI agents. The goal is not to be polite — the goal is to subject the paper to the kind of scrutiny that makes it publishable.
 
+Orchestration is durable: every agent call is a **ticket** in a DAG on disk. The pipeline is resumable, auditable, and reproducible by construction.
+
 ## Usage
 
 ```
@@ -34,9 +36,25 @@ Each method is described in detail under `templates/methods/`. They are not labe
 
 Methods 2-6 are **generative** (they find issues). Method 1 is **structural** (it shapes each round). Method 7 is **iterative** (it refines claims across rounds).
 
+## Ticket DAG orchestration
+
+Every agent call is a ticket on disk. Tickets live in `workspace/<slug>/tickets.json`. The ticket schema, the wave protocol (how tickets are emitted), and the ID naming conventions are defined in `templates/emit_tickets.md`. Read that file before implementing any step of the protocol.
+
+**Execution model**:
+- Claude generates tickets in **waves**. Each wave depends on the outputs of the previous wave.
+- `agent-ctl run-dag workspace/<slug>/tickets.json --concurrent 3` executes all ready tickets in parallel up to the concurrency cap, then exits when no more ready tickets remain.
+- Claude-typed tickets (`orient_claude`, `merge_rank`, `final_report`, wave-emission logic) are executed by Claude directly, not by agent-ctl.
+- After `run-dag` exits, Claude inspects the outputs, generates the next wave of tickets, and calls `run-dag` again.
+
+**Key benefit — full provenance**: every agent call is reproducible. The ticket stores the prompt path, inputs, outputs, timing, attempt count, and session ID. Combined with the stored prompt files and output files, the entire review is replayable and auditable.
+
+**Monitoring**: `agent-ctl dag-status workspace/<slug>/tickets.json` prints a summary of ticket states at any time.
+
+**Resumability**: the ticket DAG is the source of truth. Closing Claude Code, restarting later, and re-running the skill picks up from where it left off — ready tickets resume, already-done tickets are skipped.
+
 ## Protocol
 
-The review proceeds in five phases.
+The review proceeds in five phases. Each phase corresponds to one or more waves of tickets (see `templates/emit_tickets.md` for the exact ticket definitions).
 
 ### Phase 0 — Orientation (parallel, all agents)
 
@@ -139,7 +157,12 @@ Claude writes two outputs:
 ```
 workspace/<paper-slug>/
 ├── paper.md                             # parsed paper
-├── checkpoint.json                      # resumable state
+├── tickets.json                         # the DAG — source of truth for orchestration
+├── prompts/                             # one file per ticket, stored for audit
+│   ├── orient_claude.md
+│   ├── discover_codex_m4.md
+│   ├── debate_merged_001_r1_prosecute.md
+│   └── ...
 ├── orientation/
 │   ├── claude/paper_map.json
 │   ├── codex/paper_map.json
@@ -151,13 +174,15 @@ workspace/<paper-slug>/
 ├── triage.json                          # issues filtered out before ranking
 ├── ranked_issues.json                   # merged + ranked list with web verification
 ├── rounds/
-│   └── issue_<id>/
+│   └── <issue_id>/
 │       ├── round_1_prosecute.json
 │       ├── round_1_defend.json
 │       ├── round_1_synthesize.json
 │       └── ...
 └── final.json
 ```
+
+`tickets.json` + `prompts/` + the output files constitute a complete, replayable record of the review.
 
 ## Agent routing
 
@@ -171,19 +196,23 @@ Gemini's unique web search capability means it owns the verification step in Pha
 
 ## Agent communication
 
-Use `agent-ctl` to manage sessions:
+Use `agent-ctl` to manage sessions. The DAG runner is the primary interface:
 
 ```bash
 A="python3 ~/.claude/skills/agent_ctl.py"
 
-# Start agents (codex defaults to --full-auto and can write files)
+# Run the DAG — executes all ready tickets, blocks until none remain
+$A run-dag workspace/<slug>/tickets.json --concurrent 3
+
+# Check progress without blocking
+$A dag-status workspace/<slug>/tickets.json
+```
+
+The lower-level commands are still available for ad-hoc agent calls (deprecated for the disputatio pipeline — use tickets instead):
+
+```bash
 $A start codex "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
-$A start gemini "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
-
-# Wait for agents to finish (blocking, no polling needed)
 $A wait 01 02 03
-
-# Get results
 $A result 01
 ```
 
@@ -197,26 +226,13 @@ $A result 01
 
 ## Checkpointing
 
-After every phase and every debate round, update `workspace/<paper-slug>/checkpoint.json`:
+**Tickets are the checkpoint.** `tickets.json` records the status of every unit of work. There is no separate checkpoint file.
 
-```json
-{
-  "paper": "...",
-  "phase": "orientation | discovery | merge | debate | final",
-  "phase_progress": {
-    "orientation": {"claude": "done", "codex": "done", "gemini": "done"},
-    "discovery": {"claude": {"m2": "done", ...}, ...},
-    "merge": "done",
-    "debate": {
-      "issue_001": {"rounds_completed": 2, "status": "continue"},
-      ...
-    }
-  },
-  "timestamp": "..."
-}
-```
-
-If the session is interrupted, read the checkpoint and resume from the last completed step.
+To resume a review:
+1. Navigate to the workspace
+2. `agent-ctl dag-status tickets.json` — inspect what is done
+3. `agent-ctl run-dag tickets.json` — execute any remaining ready tickets
+4. Re-invoke `/disputatio` on the same workspace — Claude picks up the wave-transition work from where it left off (if any Claude-typed tickets are pending, they execute next)
 
 ## Budget defaults
 
