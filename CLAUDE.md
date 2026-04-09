@@ -2,7 +2,9 @@
 
 High-precision academic paper review via seven-method dialectic debate. This is a Claude Code skill, not a Python package — Claude Code is the runtime.
 
-**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`workspace/<slug>/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. The entire review is resumable, auditable, and reproducible. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
+**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`<paper-folder>/_artifacts/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. Session logs are auto-archived. The entire review is resumable, auditable, and reproducible. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
+
+**Obsidian is the workspace.** Every review is a self-contained folder inside the Obsidian vault at `notes/work/referee-reports/tests/<paper-slug>/`. Curated markdown lives in numbered folders (`00_review.md`, `10_paper/`, `20_orientation/`, ...); raw artifacts live in `_artifacts/` as non-markdown files. See `templates/obsidian_structure.md` and `templates/obsidian_render.md`.
 
 ### How it works
 
@@ -35,7 +37,9 @@ disputatio/
 ├── SKILL.md                         # full protocol
 ├── CLAUDE.md                        # this file
 ├── templates/
-│   ├── emit_tickets.md              # ticket schema and wave protocol
+│   ├── emit_tickets.md              # ticket schema + wave protocol
+│   ├── obsidian_structure.md        # per-paper Obsidian folder spec
+│   ├── obsidian_render.md           # how Claude renders JSON → curated markdown
 │   ├── orient.md                    # produce paper map
 │   ├── discover.md                  # run all 5 generative methods
 │   ├── merge_and_rank.md            # merge, dedupe, rank
@@ -53,6 +57,22 @@ disputatio/
 │       └── m7_refinement.md
 └── .gitignore
 ```
+
+A review lives inside the Obsidian vault, not this repo:
+
+```
+notes/work/referee-reports/tests/<paper-slug>/
+├── 00_review.md                     # top-level index
+├── 10_paper/paper.md
+├── 20_orientation/                  # 3 paper maps as markdown
+├── 30_discovery/                    # organized by method
+├── 40_ranking/                      # issue_register.md is the source of truth
+├── 50_debates/                      # one folder per debated issue
+├── 60_final_report/referee_report.md
+└── _artifacts/                      # tickets.json, prompts/, sessions/, json/
+```
+
+See `templates/obsidian_structure.md` for the full folder spec.
 
 ### Key design decisions
 

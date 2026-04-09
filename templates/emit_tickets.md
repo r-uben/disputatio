@@ -1,8 +1,16 @@
 # Ticket emission protocol
 
-Disputatio uses a ticket DAG for durable, resumable, auditable orchestration. Claude (you) generates tickets in **waves**. `agent-ctl run-dag` executes each wave; between waves, Claude inspects the outputs of completed tickets and emits the next wave.
+Disputatio uses a ticket DAG for durable, resumable, auditable orchestration. Claude (you) generates tickets in **waves**. `agent-ctl run-dag` executes each wave; between waves, Claude inspects the outputs of completed tickets, renders them as curated markdown in the numbered folders, and emits the next wave.
 
-The ticket file lives at `workspace/<paper-slug>/tickets.json`. It is a dict keyed by ticket ID.
+**The workspace is the Obsidian paper folder.** Every review lives inside a single folder:
+
+```
+~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/<paper-slug>/
+```
+
+(The `tests/` subfolder will be dropped once the skill is production-ready.)
+
+The ticket file lives at `<paper-folder>/_artifacts/tickets.json`. It is a dict keyed by ticket ID. All path references in tickets are **relative to the paper folder**, not to the repo or to the Obsidian vault root. Agent-ctl is invoked with `--cwd <paper-folder>` so every relative path resolves correctly.
 
 ## Ticket schema
 
@@ -13,13 +21,13 @@ Every ticket has the same shape. Fields marked `(required)` must be present; oth
   "id": "orient_claude",                     // unique, stable (required)
   "type": "orient",                          // disputatio ticket type (required)
   "agent": "claude",                         // claude | codex | gemini (required)
-  "prompt_path": "workspace/<slug>/prompts/orient_claude.md",
-                                             // relative to cwd (required for non-claude tickets)
+  "prompt_path": "_artifacts/_artifacts/prompts/orient_claude.md",
+                                             // relative to paper folder (required for non-claude tickets)
   "inputs": [                                // files this ticket consumes (informational)
-    "workspace/<slug>/paper.md"
+    "10_paper/10_paper/paper.md"
   ],
   "outputs": [                               // files this ticket must produce (required)
-    "workspace/<slug>/orientation/claude/paper_map.json"
+    "_artifacts/json/orient_claude.json"
   ],
   "depends_on": ["previous_ticket_id"],      // list of ticket IDs (required, may be empty)
   "status": "pending",                       // pending | running | done | failed (default: pending)
@@ -71,16 +79,18 @@ Issue IDs are assigned during merge (e.g., `merged_001`, `merged_002`).
 
 ## Ticket types (disputatio-specific)
 
-| Type | Produces | Consumes | Agent |
-|------|----------|----------|-------|
-| `orient` | `orientation/<agent>/paper_map.json` | `paper.md` | any |
-| `discover` | `discovery/<agent>/m<N>/issue_*.json` | `paper.md`, `orientation/<agent>/paper_map.json` | any |
-| `merge_rank` | `ranked_issues.json`, `triage.json` | all `discovery/**/issue_*.json` | claude |
-| `verify` | `ranked_issues.json` (updated) | `ranked_issues.json` | gemini |
-| `prosecute` | `rounds/<issue>/round_<N>_prosecute.json` | `ranked_issues.json` or prior synthesis | rotating |
-| `defend` | `rounds/<issue>/round_<N>_defend.json` | prosecute output, `paper.md` | rotating |
-| `synthesize` | `rounds/<issue>/round_<N>_synthesize.json` | prosecute + defend outputs | rotating |
-| `final_report` | `final.json`, Obsidian note | all `rounds/**/synthesize.json` | claude |
+All paths below are relative to the paper folder (`<paper-folder>` root). Raw JSON outputs land in `_artifacts/json/`; curated markdown is written into the numbered folders by Claude between waves (see `templates/obsidian_render.md`).
+
+| Type | Raw output (JSON) | Consumes | Agent |
+|------|-------------------|----------|-------|
+| `orient` | `_artifacts/json/orient_<agent>.json` | `10_paper/paper.md` | any |
+| `discover` | `_artifacts/json/discover_<agent>_m<N>.json` | `10_paper/paper.md`, `_artifacts/json/orient_<agent>.json` | any |
+| `merge_rank` | `_artifacts/json/ranked_issues.json`, `_artifacts/json/triage.json` | all `_artifacts/json/discover_*.json` | claude |
+| `verify` | `_artifacts/json/ranked_issues.json` (updated) | `_artifacts/json/ranked_issues.json` | gemini |
+| `prosecute` | `_artifacts/json/debate_<issue>_r<N>_prosecute.json` | `_artifacts/json/ranked_issues.json` or prior synthesis | rotating |
+| `defend` | `_artifacts/json/debate_<issue>_r<N>_defend.json` | prosecute output, `10_paper/paper.md` | rotating |
+| `synthesize` | `_artifacts/json/debate_<issue>_r<N>_synthesize.json` | prosecute + defend outputs | rotating |
+| `final_report` | `_artifacts/json/final.json`, `60_final_report/referee_report.md` | all debate synthesis outputs | claude |
 
 ## Wave protocol
 
@@ -92,9 +102,9 @@ Claude generates tickets in waves. After each `agent-ctl run-dag` completes, Cla
 {
   "orient_claude": {
     "id": "orient_claude", "type": "orient", "agent": "claude",
-    "prompt_path": "workspace/<slug>/prompts/orient_claude.md",
-    "inputs": ["workspace/<slug>/paper.md"],
-    "outputs": ["workspace/<slug>/orientation/claude/paper_map.json"],
+    "prompt_path": "_artifacts/prompts/orient_claude.md",
+    "inputs": ["10_paper/paper.md"],
+    "outputs": ["_artifacts/json/orient_claude.json"],
     "depends_on": [], "status": "pending", "timeout_s": 1200
   },
   "orient_codex": { "...same shape, timeout_s 1200..." },
@@ -104,7 +114,7 @@ Claude generates tickets in waves. After each `agent-ctl run-dag` completes, Cla
 
 Claude-typed tickets are a special case: Claude executes them directly, without going through agent-ctl. When Claude sees a `claude`-typed ticket is ready, it runs the work itself and writes the output file. Claude-typed tickets must still be marked `done` in tickets.json after execution.
 
-All three prompt files are written to `workspace/<slug>/prompts/` by substituting `{{paper_path}}` into `templates/orient.md`.
+All three prompt files are written to `prompts/` by substituting `{{paper_path}}` into `templates/orient.md`.
 
 ### Wave 2 — Discovery (emitted after orientation)
 
@@ -114,14 +124,14 @@ For each of the three agents, emit five discovery tickets (M2-M6):
 {
   "discover_claude_m2": {
     "id": "discover_claude_m2", "type": "discover", "agent": "claude",
-    "prompt_path": "workspace/<slug>/prompts/discover_claude_m2.md",
+    "prompt_path": "_artifacts/prompts/discover_claude_m2.md",
     "inputs": [
-      "workspace/<slug>/paper.md",
-      "workspace/<slug>/orientation/claude/paper_map.json"
+      "10_paper/paper.md",
+      "_artifacts/json/orient_claude.json"
     ],
-    "outputs": ["workspace/<slug>/discovery/claude/m2/"],
+    "outputs": ["_artifacts/json/discover_claude_m2.json"],
     "depends_on": ["orient_claude"],
-    "status": "pending", "timeout_s": 900
+    "status": "pending", "timeout_s": 1200
   },
   "discover_claude_m3": { "...", "depends_on": ["orient_claude"] },
   "discover_claude_m4": { "...", "depends_on": ["orient_claude"] },
@@ -134,10 +144,12 @@ For each of the three agents, emit five discovery tickets (M2-M6):
 
 Discovery tickets for one agent depend only on that agent's orientation. This preserves independence and maximizes parallelism.
 
+Each discovery ticket produces a **single JSON file** containing all issues that agent found with that method. The JSON schema is `{"issues": [{"id": "...", "claim": "...", ...}, ...]}`. Outputting a single file per ticket simplifies validation: run-dag just checks the file exists and is non-empty.
+
 Prompt files for each discovery ticket are generated by reading `templates/discover.md` and the specific method file `templates/methods/m<N>_*.md`, and substituting:
-- `{{paper_path}}`: path to paper.md
-- `{{paper_map_path}}`: path to that agent's paper map
-- `{{output_dir}}`: the `discovery/<agent>/m<N>/` directory
+- `{{paper_path}}`: `10_paper/paper.md`
+- `{{paper_map_path}}`: `_artifacts/json/orient_<agent>.json`
+- `{{output_path}}`: `_artifacts/json/discover_<agent>_m<N>.json`
 - `{{method_content}}`: the full text of the method template
 
 The prompt tells the agent to run **only that one method** on the paper, using its paper map as the cache.
@@ -150,15 +162,15 @@ One ticket:
 {
   "merge_rank": {
     "id": "merge_rank", "type": "merge_rank", "agent": "claude",
-    "prompt_path": "workspace/<slug>/prompts/merge_rank.md",
+    "prompt_path": "_artifacts/prompts/merge_rank.md",
     "inputs": [
-      "workspace/<slug>/discovery/claude/",
-      "workspace/<slug>/discovery/codex/",
-      "workspace/<slug>/discovery/gemini/"
+      "_artifacts/json/discover_claude_m2.json",
+      "_artifacts/json/discover_claude_m3.json",
+      "... and 13 more discovery JSON files ..."
     ],
     "outputs": [
-      "workspace/<slug>/ranked_issues.json",
-      "workspace/<slug>/triage.json"
+      "_artifacts/json/ranked_issues.json",
+      "_artifacts/json/triage.json"
     ],
     "depends_on": [
       "discover_claude_m2", "discover_claude_m3", "discover_claude_m4",
@@ -173,6 +185,8 @@ One ticket:
 }
 ```
 
+Note: `merge_rank` is a claude-typed ticket, so Claude executes it inline (reading all 15 discover JSON files, merging them, scoring, and writing the two outputs). After writing the JSON outputs, Claude also writes the human-readable `40_ranking/00_ranking.md`, `40_ranking/issue_register.md`, and `40_ranking/triage.md` as curated markdown.
+
 ### Wave 4 — Verification (emitted after merge_rank)
 
 One ticket, Gemini only (because it owns web search):
@@ -181,53 +195,63 @@ One ticket, Gemini only (because it owns web search):
 {
   "verify": {
     "id": "verify", "type": "verify", "agent": "gemini",
-    "prompt_path": "workspace/<slug>/prompts/verify.md",
-    "inputs": ["workspace/<slug>/ranked_issues.json"],
-    "outputs": ["workspace/<slug>/ranked_issues.json"],
+    "prompt_path": "_artifacts/prompts/verify.md",
+    "inputs": ["_artifacts/json/ranked_issues.json"],
+    "outputs": ["_artifacts/json/ranked_issues_verified.json"],
     "depends_on": ["merge_rank"],
-    "status": "pending", "timeout_s": 1800
+    "status": "pending", "timeout_s": 1800,
+    "output_format": "json_stdout"
   }
 }
 ```
 
-Note: this ticket reads and overwrites `ranked_issues.json`. The `agent-ctl run-dag` output check will verify the file exists and is non-empty; it cannot check that the content was updated. That is acceptable for this use case.
+Note: verify writes a new file `ranked_issues_verified.json` instead of overwriting `ranked_issues.json`. This makes the run-dag output check straightforward. After verification, Claude updates the human-readable `40_ranking/verification.md` from the new file.
 
 ### Wave 5 — Debate round 1 (emitted after verify)
 
-For each of the top N (default 8) issues in `ranked_issues.json`, emit three tickets:
+For each of the top N (default 8) issues in `_artifacts/json/ranked_issues_verified.json`, emit three tickets. Example for `issue_001`:
 
 ```json
 {
-  "debate_merged_001_r1_prosecute": {
-    "id": "debate_merged_001_r1_prosecute", "type": "prosecute",
+  "debate_issue_001_r1_prosecute": {
+    "id": "debate_issue_001_r1_prosecute", "type": "prosecute",
     "agent": "claude",
-    "prompt_path": "workspace/<slug>/prompts/debate_merged_001_r1_prosecute.md",
+    "prompt_path": "_artifacts/prompts/debate_issue_001_r1_prosecute.md",
     "inputs": [
-      "workspace/<slug>/paper.md",
-      "workspace/<slug>/orientation/claude/paper_map.json",
-      "workspace/<slug>/ranked_issues.json"
+      "10_paper/paper.md",
+      "_artifacts/json/orient_claude.json",
+      "_artifacts/json/ranked_issues_verified.json"
     ],
-    "outputs": ["workspace/<slug>/rounds/merged_001/round_1_prosecute.json"],
+    "outputs": ["_artifacts/json/debate_issue_001_r1_prosecute.json"],
     "depends_on": ["verify"],
-    "status": "pending", "timeout_s": 900
+    "status": "pending", "timeout_s": 1200
   },
-  "debate_merged_001_r1_defend": {
-    "id": "debate_merged_001_r1_defend", "type": "defend",
+  "debate_issue_001_r1_defend": {
+    "id": "debate_issue_001_r1_defend", "type": "defend",
     "agent": "codex",
-    "prompt_path": "...",
-    "inputs": ["...", "workspace/<slug>/rounds/merged_001/round_1_prosecute.json"],
-    "outputs": ["workspace/<slug>/rounds/merged_001/round_1_defend.json"],
-    "depends_on": ["debate_merged_001_r1_prosecute"],
-    "status": "pending", "timeout_s": 900
+    "prompt_path": "_artifacts/prompts/debate_issue_001_r1_defend.md",
+    "inputs": [
+      "10_paper/paper.md",
+      "_artifacts/json/orient_codex.json",
+      "_artifacts/json/debate_issue_001_r1_prosecute.json"
+    ],
+    "outputs": ["_artifacts/json/debate_issue_001_r1_defend.json"],
+    "depends_on": ["debate_issue_001_r1_prosecute"],
+    "status": "pending", "timeout_s": 1200
   },
-  "debate_merged_001_r1_synthesize": {
-    "id": "debate_merged_001_r1_synthesize", "type": "synthesize",
+  "debate_issue_001_r1_synthesize": {
+    "id": "debate_issue_001_r1_synthesize", "type": "synthesize",
     "agent": "gemini",
-    "prompt_path": "...",
-    "inputs": ["...", "workspace/<slug>/rounds/merged_001/round_1_defend.json"],
-    "outputs": ["workspace/<slug>/rounds/merged_001/round_1_synthesize.json"],
-    "depends_on": ["debate_merged_001_r1_defend"],
-    "status": "pending", "timeout_s": 900
+    "prompt_path": "_artifacts/prompts/debate_issue_001_r1_synthesize.md",
+    "inputs": [
+      "10_paper/paper.md",
+      "_artifacts/json/debate_issue_001_r1_prosecute.json",
+      "_artifacts/json/debate_issue_001_r1_defend.json"
+    ],
+    "outputs": ["_artifacts/json/debate_issue_001_r1_synthesize.json"],
+    "depends_on": ["debate_issue_001_r1_defend"],
+    "status": "pending", "timeout_s": 1200,
+    "output_format": "json_stdout"
   }
 }
 ```
@@ -246,7 +270,7 @@ Within a single issue's debate, the tickets are strictly sequential. Across issu
 
 After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synthesis output. If `status: "continue"` and `N < max_rounds`, emit round N+1 tickets for that issue. If `status` is `converged`, `split`, or `escalate`, do not emit more tickets for that issue.
 
-**Special case — split**: if the synthesis produces `split`, the child issues are appended to `ranked_issues.json` and wave-5-style round-1 tickets are emitted for each child.
+**Special case — split**: if the synthesis produces `split`, the child issues are appended to `_artifacts/json/ranked_issues_verified.json` and wave-5-style round-1 tickets are emitted for each child.
 
 **Budget tiering**: when emitting round 2+ tickets, check the issue's rank score. If the issue is in the bottom half of the top-N (low priority), do not emit further rounds even if synthesis says `continue`. This enforces the budget cap described in SKILL.md.
 
@@ -258,56 +282,59 @@ One ticket:
 {
   "final_report": {
     "id": "final_report", "type": "final_report", "agent": "claude",
-    "prompt_path": "workspace/<slug>/prompts/final_report.md",
+    "prompt_path": "_artifacts/prompts/final_report.md",
     "inputs": [
-      "workspace/<slug>/ranked_issues.json",
-      "workspace/<slug>/rounds/"
+      "_artifacts/json/ranked_issues_verified.json",
+      "_artifacts/json/debate_issue_001_r1_synthesize.json",
+      "... and the last synthesis for every debated issue ..."
     ],
     "outputs": [
-      "workspace/<slug>/final.json",
-      "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<slug>.md"
+      "_artifacts/json/final.json",
+      "60_final_report/referee_report.md"
     ],
     "depends_on": [ "list of all terminal debate tickets" ],
-    "status": "pending", "timeout_s": 600
+    "status": "pending", "timeout_s": 1200
   }
 }
 ```
 
+Note: `final_report` is a claude-typed ticket, executed inline. Claude writes both the structured `_artifacts/json/final.json` and the human-readable `60_final_report/referee_report.md`. It also updates `00_review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
+
 ## Run sequence
+
+Let `$PAPER` = the absolute path of the paper folder inside the Obsidian vault, e.g. `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/caballero-simsek-2024`.
 
 From Claude's perspective, the end-to-end flow is:
 
-1. `/disputatio paper.pdf` → Claude creates the workspace, copies the paper, generates wave 1 tickets, writes the wave 1 prompts, writes tickets.json
-2. Claude executes the `orient_claude` ticket itself (reads paper, writes paper_map.json) and marks it done in tickets.json
-3. Claude runs `agent-ctl run-dag workspace/<slug>/tickets.json --concurrent 3` — executes orient_codex and orient_gemini in parallel, blocks until complete
-4. Claude reads the completed orientations, generates wave 2 tickets and prompts, appends to tickets.json
-5. Claude executes wave-2 claude-typed discovery tickets itself (or run-dag handles them if Claude is fine with it blocking), and runs `agent-ctl run-dag` for codex/gemini tickets
-6. Claude reads discovery outputs, generates wave 3 (`merge_rank`) ticket — which is a claude-typed ticket, so Claude executes it directly (inline), writes `ranked_issues.json`, marks the ticket done
-7. Claude emits wave 4 (`verify`) ticket, runs `agent-ctl run-dag`, Gemini does web verification
-8. Claude reads `ranked_issues.json`, emits wave 5 (debate round 1 tickets for top N issues), runs `agent-ctl run-dag`
-9. For each completed synthesis, Claude reads it and decides whether to emit round N+1
-10. When all debate tickets are terminal, Claude emits the `final_report` ticket and executes it (writes final.json and Obsidian note)
+1. `/disputatio <path-to-paper.md>` → Claude creates `$PAPER/` and all subfolders (`00_review.md`, `10_paper/paper.md`, `20_orientation/`, ..., `_artifacts/{prompts,json,sessions}/`)
+2. Claude generates wave 1 tickets, writes the orientation prompts into `_artifacts/prompts/`, writes `_artifacts/tickets.json`
+3. Claude executes the `orient_claude` ticket inline (reads paper, writes `_artifacts/json/orient_claude.json`, marks the ticket done in tickets.json)
+4. Claude runs `agent-ctl run-dag $PAPER/_artifacts/tickets.json --cwd $PAPER --concurrent 3` — executes orient_codex and orient_gemini in parallel, blocks until complete. Session logs are auto-archived to `_artifacts/sessions/`
+5. Claude renders the three orientation JSON files into `20_orientation/{claude,codex,gemini}.md` and writes `20_orientation/00_orientation.md`
+6. Claude emits wave 2 discovery tickets and their prompts, appends to tickets.json, runs `agent-ctl run-dag` again
+7. Claude renders the 15 discovery JSON files into `30_discovery/m<N>/{claude,codex,gemini}.md` and writes the per-method summaries
+8. Claude executes `merge_rank` inline (reads the 15 discovery files, merges, scores, writes `_artifacts/json/ranked_issues.json`, `_artifacts/json/triage.json`, and the markdown in `40_ranking/`)
+9. Claude emits `verify` ticket, runs `agent-ctl run-dag`, Gemini does web verification
+10. Claude renders `40_ranking/verification.md` from the verified JSON
+11. Claude emits wave 5 (debate round 1 tickets for top N issues), runs `agent-ctl run-dag`
+12. For each completed synthesis, Claude renders the round files into `50_debates/<rank>_<slug>/r1_*.md` and decides whether to emit round N+1 based on the synthesis status
+13. When all debate tickets are terminal, Claude executes `final_report` inline (writes `_artifacts/json/final.json` and `60_final_report/referee_report.md`, updates `00_review.md` to `phase: complete`)
+
+Between waves, Claude's job is two-fold: **render** the JSON outputs into curated markdown, and **emit** the next wave's tickets. Both happen before the next `run-dag` invocation. See `templates/obsidian_render.md` for the exact rendering templates.
 
 ## Resumability
 
-Because every ticket is a file on disk, the entire pipeline can be resumed at any point. To resume a review:
+Because every ticket is a file on disk inside the paper folder, the entire pipeline can be resumed at any point. To resume a review:
 
-1. Navigate to the workspace
-2. Run `agent-ctl dag-status tickets.json` to see what's done
-3. Run `agent-ctl run-dag tickets.json` to execute any remaining ready tickets
-4. If Claude-typed tickets are pending (merge_rank, final_report, or round-emission logic), Claude resumes those inline
+1. Open the paper folder in Obsidian (or cd to it in the filesystem)
+2. `agent-ctl dag-status _artifacts/tickets.json` — inspect what is done
+3. `agent-ctl run-dag _artifacts/tickets.json --cwd .` — execute any remaining ready tickets
+4. If Claude-typed tickets are pending (orient_claude, merge_rank, final_report, or wave-emission logic), re-invoke `/disputatio` on the same paper folder and Claude resumes those inline
 
-The skill is fully resumable: closing Claude Code, restarting later, and re-running the skill on the same workspace picks up where it left off.
+The skill is fully resumable: closing Claude Code, restarting later, and re-running the skill on the same paper folder picks up where it left off.
 
-## Live Obsidian note
+## The Obsidian folder structure IS the review
 
-The Obsidian note at `notes/work/referee-reports/<slug>.md` is updated after each wave completes. Claude writes the note. Updates include:
+Unlike earlier designs, there is no separate Obsidian "live note" that tracks progress. The paper folder itself — with its numbered subfolders and the `00_review.md` at the top — IS the live report. It updates as Claude renders outputs into it. `00_review.md` tracks the current phase in its frontmatter and the top-of-file "Status" line.
 
-- After wave 1: paper metadata, "orientation complete" status
-- After wave 2: discovery summary per agent per method
-- After wave 3: ranked issue list with scores
-- After wave 4: web verification results
-- After each debate round: prosecution/defense/synthesis summary
-- After final_report: the complete review
-
-The Obsidian note is NOT a ticket output — it is a side effect of Claude's wave-transition work. This is deliberate: the note is for human consumption, the tickets are for machine durability.
+See `templates/obsidian_structure.md` for the full folder spec and `templates/obsidian_render.md` for how each JSON artifact is rendered into markdown.
