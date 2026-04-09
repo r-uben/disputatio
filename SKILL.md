@@ -240,11 +240,13 @@ To resume a review:
 |-----------|---------|-------|
 | Top-N for debate | 8 | Top 3 get full 3 rounds, middle 3 get 2 rounds, bottom 2 get 1 round |
 | Max rounds per issue | 3 | Short-circuit rules can end earlier |
-| Orientation timeout | 5 min | per agent |
-| Discovery timeout | 15 min | per agent, per method |
-| Debate round timeout | 10 min | per agent, per role |
+| Orientation timeout | 20 min | per agent — must accommodate web cross-referencing |
+| Discovery timeout | 20 min | per agent, per method |
+| Debate round timeout | 15 min | per agent, per role |
 | Web search budget | 5 queries | per issue |
-| Total runtime | ~2 hours | wall clock, parallelized |
+| Total runtime | ~2-3 hours | wall clock, parallelized |
+
+**Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
 
 ## Review criteria
 
@@ -252,17 +254,8 @@ The methods determine what counts as an issue. No external criteria file is need
 
 ## Live report (Obsidian)
 
-Maintain a live Obsidian note at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`. Update after each phase. Frontmatter:
+Maintain a live Obsidian note at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`. Claude writes and updates this note at every phase transition.
 
-```yaml
----
-tags: [referee-report, disputatio]
-paper: "..."
-authors: "..."
-venue: "..."
-status: orientation | discovery | merge | debate | complete
-date: YYYY-MM-DD
----
-```
+**Template**: `templates/obsidian_report.md` — defines the full structure, frontmatter, per-phase update rules, and the principle that the note is human-facing (not machine-readable). The note is a projection of the workspace, not a source of truth.
 
-The note body should have sections for each phase, with live updates as they complete.
+The note is the human-readable face of the review: a proper referee report that evolves as the debate unfolds. By the end, it should read as something you could send to the author of the paper or save for your records.

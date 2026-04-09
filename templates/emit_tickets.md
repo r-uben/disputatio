@@ -25,7 +25,17 @@ Every ticket has the same shape. Fields marked `(required)` must be present; oth
   "status": "pending",                       // pending | running | done | failed (default: pending)
   "attempt": 0,                              // retry counter (default: 0)
   "max_attempts": 2,                         // default 2
-  "timeout_s": 900,                          // per-attempt timeout (default: 300)
+  "timeout_s": 1200,                         // per-attempt timeout in seconds
+                                             // recommended: 1200 (20 min) for orient/discover
+                                             // — agents with web search access (codex, gemini)
+                                             // can take longer than the default 300s when they
+                                             // cross-reference external sources. Short timeouts
+                                             // cause the agent to be killed mid-file-write
+  "output_format": "json_stdout",            // optional. Set to "json_stdout" for agents that
+                                             // cannot write files directly (Gemini CLI).
+                                             // run-dag will salvage the JSON block from stdout
+                                             // and write it to the first output path
+                                             // automatically on successful completion.
   "model": "gpt-5.4",                        // optional model override
   "cwd": "/absolute/path",                   // optional working directory override
   "session_id": null,                        // filled by agent-ctl when launched
@@ -85,10 +95,10 @@ Claude generates tickets in waves. After each `agent-ctl run-dag` completes, Cla
     "prompt_path": "workspace/<slug>/prompts/orient_claude.md",
     "inputs": ["workspace/<slug>/paper.md"],
     "outputs": ["workspace/<slug>/orientation/claude/paper_map.json"],
-    "depends_on": [], "status": "pending", "timeout_s": 600
+    "depends_on": [], "status": "pending", "timeout_s": 1200
   },
-  "orient_codex": { "...same shape..." },
-  "orient_gemini": { "...same shape..." }
+  "orient_codex": { "...same shape, timeout_s 1200..." },
+  "orient_gemini": { "...same shape, timeout_s 1200, output_format: json_stdout..." }
 }
 ```
 
