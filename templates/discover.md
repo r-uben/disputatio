@@ -1,47 +1,32 @@
 # Discovery prompt
 
-You have already produced a paper map in the previous step. Now you will run the five generative methods on the map and the paper. Each method is in a separate file under `templates/methods/`. You must run **every** method and produce separate issue files for each.
+You will run one generative method on the paper using your paper map as the cache.
 
 ## Inputs
 
 - Paper text: `{{paper_path}}`
 - Paper map: `{{paper_map_path}}`
-- Method templates: `templates/methods/m2_contradiction.md`, `m3_transformation.md`, `m4_counterexample.md`, `m5_immanent.md`, `m6_disentangling.md`
+- Method: {{method_content}}
 
 ## Your task
 
-Run all five generative methods in sequence. For each method:
+Apply the method's procedure to the paper, using the paper map as your starting index. Collect every finding into a single output file.
 
-1. Read the method template carefully
-2. Apply the method's procedure to the paper, using the paper map as your starting index
-3. Write each finding as a separate JSON issue file
+## Output
 
-Do **not** skip a method because you found enough issues with a previous one. Each method is designed to find issues the others miss. Running all five is the point.
+Write a single JSON file to: `{{output_path}}`
 
-## Output directory structure
+The file contains all issues found by this method:
 
-```
-{{output_dir}}/
-├── m2/
-│   ├── issue_001.json
-│   └── ...
-├── m3/
-│   ├── issue_001.json
-│   └── ...
-├── m4/
-│   ├── issue_001.json
-│   └── ...
-├── m5/
-│   ├── issue_001.json
-│   └── ...
-└── m6/
-    ├── issue_001.json
-    └── ...
+```json
+{
+  "issues": [ ... ]
+}
 ```
 
-## Issue file format
+## Issue schema
 
-Every issue file, regardless of which method produced it, uses the same schema:
+Every issue uses the same schema:
 
 ```json
 {

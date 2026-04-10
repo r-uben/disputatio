@@ -4,8 +4,8 @@ Gemini is the designated external-evidence specialist because its CLI has web se
 
 ## Inputs
 
-- Ranked issues: `workspace/<paper-slug>/ranked_issues.json`
-- Paper map: `workspace/<paper-slug>/paper_map.json`
+- Ranked issues: `_artifacts/json/ranked_issues.json`
+- Paper maps: `_artifacts/json/orient_<agent>.json`
 
 ## Your task
 
@@ -27,7 +27,7 @@ For each issue to verify:
 
 ## Output
 
-Append a `web_verification` field to each verified issue in `ranked_issues.json`:
+Write the full issue list with verification results to a **new file** `_artifacts/json/ranked_issues_verified.json`. Do not overwrite `ranked_issues.json`. Each verified issue gets a `web_verification` field:
 
 ```json
 {
@@ -47,7 +47,7 @@ Append a `web_verification` field to each verified issue in `ranked_issues.json`
 }
 ```
 
-If verification **refutes** the issue, update the issue's `rank_score` by subtracting 3 — it should drop in the priority list. If the issue's new score is too low for the budget cut, remove it from the debate phase (record in `triage.json` as "resolved by verification").
+If verification **refutes** the issue, update the issue's `rank_score` by subtracting 3 — it should drop in the priority list. If the issue's new score is too low for the budget cut, remove it from the debate phase (record in `_artifacts/json/triage.json` as "resolved by verification").
 
 If verification **confirms** the issue, update the issue's `rank_score` by adding 2 — it rises in priority.
 

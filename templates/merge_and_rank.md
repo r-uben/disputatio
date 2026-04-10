@@ -4,13 +4,13 @@ After 3 agents have each run 5 discovery methods, you have up to 15 sets of cand
 
 ## Inputs
 
-All issues from all agents and methods:
+All 15 discovery JSON files (3 agents × 5 methods), each containing `{"issues": [...]}`:
 
 ```
-workspace/<paper-slug>/discovery/
-├── claude/{m2,m3,m4,m5,m6}/issue_*.json
-├── codex/{m2,m3,m4,m5,m6}/issue_*.json
-└── gemini/{m2,m3,m4,m5,m6}/issue_*.json
+_artifacts/json/discover_claude_m2.json
+_artifacts/json/discover_claude_m3.json
+...
+_artifacts/json/discover_gemini_m6.json
 ```
 
 ## Procedure
@@ -23,7 +23,7 @@ Discard candidate issues that are:
 - **Singleton findings with low confidence**: found by only one agent, only one method, with `confidence: low` and `impact: local` or `unclear`
 - **Style/grammar complaints**: the paper's writing could be clearer but nothing is wrong
 
-Record what was triaged and why in `workspace/<paper-slug>/triage.json`.
+Record what was triaged and why in `_artifacts/json/triage.json`.
 
 ### Step 2: Deduplication
 
@@ -72,7 +72,7 @@ Maximum score: 3 + 6 + 3 + 3 = 15.
 
 ### Step 4: Produce the ranked list
 
-Output a single file `workspace/<paper-slug>/ranked_issues.json` containing all merged issues sorted by rank score descending. Format:
+Output a single file `_artifacts/json/ranked_issues.json` containing all merged issues sorted by rank score descending. Format:
 
 ```json
 {
