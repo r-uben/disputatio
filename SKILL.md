@@ -7,7 +7,7 @@ description: High-precision academic paper review via seven-method dialectic deb
 
 Review an academic paper as a top-journal referee would, using seven methods of critical dialectic executed by three independent AI agents. The goal is not to be polite — the goal is to subject the paper to the kind of scrutiny that makes it publishable.
 
-Orchestration is durable: every agent call is a **ticket** in a DAG on disk. The pipeline is resumable, auditable, and reproducible by construction.
+Orchestration is durable: every agent call is a **ticket** in a DAG on disk. The pipeline is resumable, auditable, and replayable by construction.
 
 ## Usage
 
@@ -48,7 +48,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 
 **Automatic session archiving**: `agent-ctl run-dag` copies the session log (raw agent reasoning trace) into `<tickets_parent>/sessions/<ticket_id>.log` when a ticket finishes — both on success and on failure. The archive location is derived from the tickets.json parent directory, so for disputatio it lands in `<paper-folder>/_artifacts/sessions/`. Nothing is deleted; every reasoning trace is preserved forever.
 
-**Key benefit — full provenance**: every agent call is reproducible. The ticket stores the prompt path, inputs, outputs, timing, attempt count, and session ID. Combined with the stored prompt files, output files, and archived session logs, the entire review is replayable and auditable.
+**Key benefit — full provenance**: every agent call is replayable. The ticket stores the prompt path, inputs, outputs, timing, attempt count, and session ID. Combined with the stored prompt files, output files, and archived session logs, the entire review is replayable and auditable.
 
 **Monitoring**: `agent-ctl dag-status <paper-folder>/_artifacts/tickets.json` prints a summary of ticket states at any time.
 

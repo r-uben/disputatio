@@ -85,28 +85,28 @@ date: <YYYY-MM-DD>
 
 | Symbol | Description | Value | Source |
 |--------|-------------|-------|--------|
-| θ | Poisson hazard rate | 0.5 | Chodorow-Reich et al. (2021) |
+| <symbol> | <description> | <value> | <source> |
 ...
 
 ## Datasets
 
 | Name | Source | Period | Used for |
 |------|--------|--------|----------|
-| TIPS forwards | Federal Reserve | 2019-2023 | Measuring p^MB(t) |
+| <name> | <source> | <period> | <used_for> |
 ...
 
 ## Load-bearing citations
 
 | Citation | Used for | Claim attributed |
 |----------|----------|------------------|
-| Chodorow-Reich, Nenov, Simsek (2021) | MPC calibration | 3-cent stock MPC |
+| <cite> | <used_for> | <claim_attributed> |
 ...
 
 ## Appendix references
 
 | Reference | Used for | Main-text location |
 |-----------|----------|--------------------|
-| IA Proposition IA.1 | Fixed-point characterization | Section I.C.2 |
+| <ref> | <used_for> | <location_in_main_text> |
 ...
 
 ## Section anchors
@@ -121,7 +121,7 @@ date: <YYYY-MM-DD>
 
 | Location | Description |
 |----------|-------------|
-| Page 2 | Entire page replaced by unrelated ARDL/ECM discussion |
+| <location> | <description> |
 ...
 ```
 

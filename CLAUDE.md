@@ -2,7 +2,7 @@
 
 High-precision academic paper review via seven-method dialectic debate. This is a Claude Code skill, not a Python package — Claude Code is the runtime.
 
-**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`<paper-folder>/_artifacts/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. Session logs are auto-archived. The entire review is resumable, auditable, and reproducible. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
+**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`<paper-folder>/_artifacts/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. Session logs are auto-archived. The entire review is resumable, auditable, and replayable. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
 
 **Obsidian is the workspace.** Every review is a self-contained folder inside the Obsidian vault at `notes/work/referee-reports/tests/<paper-slug>/`. Curated markdown lives in numbered folders (`00_review.md`, `10_paper/`, `20_orientation/`, ...); raw artifacts live in `_artifacts/` as non-markdown files. See `templates/obsidian_structure.md` and `templates/obsidian_render.md`.
 
@@ -76,7 +76,7 @@ See `templates/obsidian_structure.md` for the full folder spec.
 
 ### Key design decisions
 
-- **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, reproducible
+- **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, replayable
 - **No Python runtime** for the skill logic — Claude Code orchestrates, agents communicate via files, agent-ctl is the only moving part
 - **Three independent readers** — each agent produces its own paper map; maps are never merged. Cross-agent consensus on issues is the strongest signal
 - **Methods, not labels** — prompts describe procedures operationally. Agents execute the method without knowing its philosophical lineage

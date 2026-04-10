@@ -4,7 +4,7 @@ This method provides the **format** for conducting a debate about a single point
 
 ## Procedure
 
-1. **Formulate the quaestio.** State the point under examination as a precise yes/no question. Not "the paper's calibration is wrong" but "Is the calibration θ=0.5 consistent with the paper's own definition of θ as a Poisson hazard rate?"
+1. **Formulate the quaestio.** State the point under examination as a precise yes/no question. Not "the paper's calibration is wrong" but "Is the calibrated value of X consistent with the paper's own definition of X?"
 
 2. **Generate objections.** Produce at least **three independent objections** to the affirmative answer. Independence means no two objections rest on the same core argument — they must come from different directions.
 
