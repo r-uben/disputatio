@@ -4,7 +4,7 @@ Find places where the paper contradicts itself. The prosecutor does not argue �
 
 ## Procedure
 
-1. **Extract claims.** Read the paper and list at least twenty concrete claims it makes. A claim is a statement the author commits to: equations, propositions, numerical values, assumed conditions, methodological rules, interpretive statements. Include both the setup and the results. Include footnotes — contradictions often hide there.
+1. **Extract claims.** Read the paper and list every concrete claim it makes — be exhaustive. A claim is a statement the author commits to: equations, propositions, numerical values, assumed conditions, methodological rules, interpretive statements. Include both the setup and the results. Include footnotes — contradictions often hide there.
 
 2. **Pair-check for direct contradiction.** For every pair of claims, check whether they can both be true at the same time. Cases:
    - **Direct**: The paper asserts X in one place and not-X in another. Rare but devastating.

@@ -115,7 +115,7 @@ The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` fo
 - **Pre-debate triage**: if an issue scored below the cutoff, skip it
 - **Round 1 early-kill**: if the round 1 synthesis produces `impact: none`, stop — the issue dies
 - **Stalled debate**: if round N synthesis is materially identical to round N-1 synthesis, mark `converged` and stop
-- **Low priority cap**: issues in the bottom half of the top-N get at most 1 round; middle get 2; top 2-3 get the full 3 rounds
+- **Low priority cap**: budget tiering applies (see Configuration) — bottom third of top-N get 1 round, middle third get `max-rounds - 1`, top third get the full budget
 
 ### Phase 4 — Final report
 
@@ -242,17 +242,22 @@ To resume a review:
 3. `agent-ctl run-dag <paper-folder>/_artifacts/tickets.json` — execute any remaining ready tickets
 4. Re-invoke `/disputatio` on the same paper folder — Claude picks up the wave-transition work from where it left off (if any Claude-typed tickets are pending, they execute next)
 
-## Budget defaults
+## Configuration
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| Top-N for debate | 8 | Top 3 get full 3 rounds, middle 3 get 2 rounds, bottom 2 get 1 round |
-| Max rounds per issue | 3 | Short-circuit rules can end earlier |
-| Orientation timeout | 20 min | per agent — must accommodate web cross-referencing |
-| Discovery timeout | 20 min | per agent, per method |
-| Debate round timeout | 15 min | per agent, per role |
-| Web search budget | 5 queries | per issue |
-| Total runtime | ~2-3 hours | wall clock, parallelized |
+All tunables are CLI parameters with sensible defaults. Templates reference these via `{{config.*}}` placeholders — no thresholds are hardcoded in prompts.
+
+| Parameter | CLI flag | Default | Notes |
+|-----------|----------|---------|-------|
+| Top-N for debate | `--top-n` | 8 | Issues above this enter debate; rest go to appendix |
+| Max rounds per issue | `--max-rounds` | 3 | Short-circuit rules can end earlier |
+| Verification score delta (confirmed) | `--verify-boost` | +2 | Added to rank score when web evidence confirms |
+| Verification score delta (refuted) | `--verify-penalty` | -3 | Subtracted from rank score when web evidence refutes |
+| Web search budget | `--web-budget` | 5 | Max searches per issue during verification |
+| Orientation timeout | `--orient-timeout` | 1200s | Per agent — must accommodate web cross-referencing |
+| Discovery timeout | `--discover-timeout` | 1200s | Per agent, per method |
+| Debate round timeout | `--debate-timeout` | 900s | Per agent, per role |
+
+**Budget tiering** is derived from `--top-n` and `--max-rounds`, not hardcoded. The top third of debated issues get the full round budget, the middle third get `max-rounds - 1`, the bottom third get 1 round. This scales automatically with different top-n values.
 
 **Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
 

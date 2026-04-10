@@ -26,7 +26,7 @@ State the point under debate as a precise yes/no question. If this is round 1, t
 
 ### Step 2: Pick 2-3 methods
 
-Based on the type of issue, select **two methods** from M2-M6 that are most likely to produce strong objections. Add a third only if the issue is high-priority (rank score ≥ 10). Use this selection guide:
+Based on the type of issue, select **two methods** from M2-M6 that are most likely to produce strong objections. Add a third if the issue is in the top third of debated issues by rank score. Use this selection guide:
 
 - **Internal inconsistency, text-vs-model mismatch**: M2 + M5
 - **Theorem scope, boundary failure, hidden assumption**: M3 + M4
@@ -40,9 +40,9 @@ State which methods you selected and why.
 
 For each selected method, follow its procedure (see its template file) **focused on this specific issue**. You are not re-discovering the paper — you are deepening the attack on this particular point.
 
-### Step 4: Produce at least three objections
+### Step 4: Produce independent objections
 
-Combine the outputs of the selected methods into a list of **at least three independent objections**. Each objection must:
+Combine the outputs of the selected methods into independent objections — as many as the issue warrants, but never fewer than the number of methods selected. Each objection must:
 - Come from a different angle (not three restatements of the same point)
 - Have its own chain of reasoning
 - Cite a specific passage or equation in the paper
@@ -67,9 +67,9 @@ Write a single JSON file to: `{{output_path}}`
 ```json
 {
   "round": 1,
-  "quaestio": "Is the calibration θ=0.5 consistent with the paper's definition of θ as a Poisson hazard rate?",
+  "quaestio": "precise yes/no question derived from the issue's claim",
   "methods_selected": ["m2", "m5"],
-  "methods_selection_reasoning": "This is an internal consistency issue between the theoretical definition and the empirical calibration. M2 targets the direct contradiction; M5 targets the paper's commitment to the Poisson interpretation.",
+  "methods_selection_reasoning": "why these methods are the right tools for this issue type",
   "objections": [
     {
       "id": "obj_1",
