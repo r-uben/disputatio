@@ -389,6 +389,27 @@ All tunables are CLI parameters with sensible defaults. Templates reference thes
 
 **Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
 
+### Model routing
+
+Not every task needs the strongest model. Use cheaper/faster models for mechanical work, reserve expensive models for judgment calls. When emitting tickets, set the `model` field per this table:
+
+| Task | Claude | Codex | Gemini |
+|------|--------|-------|--------|
+| Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery (M0-M6) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Rendering (JSON→md) | haiku | — | — |
+| Merge & Rank | **opus** | — | — |
+| Prosecution (top third) | **opus** | — | — |
+| Prosecution (rest) | sonnet | — | — |
+| Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
+| Synthesis | **opus** | — | — |
+| Verification (web) | — | — | gemini-3.1-pro-preview |
+| Final report | **opus** | — | — |
+
+This cuts Opus usage to ~30% of the pipeline (merge, top prosecutions, synthesis, final report). The remaining 70% runs on Sonnet/Haiku/mini models at a fraction of the cost.
+
+For Claude subagents, pass the `model` parameter: `Agent(model="sonnet")` or `Agent(model="haiku")`. For external agents, set the `model` field in the ticket and agent-ctl passes it via `-m`.
+
 ## Review criteria
 
 The methods determine what counts as an issue. No external criteria file is needed — each method's template defines what it flags.

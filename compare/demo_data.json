@@ -1,0 +1,161 @@
+{
+  "demos": [
+    {
+      "paper": {
+        "title": "Inference in molecular population genetics",
+        "authors": "Matthew Stephens and Peter Donnelly",
+        "venue": "JRSS-B",
+        "year": 2000,
+        "pages": 51,
+        "domain": "computational statistics / population genetics",
+        "slug": "population-genetics"
+      },
+      "pipeline": {
+        "ocr": {"method": "pdftotext", "time_s": 2, "quality": "ligature corruption, math garbled"},
+        "orientation": {
+          "time_s": 600,
+          "agents": {
+            "claude": {"claims": 13, "equations": 39, "propositions": 7},
+            "codex": {"claims": 6, "equations": 33, "propositions": 2},
+            "gemini": {"claims": 3, "equations": 8, "propositions": 3, "note": "degraded by 429s, pre-fix"}
+          }
+        },
+        "discovery": {
+          "time_s": 1020,
+          "sweeps": 18,
+          "raw_issues": 109,
+          "by_agent": {"claude": 60, "codex": 27, "gemini": 22}
+        },
+        "merge_rank": {
+          "time_s": 540,
+          "raw": 109,
+          "triaged": 22,
+          "merged": 22,
+          "top_n": 8
+        },
+        "verification": {
+          "time_s": 1100,
+          "issues_checked": 9,
+          "agent": "gemini"
+        },
+        "debate": {
+          "rounds": 1,
+          "issues_debated": 8,
+          "prosecution_time_s": 300,
+          "defense_time_s": 480,
+          "synthesis_time_s": 345
+        },
+        "total_time_s": 4500,
+        "total_tickets": 31,
+        "total_files": 100
+      },
+      "findings": {
+        "material": [
+          {
+            "title": "Unproven finite variance of IS weights",
+            "score": 15,
+            "cross_agent": "all 3",
+            "refined_claim": "CLT-based standard errors require finite IS-weight variance, proven only for infinite sites. The GPD diagnostic is proposed but never applied."
+          },
+          {
+            "title": "No approximation bound for hat{pi}",
+            "score": 14,
+            "cross_agent": "all 3",
+            "refined_claim": "The core approximation has no formal accuracy guarantee outside PIM and n=1. 'Grounds for optimism' substitutes for a theorem."
+          }
+        ],
+        "local": 6,
+        "appendix": 14
+      },
+      "comparison": {
+        "reference_review": {
+          "source": "coarse.ink best",
+          "score": "5.67/6.0",
+          "comments": 15,
+          "strengths": "Precise equation-level catches (Remark 1 factor-of-2, SIS indexing typo, proof subscript slip)",
+          "weakness": "Does not question the paper's most-cited IS-vs-MCMC conclusions"
+        },
+        "coarse_sonnet": {
+          "source": "coarse.ink Sonnet 4.6",
+          "comments": 16,
+          "strengths": "Good structural critique (finite variance, hat{pi} bounds, driving value)",
+          "weakness": "Several OCR artifact false positives"
+        },
+        "disputatio": {
+          "comments": "2 material + 6 local + 14 appendix",
+          "strengths": "Cross-agent consensus on top issues, debate-hardened findings, calibrated severity (6 issues downgraded from material to local after defense)",
+          "weakness": "Fewer close-reading catches than reference review"
+        }
+      }
+    },
+    {
+      "paper": {
+        "title": "Coset Codes--Part I: Introduction and Geometrical Classification",
+        "authors": "G. David Forney, Jr.",
+        "venue": "IEEE Trans. IT",
+        "year": 1988,
+        "pages": 29,
+        "domain": "coding theory / information theory",
+        "slug": "coset-codes"
+      },
+      "pipeline": {
+        "ocr": {"method": "socr 2.0.0 (gemini engine)", "time_s": 289, "quality": "clean LaTeX, quality audit passed"},
+        "orientation": {
+          "time_s": 80,
+          "agents": {
+            "claude": {"claims": 10, "equations": 12, "propositions": 7},
+            "codex": {"claims": 6, "equations": 37, "propositions": 0},
+            "gemini": {"claims": 6, "equations": 4, "propositions": 6, "note": "wrote file directly, no 429s (post-fix)"}
+          }
+        },
+        "discovery": {
+          "time_s": 600,
+          "sweeps": 18,
+          "raw_issues": 129,
+          "by_agent": {"claude": 37, "codex": 25, "gemini": 67},
+          "gemini_improvement": "3x vs previous run (22 -> 67), 0 files salvaged"
+        },
+        "merge_rank": {
+          "time_s": 300,
+          "raw": 129,
+          "triaged_out": 43,
+          "merged": 18,
+          "top_n": 8
+        },
+        "debate": {
+          "rounds": 1,
+          "issues_debated": 8,
+          "material_after_debate": 1,
+          "local_after_debate": 5,
+          "dropped_after_debate": 2
+        },
+        "total_time_s": 3600
+      },
+      "findings": {
+        "material": [
+          {
+            "title": "Trellis-vs-lattice conclusion lacks full causal identification",
+            "score": 15,
+            "cross_agent": "all 3",
+            "refined_claim": "Directionally correct but quantitatively uncertain due to approximate metric (0.2 dB rule), inconsistent N_0 definitions, and uncontrolled search-effort confound."
+          }
+        ],
+        "local": 5,
+        "appendix": 10
+      },
+      "comparison": {
+        "reference_review": {
+          "source": "coarse.ink best",
+          "comments": 19,
+          "strengths": "Class VI minimum distance argument, decoding complexity inconsistency, mod-4 subcode nesting",
+          "weakness": "Does not question the trellis-vs-lattice conclusion"
+        },
+        "disputatio": {
+          "comments": "1 material + 5 local + 10 appendix",
+          "strengths": "Caught the paper's most-cited conclusion as methodologically vulnerable — neither reference review flagged this",
+          "weakness": "Fewer equation-level close-reading catches"
+        }
+      }
+    }
+  ]
+}
