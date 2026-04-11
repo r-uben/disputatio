@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+uv.lock
+
+# PDFs are large — don't commit
+*.pdf
+
+# Paper text extracted from PDFs
+paper.md
