@@ -232,15 +232,143 @@ $A result 01
 
 **Retry logic**: if an agent fails (timeout, rate limit, hallucinated success), retry once with a simplified prompt. If it fails again, default to KEEP (preserve the issue as-is, note the failure in the checkpoint, continue).
 
-## Checkpointing
+## Execution
 
-**Tickets are the checkpoint.** `_artifacts/tickets.json` records the status of every unit of work. There is no separate checkpoint file.
+When `/disputatio <path>` is invoked, Claude runs a decision loop. Each iteration: read state from disk, match the current phase, do ONE thing, write results to disk. No multi-step sequential protocol — just a lookup table.
 
-To resume a review:
-1. Open the paper folder in Obsidian (or navigate to it in the filesystem)
-2. `agent-ctl dag-status <paper-folder>/_artifacts/tickets.json` — inspect what is done
-3. `agent-ctl run-dag <paper-folder>/_artifacts/tickets.json` — execute any remaining ready tickets
-4. Re-invoke `/disputatio` on the same paper folder — Claude picks up the wave-transition work from where it left off (if any Claude-typed tickets are pending, they execute next)
+**State**: `$PAPER/_artifacts/tickets.json` (the DAG) + `$PAPER/00_review.md` frontmatter (human-readable phase).
+
+**Loop**: repeat until `final_report` ticket status is `done`:
+
+```
+READ tickets.json
+MATCH current state → action:
+
+┌─────────────────────────────────────┬──────────────────────────────────────────────────────┐
+│ State                               │ Action                                               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ no tickets.json exists              │ INIT: create workspace, copy paper, emit wave 1,     │
+│                                     │ write tickets.json                                   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ orient_claude = pending             │ Execute orient_claude inline: read paper, produce     │
+│                                     │ paper map JSON, mark done                            │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ orient_codex or orient_gemini       │ Run: $A run-dag tickets.json --concurrent 3          │
+│ = pending                           │ Wait for completion. Validate outputs.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all orient = done,                  │ RENDER orientation (JSON → markdown in 20_orient/).  │
+│ no discover tickets exist           │ Emit wave 2 (18 discovery tickets). Write prompts.   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ discover_claude_* = pending         │ Execute Claude discovery tickets inline (6 methods).  │
+│                                     │ Write JSON outputs. Mark each done.                  │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ discover_codex_* or                 │ Run: $A run-dag tickets.json --concurrent 3          │
+│ discover_gemini_* = pending         │ Wait for completion. Validate outputs.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all discover = done,                │ RENDER discovery (JSON → markdown in 30_discovery/). │
+│ no merge_rank ticket exists         │ Execute merge_rank inline: read 18 JSONs, triage,    │
+│                                     │ dedupe, rank, write ranked_issues.json + triage.json.│
+│                                     │ Render 40_ranking/ markdown. Emit verify ticket.     │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ verify = pending                    │ Run: $A run-dag tickets.json --concurrent 1          │
+│                                     │ (Gemini web verification). Validate output.          │
+│                                     │ Render 40_ranking/verification.md.                   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
+│ no debate tickets exist             │ Apply budget tiering. Write prompts.                 │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ debate tickets pending/running      │ For Claude-typed debate tickets: execute inline.      │
+│                                     │ For external: $A run-dag --concurrent 2              │
+│                                     │ After each synthesis: read output, check status.     │
+│                                     │ If continue + budget remains → emit next round.      │
+│                                     │ If converged/none → mark issue terminal.             │
+│                                     │ Render debate markdown in 50_debates/.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all debate tickets terminal,        │ Execute final_report inline: read all syntheses +     │
+│ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
+│                                     │ Update 00_review.md to phase: complete.              │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ final_report = done                 │ EXIT. Review complete.                               │
+└─────────────────────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+### INIT procedure
+
+When no `tickets.json` exists:
+
+1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
+2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/<paper-slug>/`
+3. Create directory structure: `mkdir -p $PAPER/{10_paper,20_orientation,30_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},40_ranking,50_debates,60_final_report,_artifacts/{prompts,json,sessions}}`
+4. If input is `.pdf`: run `socr <input>` → copy result to `$PAPER/10_paper/paper.md`. If input is `.md`: copy directly.
+5. Copy the PDF (if available) to `$PAPER/10_paper/paper.pdf`
+6. Write `$PAPER/00_review.md` with frontmatter: `phase: orientation`
+7. Generate 3 orientation prompts (see "Prompt generation" below)
+8. Write `$PAPER/_artifacts/tickets.json` with 3 orient tickets
+
+### Prompt generation
+
+To generate a prompt for a ticket:
+
+1. Read the relevant template from `templates/` (e.g., `orient.md`, `discover.md`)
+2. For discovery: also read the method template from `templates/methods/<method>.md`
+3. Substitute placeholders:
+   - `{{paper_text}}` → contents of `10_paper/paper.md` (used in orient prompts only)
+   - `{{paper_path}}` → `10_paper/paper.md` (relative path for agents to read)
+   - `{{paper_map_path}}` → `_artifacts/json/orient_<agent>.json`
+   - `{{output_path}}` → `_artifacts/json/<ticket_id>.json`
+   - `{{method_content}}` → full text of the method template
+   - `{{issue_state}}`, `{{prosecution}}`, `{{defense}}`, `{{history}}` → debate context
+   - `{{config.*}}` → configuration values
+4. Write the result to `$PAPER/_artifacts/prompts/<ticket_id>.md`
+
+### Inline execution (Claude-typed tickets)
+
+When Claude executes a ticket inline:
+
+1. Read the prompt at `_artifacts/prompts/<ticket_id>.md`
+2. Read all input files listed in the ticket
+3. Follow the prompt instructions (produce paper map / run method / merge issues / write report)
+4. Write the JSON output to `_artifacts/json/<ticket_id>.json`
+5. Write a reasoning summary to `_artifacts/sessions/<ticket_id>.log` (what was done, key decisions, issues found)
+6. Apply the rendering spec from `templates/obsidian_render.md` to write curated markdown
+7. Update `tickets.json`: set status to `done`, set `finished_at`
+
+### Rendering
+
+After each wave, render JSON outputs to Obsidian markdown per `templates/obsidian_render.md`. The JSON is the source of truth; the markdown is a human-readable projection. Both are preserved.
+
+### Output validation (verification gates)
+
+Before proceeding to the next phase, validate outputs:
+
+- **Orientation**: each JSON must have `main_claims` with >=5 entries. If fewer, retry once.
+- **Discovery**: each JSON must have `issues` array with >=1 entry. Empty outputs get one retry.
+- **Merge_rank**: `ranked_issues.json` must have >=3 merged issues. Fewer triggers a warning (not a retry — paper may genuinely have few issues).
+- **Debate synthesis**: JSON must have `refined_claim`, `impact`, and `status` fields. Malformed → retry.
+
+### Logging contract
+
+Every action writes to disk. Nothing lives only in Claude's context.
+
+| What | Where | When |
+|------|-------|------|
+| Prompts sent to agents | `_artifacts/prompts/<ticket_id>.md` | Before launching ticket |
+| Raw JSON output | `_artifacts/json/<ticket_id>.json` | After ticket completes |
+| Agent session logs | `_artifacts/sessions/<ticket_id>.log` | Auto-archived by agent-ctl; written by Claude for inline tickets |
+| Curated markdown | Numbered folders (20_orientation/, etc.) | After each wave |
+| DAG state | `_artifacts/tickets.json` | After every action |
+| Phase status | `00_review.md` frontmatter | At each major transition |
+
+### Resumability
+
+On re-invocation with an existing paper folder:
+
+1. Read `$PAPER/_artifacts/tickets.json`
+2. Skip all `done` tickets
+3. Match current state in the decision table above
+4. Resume from the first non-terminal state
+
+This works because every action writes to disk before proceeding. If Claude crashes mid-wave, the completed tickets are marked `done` and the uncompleted ones are still `pending`.
 
 ## Configuration
 

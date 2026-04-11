@@ -13,7 +13,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ## Tickets
 
 ### [T1] agent-ctl: prompt delivery via temp file and stdin
-- **Status:** pending
+- **Status:** done
 - **Priority:** high (blocks everything)
 - **Files:** `~/.claude/skills/agent_ctl.py`
 - **Description:** When prompt exceeds 10KB, write it to a temp file and deliver via stdin (not shell argument expansion). `$(cat /tmp/file)` is fragile with LaTeX special chars (Codex/Gemini both flagged this). Instead: pipe the file content via stdin to the agent process.
@@ -36,7 +36,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ---
 
 ### [T2] SKILL.md: decision-table orchestration + full logging
-- **Status:** pending
+- **Status:** done
 - **Priority:** high
 - **Files:** `SKILL.md`
 - **Description:** Replace the current descriptive protocol with an executable decision table. Claude reads tickets.json, matches the current state, does ONE thing, writes results, and loops. Every action writes output to the Obsidian workspace. Nothing lives only in Claude's context.
@@ -82,7 +82,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ---
 
 ### [T3] M0 close-reading method template
-- **Status:** pending
+- **Status:** done
 - **Priority:** medium
 - **Files:** `templates/methods/m0_close_reading.md`
 - **Description:** Mechanical line-by-line proofreading method. Addresses the gap vs coarse.ink: they catch 11 unique typos/notation errors we miss. This is NOT conceptual critique (M2-M6 handle that). This is surface-level error detection.
@@ -106,7 +106,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ---
 
 ### [T4] emit_tickets.md: add M0 to Wave 2
-- **Status:** pending
+- **Status:** done
 - **Priority:** medium
 - **Files:** `templates/emit_tickets.md`
 - **Description:** Update the ticket emission protocol to include M0 close-reading tickets in the discovery wave.
@@ -124,7 +124,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ---
 
 ### [T5] Verification gates (from Codex review)
-- **Status:** pending
+- **Status:** done (folded into T2's "Output validation" section)
 - **Priority:** medium
 - **Files:** `SKILL.md`
 - **Description:** Codex flagged that Claude will "self-certify weak work" without verification gates. Add explicit output validation between phases.

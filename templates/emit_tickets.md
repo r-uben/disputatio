@@ -118,10 +118,21 @@ All three prompt files are written to `prompts/` by substituting `{{paper_path}}
 
 ### Wave 2 — Discovery (emitted after orientation)
 
-For each of the three agents, emit five discovery tickets (M2-M6):
+For each of the three agents, emit six discovery tickets (M0, M2-M6):
 
 ```json
 {
+  "discover_claude_m0": {
+    "id": "discover_claude_m0", "type": "discover", "agent": "claude",
+    "prompt_path": "_artifacts/prompts/discover_claude_m0.md",
+    "inputs": [
+      "10_paper/paper.md",
+      "_artifacts/json/orient_claude.json"
+    ],
+    "outputs": ["_artifacts/json/discover_claude_m0.json"],
+    "depends_on": ["orient_claude"],
+    "status": "pending", "timeout_s": 1200
+  },
   "discover_claude_m2": {
     "id": "discover_claude_m2", "type": "discover", "agent": "claude",
     "prompt_path": "_artifacts/prompts/discover_claude_m2.md",
@@ -137,12 +148,15 @@ For each of the three agents, emit five discovery tickets (M2-M6):
   "discover_claude_m4": { "...", "depends_on": ["orient_claude"] },
   "discover_claude_m5": { "...", "depends_on": ["orient_claude"] },
   "discover_claude_m6": { "...", "depends_on": ["orient_claude"] },
+  "discover_codex_m0":  { "...", "depends_on": ["orient_codex"] },
   "discover_codex_m2":  { "...", "depends_on": ["orient_codex"] },
-  // ... etc, 15 total discovery tickets
+  // ... etc, 18 total discovery tickets (3 agents x 6 methods)
 }
 ```
 
 Discovery tickets for one agent depend only on that agent's orientation. This preserves independence and maximizes parallelism.
+
+**M0 (close reading)** is a mechanical proofreading pass. It catches typos, notation errors, sign mistakes, and wording slips. See `templates/methods/m0_close_reading.md`.
 
 Each discovery ticket produces a **single JSON file** containing all issues that agent found with that method. The JSON schema is `{"issues": [{"id": "...", "claim": "...", ...}, ...]}`. Outputting a single file per ticket simplifies validation: run-dag just checks the file exists and is non-empty.
 
@@ -164,20 +178,21 @@ One ticket:
     "id": "merge_rank", "type": "merge_rank", "agent": "claude",
     "prompt_path": "_artifacts/prompts/merge_rank.md",
     "inputs": [
+      "_artifacts/json/discover_claude_m0.json",
       "_artifacts/json/discover_claude_m2.json",
       "_artifacts/json/discover_claude_m3.json",
-      "... and 13 more discovery JSON files ..."
+      "... and 15 more discovery JSON files (18 total) ..."
     ],
     "outputs": [
       "_artifacts/json/ranked_issues.json",
       "_artifacts/json/triage.json"
     ],
     "depends_on": [
-      "discover_claude_m2", "discover_claude_m3", "discover_claude_m4",
-      "discover_claude_m5", "discover_claude_m6",
-      "discover_codex_m2", "discover_codex_m3", "discover_codex_m4",
-      "discover_codex_m5", "discover_codex_m6",
-      "discover_gemini_m2", "discover_gemini_m3", "discover_gemini_m4",
+      "discover_claude_m0", "discover_claude_m2", "discover_claude_m3",
+      "discover_claude_m4", "discover_claude_m5", "discover_claude_m6",
+      "discover_codex_m0", "discover_codex_m2", "discover_codex_m3",
+      "discover_codex_m4", "discover_codex_m5", "discover_codex_m6",
+      "discover_gemini_m0", "discover_gemini_m2", "discover_gemini_m3",
       "discover_gemini_m5", "discover_gemini_m6"
     ],
     "status": "pending", "timeout_s": 1200
