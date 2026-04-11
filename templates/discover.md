@@ -47,6 +47,7 @@ Every issue uses the same schema:
 ```
 
 Notes:
+- **`quote` is REQUIRED for every issue.** Copy the exact text from the paper. An issue without a verbatim quote is unverifiable and will be triaged out. If the issue spans multiple passages, quote the most critical one and reference the others in `evidence`.
 - `paper_commitment` and `paper_commitment_location` are used by Method 5 (self-measured critique) to record the specific commitment being violated. Other methods can leave them null.
 - `needs_web_verification` should be `true` if the issue requires checking a citation, an external data source, or an institutional fact. In that case, `verification_query` should state what to search for. A later pass will run web verification.
 - `confidence` is your own assessment: are you sure this is a real issue, or is it a candidate that deserves debate?
