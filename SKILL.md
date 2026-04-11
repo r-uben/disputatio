@@ -198,7 +198,7 @@ See `templates/obsidian_render.md` for how Claude transforms each JSON artifact 
 |-------|-----|-------|--------------|
 | Claude | Claude Code (you) | opus/sonnet | Orchestrator + runs discovery + role-rotates in debate |
 | Codex | `/codex` via agent-ctl | GPT-5.4 | Independent reader + runs discovery + role-rotates in debate |
-| Gemini | `/gemini` via agent-ctl | Gemini 2.5 Pro | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
+| Gemini | `/gemini` via agent-ctl | Gemini 3.1 Pro Preview | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
 
 Gemini's unique web search capability means it owns the verification step in Phase 2 — even for findings originally produced by other agents. This concentrates web search usage into a single agent that is specialized for it, rather than spreading it thin.
 

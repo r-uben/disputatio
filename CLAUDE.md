@@ -90,10 +90,12 @@ See `templates/obsidian_structure.md` for the full folder spec.
 ### Lessons from testing
 
 - **Codex needs `--full-auto`** (now default in agent-ctl) to write files
-- **Gemini CLI lacks `write_file`** — we parse stdout and save manually
-- **Gemini hits server-side 429s** (capacity exhausted, not quota) — retry with backoff
-- **Agents hallucinate file writes** — always verify the output file exists
+- **Gemini needs `--yolo`** (now default in agent-ctl) to write files via `write_file` tool. Without it, Gemini blocks on tool approval in headless mode. Files must be within the CWD workspace
+- **Gemini model: `gemini-3.1-pro-preview`** is the default (matches `/gemini` skill). If it hits 429 MODEL_CAPACITY_EXHAUSTED, agent-ctl falls back to `gemini-3-flash-preview`. The 429s are server-side capacity, not quota — retrying with backoff usually resolves them
+- **Gemini writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes. agent-ctl's `run-dag` now auto-cleans JSON files after write (fixes `\p`, `\a`, control chars, trailing commas)
+- **Stdout salvaging is the fallback**, not the primary path. With `--yolo`, Gemini writes files directly. `_salvage_stdout_json` catches cases where `write_file` fails or the file is outside workspace
 - **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise
+- **Digital PDFs don't need VLM OCR** — `pdftotext` works for typeset PDFs. socr's VLM pipeline (marker, glm) is only needed for scanned documents
 - **Long prompts need temp files** — inline shell escaping breaks beyond a few KB
 - **`$A wait <ids>` eliminates polling loops** — use it
 
