@@ -37,7 +37,13 @@ def adapt_from_report(report_path: Path) -> str:
     summary = _extract_section(text, "Summary")
     material = _extract_section(text, "Material issues")
     local = _extract_section(text, "Local issues")
+    appendix = _extract_section(text, "Appendix concerns")
     verdict = _extract_section(text, "Overall verdict")
+
+    # Strip wikilinks / provenance from summary and verdict so process
+    # jargon doesn't bleed through.
+    summary = _strip_process_jargon(summary)
+    verdict = _strip_process_jargon(verdict)
 
     # Build Overall Feedback
     overall_parts = []
@@ -47,16 +53,17 @@ def adapt_from_report(report_path: Path) -> str:
     if verdict:
         overall_parts.append(f"**Overall Verdict**\n{verdict}\n")
 
-    # Extract individual issues from material and local sections
+    # Extract individual issues from material, local, and appendix sections
     material_issues = _extract_issues(material, "Material") if material else []
     local_issues = _extract_issues(local, "Local") if local else []
-    all_issues = material_issues + local_issues
+    appendix_issues = _extract_appendix_issues(appendix) if appendix else []
+    all_issues = material_issues + local_issues + appendix_issues
 
     # Add main areas to overall feedback
     if all_issues:
         overall_parts.append("**Main Issues Identified**\n")
         for i, issue in enumerate(all_issues, 1):
-            overall_parts.append(f"- **{issue['title']}** ({issue['severity']}): {issue['summary']}\n")
+            overall_parts.append(f"- **{issue['title']}**: {issue['summary']}\n")
 
     # Build Detailed Comments
     comment_parts = []
@@ -64,29 +71,71 @@ def adapt_from_report(report_path: Path) -> str:
 
     for i, issue in enumerate(all_issues, 1):
         comment_parts.append(f"### {i}. {issue['title']}\n")
-        comment_parts.append(f"**Status**: [Pending]\n")
         if issue.get("quote"):
-            comment_parts.append(f"**Quote**:\n> {issue['quote']}\n")
-        comment_parts.append(f"**Feedback**:\n{issue['feedback']}\n")
+            comment_parts.append(f"> {issue['quote']}\n")
+        comment_parts.append(issue["feedback"] + "\n")
         if issue.get("fix"):
-            comment_parts.append(f"It would be helpful to {issue['fix']}\n")
-        comment_parts.append("---\n")
+            comment_parts.append(f"It would be helpful to {issue['fix']}.\n")
 
-    # Combine
+    # Combine (no process jargon in the header)
     header = f"# {_extract_title(text)}\n\n"
     header += f"**Date**: {_now()}\n"
-    header += "**Domain**: Academic review\n"
-    header += "**Method**: Disputatio (seven-method dialectic debate)\n\n---\n\n"
+    header += "**Domain**: Academic review\n\n---\n\n"
 
     return header + "\n".join(overall_parts) + "\n".join(comment_parts)
+
+
+def _strip_process_jargon(text: str) -> str:
+    """Remove disputatio-specific structural labels and wikilinks so the
+    output reads as a natural review, not a pipeline artifact."""
+    t = text
+    # Remove bullet quotes pointing to internal artifacts
+    t = re.sub(r"^>\s*.*?\n", "", t, flags=re.MULTILINE)
+    # Strip Obsidian wikilinks
+    t = re.sub(r"\[\[.+?\]\]", "", t)
+    # Strip bold process labels
+    for label in ("Refined claim", "Accepted facts", "Constructive fix",
+                  "Provenance", "Status", "Defense established",
+                  "Attack established"):
+        t = re.sub(rf"\*\*{re.escape(label)}\.\*\*\s*", "", t)
+    # Strip rank citations
+    t = re.sub(r"\s*·\s*rank\s+\d+/\d+\.?", "", t)
+    return t.strip()
+
+
+def _extract_appendix_issues(section: str) -> list[dict]:
+    """Extract bullet-list appendix concerns (below-cutoff merged issues).
+
+    Expected format:
+      - **merged_NNN** (short name): description.
+    """
+    issues = []
+    pat = re.compile(
+        r"^\s*-\s+\*\*(merged_\d+)\*\*\s*\(([^)]+)\):\s*(.+?)(?=^\s*-\s+\*\*merged_|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    for m in pat.finditer(section):
+        name = m.group(2).strip()
+        body = m.group(3).strip().rstrip(".")
+        # Title: use the parenthetical name, capitalized
+        title = name[0].upper() + name[1:] if name else "Appendix concern"
+        issues.append({
+            "title": title,
+            "severity": "Appendix",
+            "summary": body.split(".")[0][:160].strip() + ".",
+            "feedback": body,
+            "quote": "",
+            "fix": "",
+        })
+    return issues
 
 
 def adapt_from_folder(folder: Path) -> str:
     """Full mode: read issue register + debate summaries from Obsidian folder."""
     # Try to find key files
-    issue_register = folder / "40_ranking" / "issue_register.md"
-    final_report = folder / "60_final_report" / "referee_report.md"
-    debates_dir = folder / "50_debates"
+    issue_register = folder / "2_ranking" / "issue_register.md"
+    final_report = folder / "4_report" / "referee_report.md"
+    debates_dir = folder / "3_debates"
 
     if final_report.exists():
         # Start with report-mode output, then enrich with debate data
@@ -131,7 +180,7 @@ def _adapt_from_merged_json(merged: dict | list, folder: Path) -> str:
     issues = merged if isinstance(merged, list) else merged.get("issues", [])
 
     # Try to load debate synthesis for each issue
-    debates_dir = folder / "50_debates"
+    debates_dir = folder / "3_debates"
     json_dir = folder / "_artifacts" / "json"
 
     header = "# Disputatio Review\n\n"
@@ -142,7 +191,7 @@ def _adapt_from_merged_json(merged: dict | list, folder: Path) -> str:
     parts = ["## Overall Feedback\n"]
 
     # Try to get summary from final report
-    final_report = folder / "60_final_report" / "referee_report.md"
+    final_report = folder / "4_report" / "referee_report.md"
     if final_report.exists():
         summary = _extract_section(final_report.read_text(), "Summary")
         if summary:
@@ -276,37 +325,113 @@ def _extract_title(text: str) -> str:
 
 
 def _extract_issues(section: str, severity: str) -> list[dict]:
-    """Extract numbered issues from a section."""
+    """Extract numbered issues from a section.
+
+    Handles two formats produced by templates/final_report.md:
+
+    Material format: each issue is `### N. Title`, then a body containing
+    `**Refined claim.** ... **Accepted facts.** ... **Constructive fix.** ...
+    **Provenance.** ...` before the next `###` or end.
+
+    Local format: each issue is a numbered list item `N. **Title.** body Fix:
+    ... [[...]] · rank X/15.` with the whole item on a single line (no nested
+    ###).
+    """
     issues = []
-    # Pattern: "1. **title** — summary\n   - Constructive fix: ...\n"
-    pattern = r"\d+\.\s+\*\*(.+?)\*\*\s*[—–-]\s*(.+?)(?=\n\d+\.|\Z)"
-    for match in re.finditer(pattern, section, re.DOTALL):
-        title = match.group(1).strip()
-        body = match.group(2).strip()
 
-        # Try to extract fix
-        fix = ""
-        fix_match = re.search(r"Constructive fix:\s*(.+?)(?:\n|$)", body)
-        if fix_match:
-            fix = fix_match.group(1).strip()
-            body = body[:fix_match.start()].strip()
+    # Material format: "### N. Title\n\nbody..."
+    material_pat = re.compile(
+        r"^###\s+\d+\.\s+(.+?)\n(.+?)(?=^###\s+\d+\.|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    for m in material_pat.finditer(section):
+        title = m.group(1).strip()
+        body = m.group(2).strip()
 
-        # Try to extract quote
-        quote = ""
-        quote_match = re.search(r">\s*(.+?)(?:\n|$)", body)
-        if quote_match:
-            quote = quote_match.group(1).strip()
+        refined = _extract_bold_field(body, "Refined claim")
+        fix = _extract_bold_field(body, "Constructive fix")
+        # Strip provenance wikilinks from the feedback
+        feedback = re.sub(r"\*\*Provenance\.\*\*.*$", "", body,
+                          flags=re.DOTALL).strip()
+        feedback = re.sub(r"\[\[.+?\]\]", "", feedback).strip()
+
+        summary = refined if refined else feedback.split("\n")[0].strip()
+
+        # Fix phrasing: adapter wraps as "It would be helpful to <fix>"
+        fix_phrase = fix
+        if fix_phrase:
+            # Drop leading imperative ("Either ..., or ..." / "Add ...") into
+            # a fragment that reads naturally after "It would be helpful to".
+            fix_phrase = _to_fix_phrase(fix_phrase)
 
         issues.append({
             "title": title,
             "severity": severity,
-            "summary": body.split("\n")[0].strip(),
-            "feedback": body,
-            "quote": quote,
+            "summary": summary,
+            "feedback": feedback,
+            "quote": "",
+            "fix": fix_phrase,
+        })
+
+    if issues:
+        return issues
+
+    # Local format: numbered list items, each entry on one logical line.
+    # Match "N. **Title.** body..." until the next "N. " at line start or end.
+    local_pat = re.compile(
+        r"^\s*\d+\.\s+\*\*(.+?)\*\*\s*(.+?)(?=^\s*\d+\.\s+\*\*|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    for m in local_pat.finditer(section):
+        title = m.group(1).strip().rstrip(".")
+        body = m.group(2).strip()
+
+        # Strip rank + wikilinks
+        body_clean = re.sub(r"\[\[.+?\]\].*?rank\s+\d+/\d+\.?\s*$",
+                            "", body, flags=re.DOTALL).strip()
+        body_clean = re.sub(r"\[\[.+?\]\]", "", body_clean).strip()
+
+        # Extract fix
+        fix = ""
+        fix_match = re.search(r"Fix:\s*(.+?)$", body_clean, re.DOTALL)
+        if fix_match:
+            fix = fix_match.group(1).strip().rstrip(".")
+            body_clean = body_clean[:fix_match.start()].strip()
+            fix = _to_fix_phrase(fix)
+
+        issues.append({
+            "title": title,
+            "severity": severity,
+            "summary": body_clean.split(".")[0].strip() + ".",
+            "feedback": body_clean,
+            "quote": "",
             "fix": fix,
         })
 
     return issues
+
+
+def _extract_bold_field(body: str, field: str) -> str:
+    """Pull the content of a '**Field.** ...' segment up to the next bold
+    field or blank-paragraph break."""
+    pat = rf"\*\*{re.escape(field)}\.\*\*\s*(.+?)(?=\n\n\*\*|\Z)"
+    m = re.search(pat, body, re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
+def _to_fix_phrase(text: str) -> str:
+    """Turn an imperative-form fix ('Add X', 'Either A or B') into a phrase
+    suitable after 'It would be helpful to '. Keeps the original wording for
+    non-imperatives."""
+    t = text.strip()
+    # Lowercase leading imperative verbs that we know about
+    leading = re.match(r"^(Add|Replace|Correct|Insert|Update|Either|Consider|Drop|Print|Change|State|Qualify|Scope|Include|Note|Clarify|Restrict|Explicitly)\b",
+                       t)
+    if leading:
+        verb = leading.group(1)
+        rest = t[len(verb):]
+        return verb.lower() + rest
+    return t
 
 
 def _extract_debate_enrichment(summary_text: str) -> str:
