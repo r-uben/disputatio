@@ -33,11 +33,17 @@ def adapt_from_report(report_path: Path) -> str:
     """Flatten a disputatio referee_report.md into coarse review format."""
     text = report_path.read_text()
 
-    # Extract sections
-    summary = _extract_section(text, "Summary")
-    material = _extract_section(text, "Material issues")
-    local = _extract_section(text, "Local issues")
-    appendix = _extract_section(text, "Appendix concerns")
+    # Extract sections. Templates vary on the exact heading wording
+    # ("Material issues" vs "Material findings"; "Summary" vs "Overall
+    # assessment"; "Overall verdict" vs "Overall verdict"). Try both.
+    summary = (_extract_section(text, "Summary")
+               or _extract_section(text, "Overall assessment"))
+    material = (_extract_section(text, "Material issues")
+                or _extract_section(text, "Material findings"))
+    local = (_extract_section(text, "Local issues")
+             or _extract_section(text, "Local findings"))
+    appendix = (_extract_section(text, "Appendix concerns")
+                or _extract_section(text, "Appendix findings"))
     verdict = _extract_section(text, "Overall verdict")
 
     # Strip wikilinks / provenance from summary and verdict so process
@@ -104,10 +110,15 @@ def _strip_process_jargon(text: str) -> str:
 
 
 def _extract_appendix_issues(section: str) -> list[dict]:
-    """Extract bullet-list appendix concerns (below-cutoff merged issues).
+    """Extract appendix concerns. Templates vary between two formats:
 
-    Expected format:
-      - **merged_NNN** (short name): description.
+    1) Bullet list keyed by internal id:
+         - **merged_NNN** (short name): description.
+    2) Numbered headings just like material/local:
+         ### N. Title (rank X/15)
+         body
+
+    Try (1) first; fall back to _extract_issues for (2).
     """
     issues = []
     pat = re.compile(
@@ -117,7 +128,6 @@ def _extract_appendix_issues(section: str) -> list[dict]:
     for m in pat.finditer(section):
         name = m.group(2).strip()
         body = m.group(3).strip().rstrip(".")
-        # Title: use the parenthetical name, capitalized
         title = name[0].upper() + name[1:] if name else "Appendix concern"
         issues.append({
             "title": title,
@@ -127,6 +137,15 @@ def _extract_appendix_issues(section: str) -> list[dict]:
             "quote": "",
             "fix": "",
         })
+
+    if not issues:
+        # Fall back to material-style headings. Strip the trailing "(rank
+        # X/15)" parenthetical from titles so the flat review reads clean.
+        issues = _extract_issues(section, "Appendix")
+        for it in issues:
+            it["title"] = re.sub(r"\s*\(rank\s+\d+/\d+\)\s*$", "",
+                                 it["title"]).strip()
+
     return issues
 
 
