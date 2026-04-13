@@ -7,6 +7,8 @@ description: High-precision academic paper review via seven-method dialectic deb
 
 Review an academic paper as a top-journal referee would, using seven methods of critical dialectic executed by three independent AI agents. The goal is not to be polite — the goal is to subject the paper to the kind of scrutiny that makes it publishable.
 
+Orchestration is durable: every agent call is a **ticket** in a DAG on disk. The pipeline is resumable, auditable, and replayable by construction.
+
 ## Usage
 
 ```
@@ -34,42 +36,41 @@ Each method is described in detail under `templates/methods/`. They are not labe
 
 Methods 2-6 are **generative** (they find issues). Method 1 is **structural** (it shapes each round). Method 7 is **iterative** (it refines claims across rounds).
 
+## Ticket DAG orchestration
+
+Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts/tickets.json` inside the Obsidian vault. The ticket schema, the wave protocol (how tickets are emitted), and the ID naming conventions are defined in `templates/emit_tickets.md`. Read that file before implementing any step of the protocol.
+
+**Execution model**:
+- Claude generates tickets in **waves**. Each wave depends on the outputs of the previous wave.
+- `agent-ctl run-dag <paper-folder>/_artifacts/tickets.json --concurrent 3` executes all ready tickets in parallel up to the concurrency cap, then exits when no more ready tickets remain.
+- Claude-typed tickets (`orient_claude`, `merge_rank`, `final_report`, wave-emission logic) are executed by Claude directly, not by agent-ctl.
+- After `run-dag` exits, Claude inspects the outputs, renders them as curated markdown into the numbered folders, generates the next wave of tickets, and calls `run-dag` again.
+
+**Automatic session archiving**: `agent-ctl run-dag` copies the session log (raw agent reasoning trace) into `<tickets_parent>/sessions/<ticket_id>.log` when a ticket finishes — both on success and on failure. The archive location is derived from the tickets.json parent directory, so for disputatio it lands in `<paper-folder>/_artifacts/sessions/`. Nothing is deleted; every reasoning trace is preserved forever.
+
+**Key benefit — full provenance**: every agent call is replayable. The ticket stores the prompt path, inputs, outputs, timing, attempt count, and session ID. Combined with the stored prompt files, output files, and archived session logs, the entire review is replayable and auditable.
+
+**Monitoring**: `agent-ctl dag-status <paper-folder>/_artifacts/tickets.json` prints a summary of ticket states at any time.
+
+**Resumability**: the ticket DAG is the source of truth. Closing Claude Code, restarting later, and re-running the skill picks up from where it left off — ready tickets resume, already-done tickets are skipped.
+
 ## Protocol
 
-The review proceeds in five phases.
+The review proceeds in five phases. Each phase corresponds to one or more waves of tickets (see `templates/emit_tickets.md` for the exact ticket definitions).
 
 ### Phase 0 — Orientation (parallel, all agents)
 
 Each of the three agents reads the paper once and produces a neutral **paper map**: claims, equations, propositions, assumptions, parameters, datasets, citations, section anchors, and OCR-corrupted regions. No judgments yet.
 
-```
-workspace/<paper-slug>/orientation/
-├── claude/paper_map.json
-├── codex/paper_map.json
-└── gemini/paper_map.json
-```
+Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders them as markdown into `0_orientation/<agent>.md`. The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
 
-The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
-
-Run all three agents in parallel. Estimated time: ~5 minutes each, so 5 minutes wall clock.
+Run all three agents in parallel. Estimated time: ~15-20 minutes wall clock (Codex with `--full-auto` does deep web cross-referencing).
 
 ### Phase 1 — Discovery (fan-out-fan-out parallel)
 
-Each agent runs **all five generative methods** (M2-M6) on the paper, using its own paper map as the cache. Each method produces its own set of candidate issues. Total: 3 agents × 5 methods = **15 discovery sweeps**.
+Each agent runs **all five generative methods** (M2-M6) on the paper, using its own paper map as the cache. Each method produces one JSON output file containing all issues it found. Total: 3 agents × 5 methods = **15 discovery sweeps**, producing 15 JSON files.
 
-```
-workspace/<paper-slug>/discovery/
-├── claude/
-│   ├── m2/issue_*.json
-│   ├── m3/issue_*.json
-│   ├── m4/issue_*.json
-│   ├── m5/issue_*.json
-│   └── m6/issue_*.json
-├── codex/
-│   └── ... (same structure)
-└── gemini/
-    └── ... (same structure)
-```
+Raw outputs land in `_artifacts/json/discover_<agent>_m<N>.json`. Claude then renders them as markdown, organized by method, into `1_discovery/m<N>/<agent>.md`.
 
 **Parallelism**: the 3 agents run in parallel. Within each agent, the 5 methods should also run in parallel where the CLI supports it (if not, sequential within the agent). Target wall clock: 10-15 minutes.
 
@@ -114,13 +115,13 @@ The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` fo
 - **Pre-debate triage**: if an issue scored below the cutoff, skip it
 - **Round 1 early-kill**: if the round 1 synthesis produces `impact: none`, stop — the issue dies
 - **Stalled debate**: if round N synthesis is materially identical to round N-1 synthesis, mark `converged` and stop
-- **Low priority cap**: issues in the bottom half of the top-N get at most 1 round; middle get 2; top 2-3 get the full 3 rounds
+- **Low priority cap**: budget tiering applies (see Configuration) — bottom third of top-N get 1 round, middle third get `max-rounds - 1`, top third get the full budget
 
 ### Phase 4 — Final report
 
-Claude writes two outputs:
+Claude executes the `final_report` ticket inline and writes two outputs:
 
-1. **`workspace/<paper-slug>/final.json`** — structured final report:
+1. **`_artifacts/json/final.json`** — structured final report:
    - Surviving material issues with full debate history
    - Surviving local issues with brief summary
    - Dropped issues with the reason
@@ -128,36 +129,68 @@ Claude writes two outputs:
    - Web-verified external evidence
    - Overall assessment
 
-2. **Live Obsidian note** — `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`:
-   - Updated after each phase (orientation → discovery → merge → debate → final)
-   - Frontmatter includes status, date, paper metadata
-   - Debate section shows each round's prosecution, defense, and synthesis
+2. **`4_report/referee_report.md`** — the human-facing deliverable, rendered from the JSON using `templates/obsidian_render.md`.
+
+Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself — with all its numbered subfolders and the top-level index — IS the final live report.
    - Final assessment at the bottom
 
 ## Workspace structure
 
+**The Obsidian folder IS the workspace.** There is no separate scratch area. Every review is a self-contained folder inside the Obsidian vault. Curated markdown (the human-facing review) lives in numbered top-level folders; raw machine artifacts (tickets, JSON outputs, prompts, session logs) live inside `_artifacts/`.
+
 ```
-workspace/<paper-slug>/
-├── paper.md                             # parsed paper
-├── checkpoint.json                      # resumable state
-├── orientation/
-│   ├── claude/paper_map.json
-│   ├── codex/paper_map.json
-│   └── gemini/paper_map.json
-├── discovery/
-│   ├── claude/{m2,m3,m4,m5,m6}/issue_*.json
-│   ├── codex/{m2,m3,m4,m5,m6}/issue_*.json
-│   └── gemini/{m2,m3,m4,m5,m6}/issue_*.json
-├── triage.json                          # issues filtered out before ranking
-├── ranked_issues.json                   # merged + ranked list with web verification
-├── rounds/
-│   └── issue_<id>/
-│       ├── round_1_prosecute.json
-│       ├── round_1_defend.json
-│       ├── round_1_synthesize.json
-│       └── ...
-└── final.json
+~/.../notes/work/referee-reports/<paper-slug>/
+│
+├── review.md                          # top-level index: metadata, status, TOC
+│
+├── _paper/
+│   └── paper.md                          # source paper
+│
+├── 0_orientation/                       # 3 paper maps as markdown
+│   ├── 00_orientation.md
+│   ├── claude.md
+│   ├── codex.md
+│   └── gemini.md
+│
+├── 1_discovery/                         # organized BY METHOD
+│   ├── 00_discovery.md
+│   ├── m2_contradictions/
+│   │   ├── 00_m2.md
+│   │   ├── claude.md
+│   │   ├── codex.md
+│   │   └── gemini.md
+│   └── m3_transformations/ ... m6_disentangling/
+│
+├── 2_ranking/
+│   ├── 00_ranking.md
+│   ├── issue_register.md                 # canonical source of truth for all issues
+│   ├── triage.md
+│   └── verification.md
+│
+├── 3_debates/                           # one folder per debated issue
+│   ├── 00_debates.md
+│   ├── 01_<slug>/
+│   │   ├── 00_issue.md
+│   │   ├── r1_prosecute.md               # prompt + output + metadata + link to session
+│   │   ├── r1_defend.md
+│   │   ├── r1_synthesize.md
+│   │   └── 99_summary.md
+│   └── ...
+│
+├── 4_report/
+│   └── referee_report.md                 # the deliverable
+│
+└── _artifacts/                           # machine artifacts, non-markdown
+    ├── manifest.md                       # human-readable index
+    ├── tickets.json                      # the DAG — source of truth for orchestration
+    ├── prompts/                          # one .md per ticket
+    ├── sessions/                         # raw agent reasoning traces (.log, never wiped)
+    └── json/                             # raw structured outputs (.json)
 ```
+
+See `templates/obsidian_structure.md` for the complete specification.
+
+See `templates/obsidian_render.md` for how Claude transforms each JSON artifact into curated markdown.
 
 ## Agent routing
 
@@ -165,25 +198,29 @@ workspace/<paper-slug>/
 |-------|-----|-------|--------------|
 | Claude | Claude Code (you) | opus/sonnet | Orchestrator + runs discovery + role-rotates in debate |
 | Codex | `/codex` via agent-ctl | GPT-5.4 | Independent reader + runs discovery + role-rotates in debate |
-| Gemini | `/gemini` via agent-ctl | Gemini 2.5 Pro | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
+| Gemini | `/gemini` via agent-ctl | Gemini 3.1 Pro Preview | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
 
 Gemini's unique web search capability means it owns the verification step in Phase 2 — even for findings originally produced by other agents. This concentrates web search usage into a single agent that is specialized for it, rather than spreading it thin.
 
 ## Agent communication
 
-Use `agent-ctl` to manage sessions:
+Use `agent-ctl` to manage sessions. The DAG runner is the primary interface:
 
 ```bash
 A="python3 ~/.claude/skills/agent_ctl.py"
 
-# Start agents (codex defaults to --full-auto and can write files)
+# Run the DAG — executes all ready tickets, blocks until none remain
+$A run-dag <paper-folder>/_artifacts/tickets.json --cwd <paper-folder> --concurrent 3
+
+# Check progress without blocking
+$A dag-status <paper-folder>/_artifacts/tickets.json
+```
+
+The lower-level commands are still available for ad-hoc agent calls (deprecated for the disputatio pipeline — use tickets instead):
+
+```bash
 $A start codex "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
-$A start gemini "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
-
-# Wait for agents to finish (blocking, no polling needed)
 $A wait 01 02 03
-
-# Get results
 $A result 01
 ```
 
@@ -195,58 +232,196 @@ $A result 01
 
 **Retry logic**: if an agent fails (timeout, rate limit, hallucinated success), retry once with a simplified prompt. If it fails again, default to KEEP (preserve the issue as-is, note the failure in the checkpoint, continue).
 
-## Checkpointing
+## Execution
 
-After every phase and every debate round, update `workspace/<paper-slug>/checkpoint.json`:
+When `/disputatio <path>` is invoked, Claude runs a decision loop. Each iteration: read state from disk, match the current phase, do ONE thing, write results to disk. No multi-step sequential protocol — just a lookup table.
 
-```json
-{
-  "paper": "...",
-  "phase": "orientation | discovery | merge | debate | final",
-  "phase_progress": {
-    "orientation": {"claude": "done", "codex": "done", "gemini": "done"},
-    "discovery": {"claude": {"m2": "done", ...}, ...},
-    "merge": "done",
-    "debate": {
-      "issue_001": {"rounds_completed": 2, "status": "continue"},
-      ...
-    }
-  },
-  "timestamp": "..."
-}
+**State**: `$PAPER/_artifacts/tickets.json` (the DAG) + `$PAPER/review.md` frontmatter (human-readable phase).
+
+**Loop**: repeat until `final_report` ticket status is `done`:
+
+```
+READ tickets.json
+MATCH current state → action:
+
+┌─────────────────────────────────────┬──────────────────────────────────────────────────────┐
+│ State                               │ Action                                               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ no tickets.json exists              │ INIT: create workspace, copy paper, emit wave 1,     │
+│                                     │ write tickets.json                                   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ orient_claude = pending             │ Execute orient_claude inline: read paper, produce     │
+│                                     │ paper map JSON, mark done                            │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ orient_codex or orient_gemini       │ Run: $A run-dag tickets.json --concurrent 3          │
+│ = pending                           │ Wait for completion. Validate outputs.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all orient = done,                  │ RENDER orientation (JSON → markdown in 20_orient/).  │
+│ no discover tickets exist           │ Emit wave 2 (18 discovery tickets). Write prompts.   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ discover_claude_* = pending         │ Execute Claude discovery tickets inline (6 methods).  │
+│                                     │ Write JSON outputs. Mark each done.                  │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ discover_codex_* or                 │ Run: $A run-dag tickets.json --concurrent 3          │
+│ discover_gemini_* = pending         │ Wait for completion. Validate outputs.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all discover = done,                │ RENDER discovery (JSON → markdown in 1_discovery/). │
+│ no merge_rank ticket exists         │ Execute merge_rank inline: read 18 JSONs, triage,    │
+│                                     │ dedupe, rank, write ranked_issues.json + triage.json.│
+│                                     │ Render 2_ranking/ markdown. Emit verify ticket.     │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ verify = pending                    │ Run: $A run-dag tickets.json --concurrent 1          │
+│                                     │ (Gemini web verification). Validate output.          │
+│                                     │ Render 2_ranking/verification.md.                   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
+│ no debate tickets exist             │ Apply budget tiering. Write prompts.                 │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ debate tickets pending/running      │ For Claude-typed debate tickets: execute inline.      │
+│                                     │ For external: $A run-dag --concurrent 2              │
+│                                     │ After each synthesis: read output, check status.     │
+│                                     │ If continue + budget remains → emit next round.      │
+│                                     │ If converged/none → mark issue terminal.             │
+│                                     │ Render debate markdown in 3_debates/.               │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all debate tickets terminal,        │ Execute final_report inline: read all syntheses +     │
+│ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
+│                                     │ Update review.md to phase: complete.              │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ final_report = done                 │ EXIT. Review complete.                               │
+└─────────────────────────────────────┴──────────────────────────────────────────────────────┘
 ```
 
-If the session is interrupted, read the checkpoint and resume from the last completed step.
+### INIT procedure
 
-## Budget defaults
+When no `tickets.json` exists:
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| Top-N for debate | 8 | Top 3 get full 3 rounds, middle 3 get 2 rounds, bottom 2 get 1 round |
-| Max rounds per issue | 3 | Short-circuit rules can end earlier |
-| Orientation timeout | 5 min | per agent |
-| Discovery timeout | 15 min | per agent, per method |
-| Debate round timeout | 10 min | per agent, per role |
-| Web search budget | 5 queries | per issue |
-| Total runtime | ~2 hours | wall clock, parallelized |
+1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
+2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
+3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_evaluation}`
+4. If input is `.pdf`: run `socr <input>` → copy result to `$PAPER/_paper/paper.md`. If input is `.md`: copy directly.
+5. Copy the PDF (if available) to `$PAPER/_paper/paper.pdf`
+6. Write `$PAPER/review.md` with frontmatter: `phase: orientation`
+7. Generate 3 orientation prompts (see "Prompt generation" below)
+8. Write `$PAPER/_artifacts/tickets.json` with 3 orient tickets
+
+### Prompt generation
+
+To generate a prompt for a ticket:
+
+1. Read the relevant template from `templates/` (e.g., `orient.md`, `discover.md`)
+2. For discovery: also read the method template from `templates/methods/<method>.md`
+3. Substitute placeholders:
+   - `{{paper_text}}` → contents of `_paper/paper.md` (used in orient prompts only)
+   - `{{paper_path}}` → `_paper/paper.md` (relative path for agents to read)
+   - `{{paper_map_path}}` → `_artifacts/json/orient_<agent>.json`
+   - `{{output_path}}` → `_artifacts/json/<ticket_id>.json`
+   - `{{method_content}}` → full text of the method template
+   - `{{issue_state}}`, `{{prosecution}}`, `{{defense}}`, `{{history}}` → debate context
+   - `{{config.*}}` → configuration values
+4. Write the result to `$PAPER/_artifacts/prompts/<ticket_id>.md`
+
+### Inline execution (Claude-typed tickets)
+
+When Claude executes a ticket inline:
+
+1. Read the prompt at `_artifacts/prompts/<ticket_id>.md`
+2. Read all input files listed in the ticket
+3. Follow the prompt instructions (produce paper map / run method / merge issues / write report)
+4. Write the JSON output to `_artifacts/json/<ticket_id>.json`
+5. Write a reasoning summary to `_artifacts/sessions/<ticket_id>.log` (what was done, key decisions, issues found)
+6. Apply the rendering spec from `templates/obsidian_render.md` to write curated markdown
+7. Update `tickets.json`: set status to `done`, set `finished_at`
+
+### Rendering
+
+After each wave, render JSON outputs to Obsidian markdown per `templates/obsidian_render.md`. The JSON is the source of truth; the markdown is a human-readable projection. Both are preserved.
+
+### Output validation (verification gates)
+
+Before proceeding to the next phase, validate outputs:
+
+- **Orientation**: each JSON must have `main_claims` with >=5 entries. If fewer, retry once.
+- **Discovery**: each JSON must have `issues` array with >=1 entry. Empty outputs get one retry.
+- **Merge_rank**: `ranked_issues.json` must have >=3 merged issues. Fewer triggers a warning (not a retry — paper may genuinely have few issues).
+- **Debate synthesis**: JSON must have `refined_claim`, `impact`, and `status` fields. Malformed → retry.
+
+### Logging contract
+
+Every action writes to disk. Nothing lives only in Claude's context.
+
+| What | Where | When |
+|------|-------|------|
+| Prompts sent to agents | `_artifacts/prompts/<ticket_id>.md` | Before launching ticket |
+| Raw JSON output | `_artifacts/json/<ticket_id>.json` | After ticket completes |
+| Agent session logs | `_artifacts/sessions/<ticket_id>.log` | Auto-archived by agent-ctl; written by Claude for inline tickets |
+| Curated markdown | Numbered folders (0_orientation/, etc.) | After each wave |
+| DAG state | `_artifacts/tickets.json` | After every action |
+| Phase status | `review.md` frontmatter | At each major transition |
+
+### Resumability
+
+On re-invocation with an existing paper folder:
+
+1. Read `$PAPER/_artifacts/tickets.json`
+2. Skip all `done` tickets
+3. Match current state in the decision table above
+4. Resume from the first non-terminal state
+
+This works because every action writes to disk before proceeding. If Claude crashes mid-wave, the completed tickets are marked `done` and the uncompleted ones are still `pending`.
+
+## Configuration
+
+All tunables are CLI parameters with sensible defaults. Templates reference these via `{{config.*}}` placeholders — no thresholds are hardcoded in prompts.
+
+| Parameter | CLI flag | Default | Notes |
+|-----------|----------|---------|-------|
+| Top-N for debate | `--top-n` | 8 | Issues above this enter debate; rest go to appendix |
+| Max rounds per issue | `--max-rounds` | 3 | Short-circuit rules can end earlier |
+| Verification score delta (confirmed) | `--verify-boost` | +2 | Added to rank score when web evidence confirms |
+| Verification score delta (refuted) | `--verify-penalty` | -3 | Subtracted from rank score when web evidence refutes |
+| Web search budget | `--web-budget` | 5 | Max searches per issue during verification |
+| Orientation timeout | `--orient-timeout` | 1200s | Per agent — must accommodate web cross-referencing |
+| Discovery timeout | `--discover-timeout` | 1200s | Per agent, per method |
+| Debate round timeout | `--debate-timeout` | 900s | Per agent, per role |
+
+**Budget tiering** is derived from `--top-n` and `--max-rounds`, not hardcoded. The top third of debated issues get the full round budget, the middle third get `max-rounds - 1`, the bottom third get 1 round. This scales automatically with different top-n values.
+
+**Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
+
+### Model routing
+
+Not every task needs the strongest model. Use cheaper/faster models for mechanical work, reserve expensive models for judgment calls. When emitting tickets, set the `model` field per this table:
+
+| Task | Claude | Codex | Gemini |
+|------|--------|-------|--------|
+| Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery (M0-M6) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Rendering (JSON→md) | haiku | — | — |
+| Merge & Rank | **opus** | — | — |
+| Prosecution (top third) | **opus** | — | — |
+| Prosecution (rest) | sonnet | — | — |
+| Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
+| Synthesis | **opus** | — | — |
+| Verification (web) | — | — | gemini-3.1-pro-preview |
+| Final report | **opus** | — | — |
+
+This cuts Opus usage to ~30% of the pipeline (merge, top prosecutions, synthesis, final report). The remaining 70% runs on Sonnet/Haiku/mini models at a fraction of the cost.
+
+For Claude subagents, pass the `model` parameter: `Agent(model="sonnet")` or `Agent(model="haiku")`. For external agents, set the `model` field in the ticket and agent-ctl passes it via `-m`.
 
 ## Review criteria
 
 The methods determine what counts as an issue. No external criteria file is needed — each method's template defines what it flags.
 
-## Live report (Obsidian)
+## Obsidian is the workspace
 
-Maintain a live Obsidian note at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>.md`. Update after each phase. Frontmatter:
+Every review lives inside a single folder in the Obsidian vault. Curated markdown (what you'd read as a human) lives in numbered folders at the top level; raw machine artifacts (tickets, prompts, JSON outputs, session logs) live inside `_artifacts/`. Nothing is ever deleted — session logs are automatically archived by `agent-ctl run-dag` so that every reasoning trace is preserved forever.
 
-```yaml
----
-tags: [referee-report, disputatio]
-paper: "..."
-authors: "..."
-venue: "..."
-status: orientation | discovery | merge | debate | complete
-date: YYYY-MM-DD
----
-```
+**Templates**:
+- `templates/obsidian_structure.md` — the complete folder spec and design principles
+- `templates/obsidian_render.md` — how Claude transforms each JSON artifact into curated markdown
 
-The note body should have sections for each phase, with live updates as they complete.
+**Key principle**: the JSON in `_artifacts/json/` is the machine format; the markdown in the numbered folders is the human format. Both are preserved. If the two disagree, the JSON wins. The markdown is a projection, not the source of truth.
+
+**Why everything in Obsidian**: a review should be self-contained. Open one folder, see everything. The raw logs are there too (as `.log` attachments that don't pollute Obsidian's search index) so auditability and replay work without chasing files across disks.

@@ -12,7 +12,7 @@ Read the paper end to end and produce a **paper map** — a structured JSON obje
 
 ## Output
 
-Write a single file to: `{{output_path}}/paper_map.json`
+Write a single JSON file to: `{{output_path}}`
 
 ```json
 {
@@ -53,32 +53,32 @@ Write a single file to: `{{output_path}}/paper_map.json`
   ],
   "parameters": [
     {
-      "symbol": "θ",
-      "description": "Poisson hazard rate for stockholder adjustment",
-      "value": "0.5",
-      "source": "Chodorow-Reich, Nenov, and Simsek (2021)"
+      "symbol": "symbol used in the paper",
+      "description": "what the parameter represents",
+      "value": "calibrated or assumed value",
+      "source": "where the value comes from"
     }
   ],
   "datasets": [
     {
-      "name": "TIPS forward rates",
-      "source": "Federal Reserve (Gürkaynak et al. 2007)",
-      "period": "2019-2023",
-      "used_for": "measuring p^MB(t)"
+      "name": "dataset name",
+      "source": "provider and citation",
+      "period": "time coverage",
+      "used_for": "what the paper uses it for"
     }
   ],
   "citations_load_bearing": [
     {
-      "cite": "Chodorow-Reich, Nenov, Simsek (2021)",
-      "used_for": "MPC calibration",
-      "claim_attributed": "MPC out of stock wealth equal to 3 cents"
+      "cite": "author (year)",
+      "used_for": "what role this citation plays",
+      "claim_attributed": "what the paper says this source supports"
     }
   ],
   "appendix_references": [
     {
-      "ref": "Internet Appendix Proposition IA.1",
-      "used_for": "fixed-point characterization",
-      "location_in_main_text": "Section I.C.2"
+      "ref": "appendix item label",
+      "used_for": "what it contributes",
+      "location_in_main_text": "where the main text references it"
     }
   ],
   "section_anchors": {

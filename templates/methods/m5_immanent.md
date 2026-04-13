@@ -25,11 +25,11 @@ A **commitment** is anything the paper explicitly or implicitly holds itself to.
 
 For each commitment C, search the entire paper for passages where C is **abandoned, contradicted, or quietly relaxed**. Cases to look for:
 
-- **Empirical violation of a theoretical assumption.** The paper assumes a Poisson hazard θ in theory, then treats θ as a discrete probability in the calibration. The assumption is violated in the calibration.
+- **Empirical violation of a theoretical assumption.** The paper defines a parameter as one thing in theory, then uses it as something different in the calibration.
 
-- **Scope violation.** The paper claims "small deviations" in the setup, then applies the model to the COVID-19 recession (a large deviation).
+- **Scope violation.** The paper claims a restrictive scope in the setup (e.g., "small deviations"), then applies the model to cases outside that scope.
 
-- **Methodological violation.** The paper commits to no commitment (footnote says so), then the empirical section relies on rate paths that were produced by forward guidance (which requires commitment).
+- **Methodological violation.** The paper commits to a methodological rule in one section, then the analysis relies on something that violates that rule.
 
 - **Normative drift.** The paper's welfare function penalizes X, but the policy recommendation would increase X.
 

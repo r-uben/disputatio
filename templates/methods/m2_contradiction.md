@@ -4,7 +4,7 @@ Find places where the paper contradicts itself. The prosecutor does not argue �
 
 ## Procedure
 
-1. **Extract claims.** Read the paper and list at least twenty concrete claims it makes. A claim is a statement the author commits to: equations, propositions, numerical values, assumed conditions, methodological rules, interpretive statements. Include both the setup and the results. Include footnotes — contradictions often hide there.
+1. **Extract claims.** Read the paper and list every concrete claim it makes — be exhaustive. A claim is a statement the author commits to: equations, propositions, numerical values, assumed conditions, methodological rules, interpretive statements. Include both the setup and the results. Include footnotes — contradictions often hide there.
 
 2. **Pair-check for direct contradiction.** For every pair of claims, check whether they can both be true at the same time. Cases:
    - **Direct**: The paper asserts X in one place and not-X in another. Rare but devastating.
@@ -20,8 +20,8 @@ Find places where the paper contradicts itself. The prosecutor does not argue �
 
 5. **Formulate each contradiction as a question.** Not "this is wrong." Not "the author contradicts themselves." A question that the author cannot answer without abandoning one claim:
    - *"If X holds in Section I, how can not-X be true in Section III?"*
-   - *"The paper defines θ as a Poisson hazard. How is θ=0.5 then interpreted as a 50% annual probability?"*
-   - *"If the central bank has no commitment device, how can it promise future forward guidance?"*
+   - *"The paper defines parameter P as a rate. How is P then interpreted as a probability?"*
+   - *"If condition C is assumed in the setup, how can the results section rely on not-C?"*
 
 6. **Write each contradiction as an issue.** Include:
    - The two claims (with exact quotes and locations)

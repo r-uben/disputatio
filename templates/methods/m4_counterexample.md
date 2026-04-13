@@ -6,13 +6,13 @@ Take the paper's main result and try to find a case that satisfies its assumptio
 
 1. **State the main result as a universal claim.** Rewrite the paper's main proposition in the form: *"For all X satisfying conditions Y, result Z holds."* Be precise about what X ranges over and what Y requires.
 
-   Example: "For all economies with aggregate demand inertia θ > 0, log utility, and a central bank with quadratic loss (including aversion ψ > 0), the optimal monetary policy features p(0) > 0 when y(0) < 0."
+   Example: "For all X satisfying conditions A, B, and C, the paper's main result Z holds."
 
 2. **Search the parameter space for violating cases.** Try, in order:
-   - **Extreme values**: what happens as θ → 0? As θ → ∞? As ψ → 0? As ψ → ∞?
-   - **Degenerate cases**: what if y(0) = 0? What if m = 0? What if n = 1?
-   - **Knife-edge cases**: what if the technical condition in the proposition holds with equality rather than strict inequality?
-   - **Cases excluded by the paper's examples**: the paper shows θ = 0.5, n = 0.1. Try θ = 0.1, n = 0.5. Try θ = 10, n = 0.9.
+   - **Extreme values**: what happens as each parameter → 0 or → ∞?
+   - **Degenerate cases**: what if a key variable is zero or one?
+   - **Knife-edge cases**: what if a technical condition holds with equality rather than strict inequality?
+   - **Cases excluded by the paper's examples**: try parameter values far from the paper's chosen calibration.
 
 3. **For each candidate case, check whether it satisfies Y.** If it does not, the case is outside the claim's scope and cannot be a counterexample — move on. If it does, proceed.
 

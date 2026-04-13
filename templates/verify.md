@@ -4,8 +4,8 @@ Gemini is the designated external-evidence specialist because its CLI has web se
 
 ## Inputs
 
-- Ranked issues: `workspace/<paper-slug>/ranked_issues.json`
-- Paper map: `workspace/<paper-slug>/paper_map.json`
+- Ranked issues: `_artifacts/json/ranked_issues.json`
+- Paper maps: `_artifacts/json/orient_<agent>.json`
 
 ## Your task
 
@@ -27,7 +27,7 @@ For each issue to verify:
 
 ## Output
 
-Append a `web_verification` field to each verified issue in `ranked_issues.json`:
+Write the full issue list with verification results to a **new file** `_artifacts/json/ranked_issues_verified.json`. Do not overwrite `ranked_issues.json`. Each verified issue gets a `web_verification` field:
 
 ```json
 {
@@ -47,9 +47,9 @@ Append a `web_verification` field to each verified issue in `ranked_issues.json`
 }
 ```
 
-If verification **refutes** the issue, update the issue's `rank_score` by subtracting 3 — it should drop in the priority list. If the issue's new score is too low for the budget cut, remove it from the debate phase (record in `triage.json` as "resolved by verification").
+If verification **refutes** the issue, subtract `{{config.verify_penalty}}` from the issue's `rank_score`. If the new score falls below the budget cut, remove it from the debate phase (record in `_artifacts/json/triage.json` as "resolved by verification").
 
-If verification **confirms** the issue, update the issue's `rank_score` by adding 2 — it rises in priority.
+If verification **confirms** the issue, add `{{config.verify_boost}}` to the issue's `rank_score`.
 
 If **inconclusive**, leave the score unchanged but flag it for a cautious prosecution in round 1.
 
@@ -65,4 +65,4 @@ Different discovery methods produce different kinds of verification needs:
 
 ## Budget
 
-Web verification is rate-limited. Default budget: up to 5 searches per issue. Stop early if the answer is clear. If an issue requires more than 5 searches, mark it inconclusive and let the debate handle it.
+Web verification is rate-limited. Budget: up to `{{config.web_budget}}` searches per issue. Stop early if the answer is clear. If an issue requires more searches, mark it inconclusive and let the debate handle it.
