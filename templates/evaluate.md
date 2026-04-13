@@ -1,30 +1,31 @@
-# Evaluate prompt — single finding
+# Evaluate prompt — single blinded finding
 
-This template is the **prompt body** sent to an annotator agent for one finding. It is the operational counterpart to `templates/evaluation.md`, which describes the evaluation protocol; this file is what Claude actually substitutes into per-finding tickets at emit time.
+This template is the **prompt body** sent to the annotator for one finding under review. Operational counterpart to `templates/evaluation.md`; substituted into the per-finding `evaluate` ticket at emit time.
 
-The annotator never sees the orchestrator's metadata: which agent surfaced the finding, which method (M0–M6) found it, the cross-agent support score, or the merge ranking. All of that is stripped before the prompt is built. The annotator gets the paper and the finding's substantive content (claim, quote, quote_location, evidence) and judges those against the paper alone.
+The annotator is blinded: it does not know which review version (V2, V3, coarse, reference) produced the finding, nor which agent surfaced it, nor the merge rank. The blind ID is the only handle — the true version and true `merged_NNN` live only in `_evaluation/manifest_blind.json` and are never shown to the annotator.
 
-## Inputs
+## Prompt shape
 
-- Paper text: `{{paper_path}}` (read this in full; do not skim)
-- Finding payload: `{{payload_path}}` (one JSON file with the four fields below)
+The prompt is one markdown file per finding, written by the orchestrator to `_evaluation/prompts/<blind_id>.md`. It contains, in order:
 
-The payload is structured exactly as:
+1. **The blinding preamble**: you are judging one finding against the paper, you do not know which system produced it, do not guess.
+2. **The rubric**: the two axes and their values (same as below).
+3. **The finding under review** — a JSON block with exactly these fields:
+   ```json
+   {
+     "blind_id": "BF001",
+     "claim": "<one-sentence falsifiable statement>",
+     "quote": "<verbatim paper excerpt>",
+     "quote_location": "<section / page / equation anchor>",
+     "evidence": "<the reviewer's reasoning>"
+   }
+   ```
+4. **The paper text** — inlined directly. The annotator must read it to check the quote.
+5. **The output instruction**: write one JSON file to `_evaluation/annotations/<blind_id>.json`.
 
-```json
-{
-  "claim":          "<one-sentence falsifiable statement of what the reviewer asserts>",
-  "quote":          "<exact verbatim excerpt the reviewer pulled from the paper>",
-  "quote_location": "<section / page / equation anchor the reviewer cited>",
-  "evidence":       "<the reviewer's reasoning for why the claim follows from the quote>"
-}
-```
+No paper-map path, no separate payload file — everything the annotator needs is in the prompt. Inputs list on the ticket is just the prompt file itself. This keeps the annotator's world closed: it cannot see `ranked_issues.json`, cannot see other findings, cannot see any metadata that would leak the review version.
 
-There is intentionally no `id`, no `agent`, no `method`, no `confidence`. Those are stripped at emit time. You are judging the finding on its own merits, not who made it.
-
-## Your task
-
-Produce one annotation JSON judging the finding on two axes. Be strict. Calibration matters more than charity.
+## Rubric (what the annotator reads)
 
 ### Axis 1 — `quote_verified`
 
@@ -34,44 +35,41 @@ Does the quote actually exist at the cited location, saying what the finding's p
 |---|---|
 | `yes` | Quote appears verbatim (or near-verbatim with insubstantial OCR cleanup) at the cited location and supports the claim's premise. |
 | `partial` | Quote exists but is paraphrased, misplaced, truncated in a way that changes meaning, or the location anchor is wrong. |
-| `no` | Quote is fabricated, grossly misrepresented, or does not appear in the paper at all. |
-
-Procedure: open the paper at the cited location. Match the quote against the paper text. If the location anchor is too vague to find, set `quote_verified = partial` and note it. If the quote is somewhere in the paper but the location is wrong, also `partial`. If the quote does not appear anywhere recognisable, `no`.
+| `no` | Quote is fabricated or grossly misrepresented — does not appear in the paper in any recognisable form. |
 
 ### Axis 2 — `calibration`
 
-Given the quote is real, does the stated `evidence` actually establish the `claim` at its stated strength?
+Given the quote is real, does the stated evidence actually establish the claim at its stated strength?
 
 | Value | Meaning |
 |---|---|
-| `supported` | The evidence establishes the claim as stated. The objection, counterexample, or contradiction is demonstrable from the paper. |
-| `overclaimed` | There is a real issue, but the finding overstates severity, scope, or certainty. The paper has a weakness here, but not the weakness as described. |
-| `unsupported` | The evidence does not establish the claim. The finding is a misreading of the paper, a style/taste complaint dressed as a substantive flaw, or a methodological nit promoted beyond its actual impact. |
+| `supported` | The evidence establishes the claim as stated. |
+| `overclaimed` | There is a real issue, but the finding overstates severity, scope, or certainty. |
+| `unsupported` | The evidence does not establish the claim (misreading, style complaint, over-promoted nit). |
 
-If `quote_verified == "no"`, set `calibration = "unsupported"` automatically — a finding without a real quote cannot be supported.
+If `quote_verified == "no"`, set `calibration = "unsupported"` automatically.
 
-`overclaimed` is the value that earns its keep: it is what discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass review (which keeps them). Use it whenever the quote is real and points at a real issue, but the claim is broader, sharper, or more severe than the evidence licenses.
+**`overclaimed` is the value that earns its keep**: it is what discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass one (which keeps them).
 
-## Output
+## Annotator output
 
-Write a single JSON file to: `{{output_path}}`
+Annotator writes a JSON file to `_evaluation/annotations/<blind_id>.json` with exactly this schema:
 
 ```json
 {
+  "blind_id": "BF001",
   "quote_verified": "yes | partial | no",
-  "calibration":    "supported | overclaimed | unsupported",
-  "notes":          "<short prose; required when calibration is overclaimed or unsupported, optional when supported>"
+  "calibration": "supported | overclaimed | unsupported",
+  "notes": "one-paragraph rationale; required for overclaimed and unsupported; optional otherwise"
 }
 ```
 
-Notes:
-- `notes` should be 1–4 sentences. For `overclaimed`, state what the actual weakness is and how the finding overstates it. For `unsupported`, state what the finding misreads. For `supported`, leave empty or note any caveat.
-- Do not invent additional axes. The two-axis rubric is deliberate; an annotator that returns extra fields is rejected.
-- If the paper's section anchors are sparse (long unnumbered prose), match by content rather than location and explain in `notes`.
+No extra fields. Annotations with additional keys are accepted but the extras are ignored by the aggregator.
 
 ## Constraints
 
-- Read the paper. Do not annotate from the finding alone — the rubric requires checking the quote against the paper text.
-- Do not use the paper's external citations to verify the finding. The rubric is "is the finding supported by the paper itself?", not "is the underlying claim true in the literature." External-fact verification is a separate phase (`2_ranking/web_verification.md`) that already ran.
-- Do not consult other findings in the review. Each annotation is independent. If the rubric asks "is this supported?" the answer cannot depend on whether other findings in the same review are also supported.
-- If the paper is OCR'd, OCR garbage in the quote does not by itself fail `quote_verified`. Match on substance, not on character-level fidelity.
+- **Read the paper.** Judgment against the finding alone is rejected; the rubric requires checking the quote against the inlined paper text.
+- **Do not use external citations.** The rubric asks "is the finding supported by the paper?", not "is the underlying claim true in the literature." External-fact verification is a separate phase (`2_ranking/verification.md`).
+- **Do not consult other findings.** Each annotation is independent. Correctness cannot depend on whether other findings in the same review are supported.
+- **Do not try to identify the review version.** Blind IDs are intentionally uniform. Style-guessing the source is bias, not judgment.
+- **OCR garbage in the quote does not by itself fail `quote_verified`.** Match on substance, not on character-level fidelity.

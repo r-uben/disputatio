@@ -1,18 +1,39 @@
 # Evaluation — per-finding annotation
 
-Disputatio's quality is measured by judging **each finding on its own merits against the paper**, not by a holistic rubric score on the whole review. This protocol produces precision-like and calibration metrics that can discriminate between a debate-hardened review and an overconfident single-pass one.
+Disputatio's quality is measured by judging **each finding on its own merits against the paper**, not by a holistic rubric score on the whole review. This protocol produces calibration metrics that discriminate between a debate-hardened review and an overconfident single-pass one — in particular the `overclaim_rate`, which captures how often the review stretches a real issue into a stronger claim than the paper supports.
 
 ## When this runs
 
-**Post-hoc**, after `4_report/referee_report.md` is written and `2_ranking/issue_register.md` is frozen. Evaluation does NOT feed back into the pipeline. It is a separate, independently-annotated quality assessment.
+**Post-hoc**, after `4_report/referee_report.md` is written and `_artifacts/json/ranked_issues.json` (or `final.json`) is frozen. Evaluation is a self-contained sub-pipeline that lives entirely under `_evaluation/` inside the paper folder. It does NOT feed back into the pipeline; it is a separately-annotated quality assessment, recorded alongside the review for the human to read.
+
+## The `_evaluation/` sub-DAG
+
+Evaluation has its own ticket DAG, its own prompt store, and its own output tree — all under `_evaluation/` in the paper folder, cleanly separated from the main pipeline's `_artifacts/`.
+
+```
+<paper-folder>/_evaluation/
+├── manifest_blind.json          ← blind_id → (true_version, true_id) map
+├── tickets.json                 ← eval sub-DAG; one ticket per BF###
+├── prompts/
+│   └── BF001.md                 ← self-contained prompt (rubric + finding + paper + output path)
+├── annotations/
+│   └── BF001.json               ← annotator output (two-axis + notes)
+├── sessions/
+│   └── BF001.log                ← raw codex session capture (auto-archived)
+├── results.json                 ← machine source of truth: rows + per-version summary
+├── annotations_unblinded.csv    ← human-readable join of results + manifest
+├── 00_evaluation.md             ← headline scorecard (markdown projection of results.json)
+└── comparison.md                ← optional: side-by-side when >1 version evaluated
+```
+
+Isolating evaluation under `_evaluation/` (instead of mixing into `_artifacts/`) keeps the self-contained property sharp: the annotator's world is the prompt file and the paper; nothing in `_artifacts/json/` can leak version or agent identity into the judgement.
 
 ## Atomic unit: the finding
 
-Every finding in `_artifacts/json/ranked_issues.json` is a quadruple:
+Every finding in `_artifacts/json/ranked_issues.json` (or `final.json`) is a quadruple the annotator judges:
 
 ```json
 {
-  "id":             "merged_001",
   "claim":          "<what the finding asserts>",
   "quote":          "<verbatim excerpt from the paper>",
   "quote_location": "<section / page / equation anchor>",
@@ -20,158 +41,137 @@ Every finding in `_artifacts/json/ranked_issues.json` is a quadruple:
 }
 ```
 
-The evaluator judges **each quadruple independently** on two axes. No ground-truth issue register is required.
-
 ### Aggregated findings
 
-If a finding has `aggregated: true` with a `sub_findings` array, annotate **each sub-finding as its own row** (e.g. `merged_099.a`, `merged_099.b`, ...). The top-level finding gets a summary calibration based on whether the *aggregate pattern claim* holds; each sub-finding gets its own `quote_verified` and `calibration`. Bundled findings without `sub_findings` must not exist — they are rejected at merge time per `templates/merge_and_rank.md` Step 2b.
+If a finding has `aggregated: true` with a `sub_findings` array, annotate **each sub-finding as its own blinded row** (`BF###` per sub-finding). The aggregate claim itself is not annotated separately — the rubric judges concrete quotes against the paper, and an aggregate claim does not have a single concrete quote (per `templates/merge_and_rank.md` Step 2b's atomicity rule). The aggregator surfaces per-sub scores in the scorecard alongside a sub-averaged summary.
 
-## Rubric
+## Blinding — randomised IDs, not metadata-strip
 
-### Axis 1: `quote_verified`
+Every finding gets a randomised `BF###` identifier (zero-padded integers in random order). The orchestrator writes `_evaluation/manifest_blind.json`:
 
-Does the quote actually exist in the paper at the cited location, saying what the finding claims it says?
+```json
+[
+  {"blind_id": "BF001", "true_version": "V2", "true_id": "merged_013"},
+  {"blind_id": "BF002", "true_version": "V3", "true_id": "merged_024"}
+]
+```
 
-| Value | Meaning |
-|---|---|
-| `yes` | Quote appears verbatim (or near-verbatim with insubstantial OCR cleanup) at the cited location, and supports the claim's premise. |
-| `partial` | Quote exists but is paraphrased, misplaced, truncated in a way that changes meaning, or the location anchor is wrong. |
-| `no` | Quote is fabricated, grossly misrepresented, or does not appear in the paper at all. |
+The manifest is the ONLY place the `blind_id → true` mapping exists. The annotator never sees it. When the same paper has findings from multiple reviews (V2, V3, coarse, reference), they go into the same shuffled pool and get the same `BF###` naming scheme — the annotator cannot tell which review produced which finding, either by ID, by agent metadata (stripped), or by position in the list (randomised).
 
-### Axis 2: `calibration`
+This is stronger blinding than metadata-stripping alone. Randomised IDs prevent the annotator from inferring that, say, `BF001..BF015` are V2 and `BF016..BF042` are V3 (which fixed ordering would leak).
 
-Given the quote is real, does the stated evidence actually establish the claim at its stated strength?
-
-| Value | Meaning |
-|---|---|
-| `supported` | The evidence establishes the claim as stated. Concrete objections, counterexamples, or contradictions are demonstrable. |
-| `overclaimed` | There is a real issue, but the finding overstates severity, scope, or certainty. The paper has a weakness here, but not the weakness as described. |
-| `unsupported` | The evidence does not establish the claim. The finding is either a misreading of the paper, a style/taste complaint dressed as a substantive flaw, or a methodological nit promoted beyond its actual impact. |
-
-**`overclaimed` is the most important value** — it is the metric that discriminates between a debate-hardened review (which walks back overconfident claims) and an aggressive single-pass review (which keeps them).
+Metadata-strip is still done on top: the payload inlined into each prompt contains only `{blind_id, claim, quote, quote_location, evidence}`. No `agent`, no `method`, no `confidence`, no `support_score`, no merge rank.
 
 ## Procedure
 
-The evaluation phase runs after `final_report = done` and the orchestrator has not yet emitted any `evaluate` tickets. Wave-style emission, mirroring discovery.
+After `final_report = done` and no `_evaluation/tickets.json` exists:
 
-1. Open `_artifacts/json/ranked_issues.json` and walk the merged-issues array.
-2. For each issue, build a **payload JSON** at `_artifacts/json/eval_<finding_id>_payload.json` containing only `{claim, quote, quote_location, evidence}` — the four substantive fields. Do NOT include `agent`, `method`, `confidence`, `support_score`, `centrality`, or any merge metadata. The annotator must judge the finding on its own merits, not on which model surfaced it.
-3. For each (finding × annotator) pair, emit one `evaluate` ticket pointing at the payload + the operational template `templates/evaluate.md`. The default annotator is **codex with `gpt-5.4-mini`** (cheap, fast, matches the manual baseline from 2026-04-13). One annotator per finding is enough for the first iteration; two-annotator double-blind is a follow-on.
-4. Run the eval tickets through `agent-ctl run-dag`. Each produces one `_artifacts/json/eval_<finding_id>_<annotator>.json` with the two-axis annotation.
-5. Aggregate inline: read all eval JSONs, deduplicate per finding, compute the scorecard, write `_evaluation/00_evaluation.md` and `_evaluation/annotations.md`. Aggregation is a Claude-inline step (no ticket); the inputs are deterministic and a third agent adds no value at the aggregation level.
-
-### Aggregated findings
-
-If a finding has `aggregated: true` with a `sub_findings` array, the orchestrator emits **one ticket per sub-finding** with payload IDs `eval_<finding_id>.<sub_letter>_payload.json`. The aggregate-level claim itself is not annotated separately — the rubric judges concrete quotes against the paper, and the aggregate-level claim does not have a single concrete quote (per `templates/merge_and_rank.md` Step 2b's atomicity rule). The aggregator computes per-sub scores and surfaces the average in the scorecard alongside the per-sub breakdown.
-
-### Blinding
-
-The pseudonymisation is automatic and minimal: the payload sent to the annotator already strips agent/method/confidence/support metadata. The finding's `id` (`merged_NNN`) is used as the ticket key but does not leak which model surfaced it (merge IDs are assigned post-merge in arrival order). No randomised pseudonym map is needed for single-review evaluation; the metadata strip is sufficient because there is no review-version contrast to bias against.
-
-For cross-review comparison (out of scope for the first evaluation harness), randomised pseudonyms across reviews would be needed. Defer until that comparison is genuinely required.
-
-### Double annotation (deferred)
-
-Inter-annotator agreement requires two annotators per finding. Same ticket shape, different `agent`/`model`. Aggregator surfaces disagreements in `_evaluation/disagreements.md`. Not in v1; the protocol is unchanged when it lands.
+1. **Collect findings** from every review version that will enter the evaluation. For single-review eval, that is just the current paper's `ranked_issues.json`. For cross-review eval, gather findings from each version's finalised issues (previous runs' artifacts under `_archive/`, or the comparison directory).
+2. **Shuffle** all findings across all versions into one pool. Assign sequential `BF###` IDs in shuffled order.
+3. **Write `_evaluation/manifest_blind.json`** with the `blind_id → (true_version, true_id)` mapping.
+4. **Build one prompt per finding** at `_evaluation/prompts/<blind_id>.md`: inline the rubric, the finding JSON (with `blind_id` baked in but no version hint), the full paper text, and the output instruction (`write_file` to `_evaluation/annotations/<blind_id>.json`). See `templates/evaluate.md` for the exact prompt body.
+5. **Emit one `evaluate` ticket per finding** into `_evaluation/tickets.json`. Default annotator: `codex` with `gpt-5.4-mini` (cheap, fast, matches the 2026-04-12 baseline). Inputs list is just the prompt file.
+6. **Run the sub-DAG**: `agent-ctl run-dag <paper-folder>/_evaluation/tickets.json --cwd <paper-folder> --concurrent 4`. Each ticket produces one `_evaluation/annotations/<blind_id>.json`.
+7. **Aggregate inline** (no ticket): read every `_evaluation/annotations/*.json`, join against `manifest_blind.json`, write `_evaluation/results.json` (machine source of truth), `_evaluation/annotations_unblinded.csv` (human-readable join), and `_evaluation/00_evaluation.md` (the scorecard markdown).
 
 ## Output files
 
-### `_artifacts/json/eval_aggregate.json` — machine source of truth
+### `_evaluation/results.json` — machine source of truth
 
 ```json
 {
-  "annotator": "codex/gpt-5.4-mini",
-  "n_findings": 27,
-  "counts": {
-    "quote_verified": {"yes": 22, "partial": 4, "no": 1},
-    "calibration":    {"supported": 18, "overclaimed": 6, "unsupported": 3}
-  },
-  "rates": {
-    "fabrication_rate":  0.037,
-    "support_rate":      0.667,
-    "overclaim_rate":    0.222,
-    "unsupported_rate":  0.111
-  },
-  "per_finding": [
-    {"finding_id": "merged_001", "quote_verified": "yes", "calibration": "supported", "notes": ""}
-  ]
+  "rows": [
+    {
+      "blind_id": "BF001",
+      "version": "V2",
+      "true_id": "merged_013",
+      "quote_verified": "yes",
+      "calibration": "supported",
+      "notes": "..."
+    }
+  ],
+  "summary": {
+    "V2": {
+      "n": 15,
+      "qv_yes": 13, "qv_partial": 2, "qv_no": 0,
+      "cal_supported": 7, "cal_overclaimed": 5, "cal_unsupported": 3,
+      "fabrication_rate": 0.133,
+      "support_rate": 0.467,
+      "overclaim_rate": 0.333
+    },
+    "V3": {
+      "n": 27,
+      "qv_yes": 27, "qv_partial": 0, "qv_no": 0,
+      "cal_supported": 20, "cal_overclaimed": 7, "cal_unsupported": 0,
+      "fabrication_rate": 0.0,
+      "support_rate": 0.741,
+      "overclaim_rate": 0.259
+    }
+  }
 }
 ```
 
-The markdown files below are projections of this JSON. If they disagree, the JSON wins. Re-running aggregation regenerates both atomically.
+- `rows` is flat; each row is one blinded annotation joined with its manifest entry. One source of truth; no nested per-version buckets inside `rows`.
+- `summary` is computed at aggregation time and grouped by `version`. Derived from `rows`; if `rows` and `summary` ever disagree, recompute `summary` from `rows`.
+- Rate definitions:
+  - `fabrication_rate = (qv_partial + qv_no) / n`
+  - `support_rate = cal_supported / n`
+  - `overclaim_rate = cal_overclaimed / n`
 
-### `_evaluation/annotations.md`
+### `_evaluation/annotations_unblinded.csv` — human-readable join
 
-Worksheet keyed by `finding_id`. Each row is self-contained and machine-parseable via frontmatter tables.
+One row per finding, with all fields from `rows` flattened to columns. Useful for pasting into a spreadsheet or diffing two runs by hand. Optional but recommended.
 
-```markdown
----
-tags: [disputatio, evaluation, <paper-slug>]
-phase: evaluation
-paper: "<paper title>"
-review_version: <v2 | v3 | coarse | reference | ...>
-annotator: <name>
-blinded: true | false
-date: YYYY-MM-DD
----
+### `_evaluation/00_evaluation.md` — scorecard markdown
 
-# Per-finding annotations — <review-version>
-
-## merged_001 — <short name>
-- **finding_id**: merged_001
-- **claim**: <one-line restatement>
-- **quote**: "<verbatim>"
-- **quote_location**: <anchor>
-- **quote_verified**: yes
-- **calibration**: supported
-- **notes**: <free text; required for overclaimed/unsupported>
-
-## merged_002 — ...
-...
-```
-
-### `_evaluation/00_evaluation.md`
-
-Aggregate scorecard. The body is a single table; any commentary goes below it.
+Projection of `results.json`. Frontmatter plus one table with per-version columns:
 
 ```markdown
 ---
 tags: [disputatio, evaluation, <paper-slug>]
 phase: evaluation
 paper: "<paper title>"
+annotator: codex (gpt-5.4-mini)
+blinded: true
 date: YYYY-MM-DD
 ---
 
 # Evaluation scorecard — <paper title>
 
-| Metric | <v2> | <v3> | <coarse> |
-|---|---|---|---|
-| n findings                       |  |  |  |
-| quote_verified = yes             |  |  |  |
-| quote_verified = partial         |  |  |  |
-| quote_verified = no              |  |  |  |
-| calibration = supported          |  |  |  |
-| calibration = overclaimed        |  |  |  |
-| calibration = unsupported        |  |  |  |
-| fabrication rate (quote ≠ yes)   |  |  |  |
-| support rate (calibration = supported) |  |  |  |
-| overclaim rate (calibration = overclaimed) |  |  |  |
+| Metric                                        | V2    | V3    | Δ (V3 − V2) |
+|-----------------------------------------------|------:|------:|------------:|
+| n findings                                    |   15  |   27  |       +12   |
+| quote_verified = yes                          |   13  |   27  |       +14   |
+| quote_verified = partial                      |    2  |    0  |        −2   |
+| quote_verified = no                           |    0  |    0  |         0   |
+| calibration = supported                       |    7  |   20  |       +13   |
+| calibration = overclaimed                     |    5  |    7  |        +2   |
+| calibration = unsupported                     |    3  |    0  |        −3   |
+| **fabrication rate** (quote ≠ yes)            | 0.133 | 0.000 | **−0.133**  |
+| **support rate** (calibration = supported)    | 0.467 | 0.741 | **+0.274**  |
+| **overclaim rate** (calibration = overclaimed)| 0.333 | 0.259 | **−0.074**  |
 
 ## Notes
 
 <free text: what the numbers show, caveats, disagreements between annotators, etc.>
 ```
 
+For single-review evaluation, drop the Δ column; the table has one version column plus the metric names.
+
 ### `_evaluation/comparison.md` (optional)
 
-Side-by-side of the same finding across review versions, when versions are compared on the same paper. Useful for showing that V3's defense step narrows an overclaimed V2 finding into a supported one.
+Side-by-side commentary when more than one version is evaluated on the same paper. Not generated automatically; written by hand when the user wants to narrate the delta.
 
-## Relation to `2_ranking/web_verification.md`
+## Double annotation (deferred)
+
+Inter-annotator agreement requires two annotators per finding. Same ticket shape, different `agent`/`model`, same blinded prompt. Aggregator surfaces disagreements in `_evaluation/disagreements.md`. Not in v1; the protocol is unchanged when it lands — just emit two tickets per `BF###` with different annotators.
+
+## Relation to `2_ranking/verification.md`
 
 They are **distinct and non-overlapping**:
 
-- `web_verification.md` — Gemini fact-checks claims **against external sources** (papers, databases, web). Produces pipeline input to ranking (boosts or penalizes issues before debate). Runs inside the pipeline.
-- `_evaluation/annotations.md` — human (or blind-LLM) judgment of each finding **against the paper itself**. Produces quality metrics for the review. Runs outside the pipeline, post-hoc.
+- `2_ranking/verification.md` — Gemini fact-checks claims **against external sources** (papers, databases, web). Produces pipeline input to ranking. Runs inside the pipeline.
+- `_evaluation/00_evaluation.md` — annotator judgement of each finding **against the paper itself**. Produces quality metrics for the review. Runs outside the pipeline, post-hoc.
 
 Keep them separate. Never merge their outputs.
 
@@ -179,4 +179,4 @@ Keep them separate. Never merge their outputs.
 
 Building a "gold answer key" of real issues in a paper requires a reference reviewer, doesn't scale, and doesn't measure what we actually care about: whether the system **overclaims**. The per-finding rubric sidesteps the answer-key problem — each finding is judged against the paper directly.
 
-Cost: you cannot measure **recall** (what the system missed) without a gold register. That is acknowledged. For the claim "debate reduces overclaiming," precision and calibration are sufficient; recall is a separate evaluation we defer.
+Cost: you cannot measure **recall** (what the system missed) without a gold register. That is acknowledged. For the claim "debate reduces overclaiming," precision-like metrics and calibration are sufficient; recall is a separate evaluation deferred until a reference pool of real issues exists.

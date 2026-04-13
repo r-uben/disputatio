@@ -135,11 +135,15 @@ Claude also updates `review.md` at the top of the paper folder to set `phase: co
 
 ### Phase 5 — Per-finding self-evaluation
 
-After the report is written, the orchestrator runs a quality pass on the review itself. For each merged finding (and each sub-finding for aggregated issues), Claude writes a pseudonymised payload `_artifacts/json/eval_<finding_id>_payload.json` containing only `{claim, quote, quote_location, evidence}` — the substantive fields, with all agent/method/rank metadata stripped. One `evaluate` ticket per finding is then dispatched to a cheap external annotator (default: codex with `gpt-5.4-mini`).
+After the report is written, the orchestrator runs a quality pass on the review itself as a **self-contained sub-DAG under `_evaluation/`** — its own `tickets.json`, `prompts/`, `annotations/`, and results, cleanly separated from the main pipeline's `_artifacts/`.
 
-Each annotator returns a two-axis judgement: `quote_verified ∈ {yes, partial, no}` and `calibration ∈ {supported, overclaimed, unsupported}`. The aggregator (Claude inline, no ticket) reads every annotation, computes per-rate counts, and writes `_artifacts/json/eval_aggregate.json` plus the curated `_evaluation/00_evaluation.md` and `_evaluation/annotations.md`.
+Findings are blinded with randomised `BF###` IDs (not `merged_NNN`). The orchestrator shuffles every finding being evaluated into one pool, assigns `BF###` in shuffled order, and writes `_evaluation/manifest_blind.json` with the `blind_id → (true_version, true_id)` map. The manifest is the only place this mapping exists; the annotator never sees it. For cross-review evaluation, V2 / V3 / coarse / reference findings all share the same shuffled pool — the annotator cannot tell which review produced which finding, either by ID, by position, or by metadata (stripped from the payload at emit time).
 
-The evaluation **does not feed back into the review** — it is a separate quality assessment, recorded alongside the review for the human to read. The `overclaim_rate` is the metric that earns its keep: it discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass review (which keeps them).
+Each `evaluate` ticket points at a self-contained prompt at `_evaluation/prompts/<blind_id>.md` that inlines the rubric, the finding JSON, and the full paper text. The ticket's `inputs` list contains only the prompt file — everything the annotator needs is inside it. Default annotator: **codex with `gpt-5.4-mini`** (matches the 2026-04-12 manual baseline).
+
+Each annotator returns a two-axis judgement written to `_evaluation/annotations/<blind_id>.json`: `quote_verified ∈ {yes, partial, no}` and `calibration ∈ {supported, overclaimed, unsupported}`, plus optional notes. The aggregator (Claude inline, no ticket) reads every annotation, joins with the blind manifest, writes `_evaluation/results.json` (flat `rows` + per-version `summary`), and renders `_evaluation/00_evaluation.md` (scorecard markdown) and `_evaluation/annotations_unblinded.csv` (human-readable join).
+
+The evaluation **does not feed back into the review** — it is a separate quality assessment recorded alongside. The `overclaim_rate` is the metric that earns its keep: it discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass one (which keeps them).
 
 See `templates/evaluation.md` for the protocol and `templates/evaluate.md` for the per-finding prompt body.
 
@@ -189,20 +193,23 @@ See `templates/evaluation.md` for the protocol and `templates/evaluate.md` for t
 ├── 4_report/
 │   └── referee_report.md                 # the deliverable
 │
-├── _evaluation/                          # per-finding self-evaluation
-│   ├── 00_evaluation.md                  # aggregate scorecard
-│   ├── annotations.md                    # per-finding rows
+├── _evaluation/                          # per-finding self-evaluation (sub-DAG)
+│   ├── 00_evaluation.md                  # aggregate scorecard (markdown)
+│   ├── annotations_unblinded.csv         # human-readable join of rows + manifest
+│   ├── manifest_blind.json               # blind_id → (true_version, true_id)
+│   ├── tickets.json                      # eval sub-DAG
+│   ├── results.json                      # machine truth: flat rows + per-version summary
+│   ├── prompts/<blind_id>.md             # self-contained prompt per finding
+│   ├── annotations/<blind_id>.json       # per-finding two-axis output
+│   ├── sessions/<blind_id>.log           # raw annotator session capture
 │   └── disagreements.md                  # only when ≥2 annotators ran (deferred)
 │
-└── _artifacts/                           # machine artifacts, non-markdown
+└── _artifacts/                           # main-pipeline machine artifacts
     ├── manifest.md                       # human-readable index
-    ├── tickets.json                      # the DAG — source of truth for orchestration
-    ├── prompts/                          # one .md per ticket
+    ├── tickets.json                      # the main DAG
+    ├── prompts/                          # one .md per main-pipeline ticket
     ├── sessions/                         # raw agent reasoning traces (.log, never wiped)
-    └── json/                             # raw structured outputs (.json), incl.
-                                          # eval_<id>_payload.json (pseudonymised input)
-                                          # eval_<id>_<annotator>.json (annotation)
-                                          # eval_aggregate.json (aggregator output)
+    └── json/                             # raw structured outputs (.json)
 ```
 
 See `templates/obsidian_structure.md` for the complete specification.
@@ -305,22 +312,26 @@ MATCH current state → action:
 │ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
 │                                     │ Update review.md to phase: complete.              │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ final_report = done,                │ For each merged finding (and each sub-finding):      │
-│ no evaluate tickets exist           │ write _artifacts/json/eval_<id>_payload.json with    │
-│                                     │ only {claim, quote, quote_location, evidence}, then  │
-│                                     │ emit one evaluate ticket per finding routed to       │
-│                                     │ codex/gpt-5.4-mini. Run via $A run-dag --concurrent 4│
+│ final_report = done,                │ Collect findings (single or cross-review). Shuffle.  │
+│ no _evaluation/tickets.json exists  │ Assign BF### IDs. Write _evaluation/manifest_blind.  │
+│                                     │ json. Build one self-contained prompt per finding    │
+│                                     │ at _evaluation/prompts/<blind_id>.md (rubric + JSON  │
+│                                     │ + paper inlined). Emit one evaluate ticket per BF### │
+│                                     │ into _evaluation/tickets.json, routed to             │
+│                                     │ codex/gpt-5.4-mini.                                   │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ evaluate tickets pending/running    │ $A run-dag --concurrent 4. Wait for completion.      │
-│                                     │ Validate each output JSON has the two-axis fields.   │
+│ _evaluation/tickets.json exists,    │ $A run-dag _evaluation/tickets.json --concurrent 4.  │
+│ eval tickets pending/running        │ Wait for completion. Validate each annotation JSON   │
+│                                     │ has blind_id + two-axis fields.                       │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all evaluate tickets done,          │ Execute aggregator inline: read all eval_*_<ann>.json│
-│ no eval_aggregate.json              │ files, compute counts and rates, write              │
-│                                     │ _artifacts/json/eval_aggregate.json. Render          │
-│                                     │ _evaluation/00_evaluation.md + annotations.md from   │
-│                                     │ the aggregate JSON.                                  │
+│ all evaluate tickets done,          │ Execute aggregator inline: read every                │
+│ no _evaluation/results.json         │ _evaluation/annotations/*.json, join with            │
+│                                     │ manifest_blind.json, write _evaluation/results.json  │
+│                                     │ (flat rows + per-version summary). Render            │
+│                                     │ _evaluation/00_evaluation.md + annotations_unblinded.│
+│                                     │ csv from results.json.                                │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ eval_aggregate.json exists          │ EXIT. Review complete and self-evaluated.            │
+│ _evaluation/results.json exists     │ EXIT. Review complete and self-evaluated.            │
 └─────────────────────────────────────┴──────────────────────────────────────────────────────┘
 ```
 

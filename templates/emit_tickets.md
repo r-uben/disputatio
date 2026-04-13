@@ -109,7 +109,7 @@ All paths below are relative to the paper folder (`<paper-folder>` root). Raw JS
 | `defend` | `_artifacts/json/debate_<issue>_r<N>_defend.json` | prosecute output, `_paper/paper.md` | rotating |
 | `synthesize` | `_artifacts/json/debate_<issue>_r<N>_synthesize.json` | prosecute + defend outputs | rotating |
 | `final_report` | `_artifacts/json/final.json`, `4_report/referee_report.md` | all debate synthesis outputs | claude |
-| `evaluate` | `_artifacts/json/eval_<finding_id>_<annotator>.json` | `_paper/paper.md`, `_artifacts/json/eval_<finding_id>_payload.json` | external (default codex/`gpt-5.4-mini`) |
+| `evaluate` | `_evaluation/annotations/<blind_id>.json` | `_evaluation/prompts/<blind_id>.md` (self-contained) | external (default codex/`gpt-5.4-mini`) |
 
 ## Wave protocol
 
@@ -336,38 +336,47 @@ Note: `final_report` is a claude-typed ticket, executed inline. Claude writes bo
 
 ### Wave 7 — Per-finding evaluation (emitted after `final_report = done`)
 
-For each finding in `_artifacts/json/ranked_issues.json` (and each sub-finding for aggregated issues), emit one `evaluate` ticket pointing at a pseudonymised payload. The default annotator is **codex with `gpt-5.4-mini`** — cheap, fast, matches the manual baseline from 2026-04-13. See `templates/evaluation.md` for protocol and `templates/evaluate.md` for the prompt body.
+Evaluation is a **self-contained sub-DAG** under `<paper-folder>/_evaluation/`, with its own `tickets.json`, `prompts/`, `annotations/`, `sessions/`, and results. Findings are blinded with randomised `BF###` IDs (not `merged_NNN`); the `blind_id → true_version/true_id` map lives only in `_evaluation/manifest_blind.json` and is never shown to the annotator. Default annotator: **codex with `gpt-5.4-mini`** (matches the 2026-04-12 manual baseline). See `templates/evaluation.md` for protocol and `templates/evaluate.md` for the prompt body.
+
+Emission procedure (orchestrator runs this inline before `run-dag`):
+
+1. Collect findings from every review version being evaluated (single-review: just current `ranked_issues.json`; cross-review: gather from each version).
+2. Shuffle all findings across all versions into one pool; assign sequential `BF###` IDs in shuffled order.
+3. Write `_evaluation/manifest_blind.json` with the `[{blind_id, true_version, true_id}, ...]` list.
+4. Build one self-contained prompt per finding at `_evaluation/prompts/<blind_id>.md` — rubric + finding JSON (with blind_id baked in, metadata stripped) + paper text inlined + `write_file` output instruction pointing at `_evaluation/annotations/<blind_id>.json`.
+5. Write `_evaluation/tickets.json` with one ticket per finding:
 
 ```json
 {
-  "evaluate_merged_001_codex-mini": {
-    "id": "evaluate_merged_001_codex-mini",
+  "eval_BF001": {
+    "id": "eval_BF001",
     "type": "evaluate",
     "agent": "codex",
     "model": "gpt-5.4-mini",
     "family": "openai",
     "flags": {},
-    "prompt_path": "_artifacts/prompts/evaluate_merged_001_codex-mini.md",
+    "prompt_path": "_evaluation/prompts/BF001.md",
     "inputs": [
-      "_paper/paper.md",
-      "_artifacts/json/eval_merged_001_payload.json"
+      "_evaluation/prompts/BF001.md"
     ],
     "outputs": [
-      "_artifacts/json/eval_merged_001_codex-mini.json"
+      "_evaluation/annotations/BF001.json"
     ],
-    "depends_on": ["final_report"],
+    "depends_on": [],
     "status": "pending",
-    "timeout_s": 300,
-    "max_attempts": 1
+    "timeout_s": 900,
+    "max_attempts": 2
   }
 }
 ```
 
-Pseudonymisation is upstream of the ticket: before emitting, Claude writes one `_artifacts/json/eval_<finding_id>_payload.json` per finding containing only `{claim, quote, quote_location, evidence}`. The annotator's prompt references the payload, never the original `ranked_issues.json` — so it cannot see which agent or method surfaced the finding, what its merge rank was, or how many agents agreed.
+Note the inputs list is just the prompt — everything the annotator needs (paper text, rubric, finding) is inlined into the prompt body. This keeps the annotator's world closed: it cannot see other findings, other prompts, or `_artifacts/json/`.
 
-After all `evaluate` tickets are `done`, Claude **runs the aggregator inline** (no ticket): reads every `_artifacts/json/eval_*_<annotator>.json`, computes the rate counts, writes `_artifacts/json/eval_aggregate.json` (machine truth) plus `_evaluation/00_evaluation.md` and `_evaluation/annotations.md` (curated markdown). Aggregation is deterministic and a third agent adds no value.
+Run the sub-DAG with `agent-ctl run-dag <paper>/_evaluation/tickets.json --cwd <paper> --concurrent 4`.
 
-For aggregated findings (`aggregated: true` with `sub_findings`), emit one ticket per sub-finding using `eval_<finding_id>.<sub_letter>_payload.json` paths. The aggregator surfaces per-sub scores in the scorecard alongside an averaged top-line.
+After all `evaluate` tickets are `done`, Claude **runs the aggregator inline** (no ticket): reads every `_evaluation/annotations/*.json`, joins with `_evaluation/manifest_blind.json`, writes `_evaluation/results.json` (machine truth: flat `rows` + per-version `summary`), then renders `_evaluation/00_evaluation.md` (scorecard) and `_evaluation/annotations_unblinded.csv` (human-readable join) from it.
+
+For aggregated findings (`aggregated: true` with `sub_findings`), each sub-finding gets its own `BF###` in the shuffled pool; the manifest records the sub-finding id in `true_id` (e.g. `merged_099.a`). The aggregator surfaces per-sub scores in the scorecard alongside a sub-averaged summary.
 
 ## Run sequence
 
