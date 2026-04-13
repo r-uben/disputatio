@@ -94,6 +94,27 @@ Cross-agent support is weighted double because it is the strongest signal of a r
 
 Maximum score: 3 + 6 + 3 + 3 = 15.
 
+`rank_score` is the **single canonical importance score**. It drives the ordering of the final report. It does NOT directly select the debate cohort — see Step 3b for the routing rule.
+
+### Step 3b: Assign status (drop / settled / debate)
+
+After scoring, every surviving merged issue gets a `status` that determines whether it enters debate. **There is no second score.** Status is a pure filter on top of `rank_score`.
+
+```
+drop    = removed in Step 1 (triage). Already gone — never reaches the report.
+settled = strong corroboration AND strong evidence AND web-verification not inconclusive.
+          Specifically: cross_agent_support ≥ 2 (two or more model families flagged it)
+                    AND evidence_specificity ≥ 2 (specific quote + falsifier)
+                    AND (no web check requested OR web_verification.status ∈ {confirmed, refuted, unchecked}).
+debate  = everything else. Either contested across families, weak evidence, or web-verification
+          left it inconclusive — i.e. the issue is important enough to keep but not
+          settled enough to ship unchallenged.
+```
+
+Rationale: dialectic is for **unresolved but important** questions, not for high-disagreement-in-the-abstract and not for anything-that-ranks-high. Three families converging on a well-evidenced issue is exactly what should ship to the report unchallenged. Singletons that survive triage, partial-support findings, and web-inconclusive issues are exactly what needs adversarial pressure.
+
+If a paper produces zero `debate`-status issues, the debate phase is **skipped entirely**. That is the correct outcome — it means findings are either solid or noise, not contested. Forcing debate when nothing is live produces theater (round-1 convergence on every issue, defenders conceding pre-settled points), which the 2026-04-13 v3 run on Galeotti-Golub-Goyal exemplified.
+
 ### Step 4: Produce the ranked list
 
 Output a single file `_artifacts/json/ranked_issues.json` containing all merged issues sorted by rank score descending. Format:
@@ -115,6 +136,8 @@ Output a single file `_artifacts/json/ranked_issues.json` containing all merged 
         "evidence_specificity": 3,
         "severity": 3
       },
+      "status": "settled | debate",
+      "status_reason": "one-sentence justification for the status assignment",
       "sources": [
         {"agent": "claude", "method": "m5", "issue_id": "m5_issue_002"},
         {"agent": "codex", "method": "m3", "issue_id": "m3_issue_001"}
@@ -146,4 +169,15 @@ For aggregated findings (rare — only when the *pattern* is itself the finding)
 
 ### Step 5: Budget cut
 
-The full list is preserved in `ranked_issues.json`, but only the **top N** issues enter the debate phase, where N is set by the skill configuration (default: top 8). Issues below the cutoff are recorded as "appendix concerns" in the final report but not debated.
+The full list is preserved in `ranked_issues.json`. Selection for the debate phase is **status-driven, then rank-ordered**:
+
+1. Filter to `status == "debate"` issues only.
+2. Sort by `rank_score` descending.
+3. Take the top `--top-n` (default 8) of the filtered list.
+
+If fewer than `--top-n` issues have `status == "debate"`, debate the smaller cohort (or zero, in which case the debate phase is skipped). Do not pad the cohort with `settled` issues to hit the cap.
+
+All `status != "drop"` issues — settled and debated alike — appear in the final report, ordered by `rank_score`. The report distinguishes:
+- **Settled** issues: shipped as referee comments without dialectic. Strong cross-architecture corroboration is itself the warrant.
+- **Debated** issues: shipped with their debate trace. The verdict (prosecution_wins / defense_wins / split) determines whether they appear as material concerns, surviving local concerns, or are dropped post-debate.
+- **Appendix concerns**: low-rank `settled` items the report deprioritises.

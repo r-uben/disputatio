@@ -242,7 +242,9 @@ Note: verify writes a new file `ranked_issues_verified.json` instead of overwrit
 
 ### Wave 5 — Debate round 1 (emitted after verify)
 
-For each of the top N (default 8) issues in `_artifacts/json/ranked_issues_verified.json`, emit three tickets. Example for `issue_001`:
+**Cohort selection: status-driven, not score-driven.** Open `_artifacts/json/ranked_issues_verified.json`, filter to issues where `status == "debate"` (assigned by `merge_and_rank.md` Step 3b), sort by `rank_score` descending, take the top `--top-n` (default 8). If fewer than `--top-n` issues have `status == "debate"`, emit the smaller cohort. **If zero issues have `status == "debate"`, skip the debate phase entirely and proceed directly to the final report** — that is the correct outcome on consensus-heavy papers and saves substantial budget.
+
+For each cohort issue, emit three tickets. Example for `issue_001`:
 
 ```json
 {
@@ -301,11 +303,24 @@ Within a single issue's debate, the tickets are strictly sequential. Across issu
 
 ### Wave 6+ — Subsequent rounds (emitted after each synthesize completes)
 
-After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synthesis output. If `status: "continue"` and `N < max_rounds`, emit round N+1 tickets for that issue. If `status` is `converged`, `split`, or `escalate`, do not emit more tickets for that issue.
+After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synthesis output. The `verdict` field decides whether round N+1 is funded:
 
-**Special case — split**: if the synthesis produces `split`, the child issues are appended to `_artifacts/json/ranked_issues_verified.json` and wave-5-style round-1 tickets are emitted for each child.
+- `verdict: "prosecution_wins"` → **terminal**. No round N+1. Issue ships to the report as a material concern with the synthesizer's `surviving_text`.
+- `verdict: "defense_wins"` → **terminal**. No round N+1. Issue is dropped from the report (recorded in the debate trace, not in the referee letter).
+- `verdict: "split"` and `N < max_rounds` → emit round N+1 tickets for the issue, prosecuting the **surviving** (narrower) claim from `surviving_text`, not the original. Roles rotate per the table below.
+- `verdict: "escalate"` and `N < max_rounds` → emit round N+1 tickets focused on the verifiable point named in `next_round_focus`. Roles rotate. Also flag for human review (record in `_artifacts/json/escalations.json`).
 
-**Budget tiering**: when emitting round 2+ tickets, check the issue's rank score. If the issue is in the bottom half of the top-N (low priority), do not emit further rounds even if synthesis says `continue`. This enforces the budget cap described in SKILL.md.
+**There is no `converged` verdict.** It was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
+
+**No tier-based pre-allocation of rounds.** Every issue starts with a budget of 1 round. Rounds 2 and 3 are funded **only when the synthesizer's verdict demands continuation** (`split` or `escalate`). Budget follows tension, not pre-assigned rank tier. Hard cap at `--max-rounds` (default 3).
+
+**Role rotation across rounds** (unchanged):
+
+| Round | Prosecutor | Defender | Synthesizer |
+|-------|-----------|----------|-------------|
+| 1 | claude | codex | gemini |
+| 2 | codex | gemini | claude |
+| 3 | gemini | claude | codex |
 
 ### Final wave — Final report (emitted after all debate tickets are terminal)
 

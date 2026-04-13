@@ -16,13 +16,14 @@ You are writing the final referee report. All debates are complete. Your job is 
 
 ### Step 1: Classify every issue
 
-For each issue that entered debate, read its final synthesis and classify it:
+For each issue that entered debate, read its final synthesis `verdict` and classify it:
 
-- **Material** — the refined claim affects the paper's central results or main interpretation. `impact: material` in the last synthesis AND the debate did not reduce it to `none`.
-- **Local** — the refined claim affects a specific passage, calibration, or robustness check but not the core contribution. `impact: local` in the last synthesis.
-- **Dropped** — the debate resolved the issue. `impact: none` in the last synthesis, or the issue was killed by early-kill / stalled-debate rules.
+- **Material** — `verdict: "prosecution_wins"`. The synthesizer ruled the prosecution's case survived. The issue's `surviving_text` is the material concern statement.
+- **Local** — `verdict: "split"`. A narrower (surviving) claim survives in the synthesizer's `surviving_text`. Local concern.
+- **Dropped** — `verdict: "defense_wins"`. The defense defeated every objection. Issue is recorded but does not appear in the referee letter as a concern.
+- **Escalated** — `verdict: "escalate"` after the round budget exhausted. Flagged for human review; appears in the report as an open question.
 
-For issues that were below the budget cut (never debated), classify them as **Appendix** — preserved for completeness but not examined.
+For issues that had `status: "settled"` at merge time (never debated), classify them as **Settled** — they ship as referee comments without dialectic, ordered by `rank_score`. Not "appendix"; settled issues are first-class content. Use **Appendix** only for low-rank settled items the report deprioritises.
 
 ### Step 2: Write the structured output
 
@@ -38,15 +39,14 @@ Write `_artifacts/json/final.json`:
   "material_issues": [
     {
       "id": "merged_001",
-      "claim": "the refined claim after debate",
+      "surviving_text": "the synthesizer's report-grade paragraph for prosecution_wins",
       "original_claim": "the claim before debate",
       "rank_score": 13,
       "rounds": 2,
-      "final_status": "converged | escalate",
-      "accepted_facts": ["..."],
-      "refuted_components": ["..."],
-      "open_disputes": ["..."],
-      "constructive_suggestion": "...",
+      "verdict": "prosecution_wins",
+      "attack_outcomes": ["..."],
+      "defense_outcomes": ["..."],
+      "constructive_suggestion": "the concrete sentence-level fix",
       "web_verified": true,
       "web_summary": "one-line summary of external evidence"
     }
@@ -54,9 +54,10 @@ Write `_artifacts/json/final.json`:
   "local_issues": [
     {
       "id": "merged_005",
-      "claim": "the refined claim after debate",
+      "surviving_text": "the surviving (narrower) claim from a split verdict",
       "rank_score": 9,
       "rounds": 1,
+      "verdict": "split",
       "constructive_suggestion": "..."
     }
   ],
@@ -64,15 +65,32 @@ Write `_artifacts/json/final.json`:
     {
       "id": "merged_008",
       "claim": "original claim",
-      "reason": "why it was dropped (e.g., 'resolved in round 1 defense')"
+      "verdict": "defense_wins",
+      "reason": "what the defender established that defeated the objection"
+    }
+  ],
+  "escalated_issues": [
+    {
+      "id": "merged_011",
+      "claim": "original claim",
+      "verdict": "escalate",
+      "open_question": "what human review must resolve"
+    }
+  ],
+  "settled_issues": [
+    {
+      "id": "merged_002",
+      "claim": "claim that shipped without debate due to status: settled",
+      "rank_score": 11,
+      "status_reason": "two families flagged it with verbatim quotes; no inconclusive verification"
     }
   ],
   "appendix_issues": [
     {
       "id": "merged_012",
       "claim": "original claim",
-      "rank_score": 6,
-      "reason": "below budget cut"
+      "rank_score": 4,
+      "reason": "low-rank settled item, deprioritised in the report"
     }
   ],
   "overall_assessment": "one paragraph — honest, not polite",

@@ -111,11 +111,16 @@ The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` fo
 
 **Parallelism**: issues are debated in parallel, but within an issue the path is strictly sequential (prosecute → defend → synthesize). Cap concurrent issues at 2-3 to avoid rate-limiting the weaker model (typically Gemini).
 
-**Short-circuit rules** (aggressive):
-- **Pre-debate triage**: if an issue scored below the cutoff, skip it
-- **Round 1 early-kill**: if the round 1 synthesis produces `impact: none`, stop — the issue dies
-- **Stalled debate**: if round N synthesis is materially identical to round N-1 synthesis, mark `converged` and stop
-- **Low priority cap**: budget tiering applies (see Configuration) — bottom third of top-N get 1 round, middle third get `max-rounds - 1`, top third get the full budget
+**Cohort selection — status-driven, not score-driven.** The merge phase tags every surviving issue with `status ∈ {settled, debate}` per the rule in `templates/merge_and_rank.md` Step 3b. Only `status: "debate"` issues — important but not yet settled — enter the debate phase, ordered by `rank_score` and capped at `--top-n`. Settled issues ship straight to the report unchallenged. **If zero issues have `status: "debate"`, the debate phase is skipped entirely** — the correct outcome on consensus-heavy papers.
+
+**Termination rules — verdict-driven, not budget-tiered:**
+- Every issue starts with budget for round 1.
+- After each synthesis, the verdict decides funding for round N+1:
+  - `prosecution_wins` or `defense_wins` → terminal. No further rounds.
+  - `split` → fund round N+1 prosecuting the surviving (narrower) claim, if `N < max_rounds`.
+  - `escalate` → fund round N+1 focused on the verifiable point, if `N < max_rounds`. Also flag for human review.
+- The `converged` verdict was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
+- There is **no tier-based pre-allocation** of rounds. Budget follows tension, not pre-assigned rank tier.
 
 ### Phase 4 — Final report
 
@@ -299,7 +304,10 @@ MATCH current state → action:
 │                                     │ Render 2_ranking/verification.md.                   │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
-│ no debate tickets exist             │ Apply budget tiering. Write prompts.                 │
+│ no debate tickets exist             │ Filter to status==debate, sort by rank_score,        │
+│                                     │ take top-N. If zero, skip the debate phase. Each     │
+│                                     │ cohort issue gets one round 1 ticket triple. Write   │
+│                                     │ prompts.                                             │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ debate tickets pending/running      │ For Claude-typed debate tickets: execute inline.      │
 │                                     │ For external: $A run-dag --concurrent 2              │
@@ -392,7 +400,7 @@ Preflight typically takes 30–60 seconds wall-clock (dominated by the two ping 
 1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
 2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
 3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_evaluation}`
-4. If input is `.pdf`: run `socr <input>` → copy result to `$PAPER/_paper/paper.md`. If input is `.md`: copy directly.
+4. If input is `.pdf`: run `socr <input> --save-figures` → copy result to `$PAPER/_paper/paper.md` and the figures tree to `$PAPER/_paper/figures/`. **Do NOT substitute `pdftotext` or any other extractor, ever, even if the PDF looks typeset.** If input is `.md`: copy directly.
 5. Copy the PDF (if available) to `$PAPER/_paper/paper.pdf`
 6. Write `$PAPER/review.md` with frontmatter: `phase: orientation`
 7. Generate 3 orientation prompts (see "Prompt generation" below)
@@ -478,7 +486,7 @@ All tunables are CLI parameters with sensible defaults. Templates reference thes
 | Discovery timeout | `--discover-timeout` | 1200s | Per agent, per method |
 | Debate round timeout | `--debate-timeout` | 900s | Per agent, per role |
 
-**Budget tiering** is derived from `--top-n` and `--max-rounds`, not hardcoded. The top third of debated issues get the full round budget, the middle third get `max-rounds - 1`, the bottom third get 1 round. This scales automatically with different top-n values.
+**Budget tiering — removed in v2.** Pre-tiered round allocation by rank position was found (in the 2026-04-13 v3 run) to spend rounds on issues already destined to converge, while denying rounds to issues that genuinely needed them. Replaced with verdict-driven escalation: every issue gets round 1; rounds 2-3 are funded only when the synthesizer's verdict is `split` or `escalate`. The `--max-rounds` flag remains as a hard cap.
 
 **Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
 

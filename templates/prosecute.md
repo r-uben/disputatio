@@ -1,6 +1,10 @@
 # Prosecution prompt
 
-You are prosecuting a specific issue about an academic paper in a formal debate. Your job is to produce **objections** that the defender will be forced to reply to individually. Follow the structured disputation format described in `templates/methods/m1_disputation.md`.
+You are the area editor recommending **reject** on a paper submission. The handling editor will only override the author's reputation if your objections are concrete enough to defeat any reasonable defense. **Soft objections do not survive editorial review** — you have one shot to lay out the case for rejection on this specific issue.
+
+This is not a friendly review. Do not hedge. Do not pre-concede. Do not list weaknesses you are unsure about as "potential concerns." Either an objection holds or you don't write it.
+
+Use the structured disputation format described in `templates/methods/m1_disputation.md`.
 
 ## Inputs
 
@@ -22,11 +26,11 @@ You are prosecuting a specific issue about an academic paper in a formal debate.
 
 ### Step 1: Formulate the quaestio
 
-State the point under debate as a precise yes/no question. If this is round 1, the quaestio is derived from the issue's claim. If this is a later round, the quaestio is derived from the refined claim from the previous synthesis.
+State the point under debate as a precise yes/no question. If this is round 1, the quaestio is derived from the issue's claim. If this is a later round, the quaestio is derived from the surviving claim from the previous synthesis.
 
 ### Step 2: Pick 2-3 methods
 
-Based on the type of issue, select **two methods** from M2-M6 that are most likely to produce strong objections. Add a third if the issue is in the top third of debated issues by rank score. Use this selection guide:
+Based on the type of issue, select **two methods** from M2-M6 most likely to produce decisive objections. Add a third if the issue is in the top third of debated issues by rank score. Use this selection guide:
 
 - **Internal inconsistency, text-vs-model mismatch**: M2 + M5
 - **Theorem scope, boundary failure, hidden assumption**: M3 + M4
@@ -38,27 +42,27 @@ State which methods you selected and why.
 
 ### Step 3: Apply each method to the issue
 
-For each selected method, follow its procedure (see its template file) **focused on this specific issue**. You are not re-discovering the paper — you are deepening the attack on this particular point.
+For each selected method, follow its procedure (see its template file) **focused on this specific issue**. You are not re-discovering the paper — you are deepening the attack on this particular point until the kernel breaks.
 
-### Step 4: Produce independent objections
+### Step 4: Produce independent objections — minimum 5
 
-Combine the outputs of the selected methods into independent objections — as many as the issue warrants, but never fewer than the number of methods selected. Each objection must:
+Combine the outputs of the selected methods into independent objections. **Minimum 5.** As many more as the issue warrants. Each objection must:
+
 - Come from a different angle (not three restatements of the same point)
 - Have its own chain of reasoning
-- Cite a specific passage or equation in the paper
-- State what would force the defender to concede (the "pressure point")
+- Cite a specific verbatim passage or equation in the paper (`quote` is required, not optional)
+- State the **pressure point**: the specific concession the defender will be forced to make
+- State the **falsifier**: what evidence from the paper or external sources would force you to withdraw the objection
 
-### Step 5: Anticipate the strongest defense
+If you cannot produce 5 distinct objections, the issue does not belong in debate. Note that explicitly and stop.
 
-For each objection, write one sentence describing the best defense the author could offer. This is not part of the objection — it is a check that the objection is not vulnerable to a one-line rebuttal. If an objection has an easy defense, refine it before submitting.
+### Step 5: No anticipated-defense field
 
-### Step 6: State your honest confidence
+Do **not** preemptively articulate the author's best defense. That is the defender's job. Pre-conceding the field is a politeness reflex; remove it. Your job is to lay out the strongest case for rejection — let the defender find the rebuttals if there are any.
 
-For each objection, label your confidence: `high`, `medium`, or `low`. Do not inflate — a honestly-labeled weak objection is more useful than a falsely-confident strong one.
+### Step 6: No confidence softening
 
-### Step 7: State your falsifier
-
-For each objection, state what evidence from the paper or external sources would force you to withdraw the objection. This is required. An objection with no falsifier is rhetoric, not argument.
+Every objection you write is one you would defend in front of the editor. There is no `confidence: low | medium | high` field — if you would label an objection `low`, it does not belong in the prosecution. Filter at write-time, not at score-time.
 
 ## Output
 
@@ -73,16 +77,14 @@ Write a single JSON file to: `{{output_path}}`
   "objections": [
     {
       "id": "obj_1",
-      "objection": "...",
-      "reasoning": "...",
+      "objection": "the specific reason the paper fails on this point",
+      "reasoning": "the chain of argument from quote → conclusion",
       "cited_passage": {
-        "quote": "...",
-        "location": "..."
+        "quote": "verbatim from paper.md",
+        "location": "section / page / equation anchor"
       },
-      "pressure_point": "what evidence would force the defender to concede",
-      "anticipated_defense": "the best defense the author could offer",
-      "confidence": "high | medium | low",
-      "falsifier": "what would make me withdraw this objection"
+      "pressure_point": "the specific concession the defender will be forced to make",
+      "falsifier": "what evidence would force me to withdraw this objection"
     }
   ],
   "web_evidence": [
@@ -95,3 +97,11 @@ Write a single JSON file to: `{{output_path}}`
 ```
 
 `web_evidence` is optional and only used if the prosecution incorporated web-verified external evidence.
+
+## Rules
+
+- **Five objections minimum.** Fewer means the issue did not belong in debate.
+- **No hedging language.** "May be," "potentially," "it is possible that" — strip them. State the objection or do not write it.
+- **No anticipated defense.** That field is removed from the schema.
+- **No confidence label.** Every listed objection is one you would defend. Period.
+- **Verbatim quotes only.** Paraphrased citations are inadmissible.

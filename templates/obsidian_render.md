@@ -273,7 +273,8 @@ Issues only one agent flagged:
 ### <issue_id>: <short title>
 
 - **Rank score**: N/15 (centrality C, cross-agent A×2, specificity S, severity V)
-- **Status**: pending | in debate | converged | dropped
+- **Status**: settled | debate | escalated
+- **Verdict** (debated only): prosecution_wins | defense_wins | split | escalate
 - **Impact**: material | local | none
 - **Sources**: [[1_discovery/m5_immanent/claude|claude-m5]], [[1_discovery/m3_transformations/codex|codex-m3]]
 - **Needs web verification**: yes/no
@@ -320,7 +321,7 @@ date: <YYYY-MM-DD>
 
 ## Output
 
-<the structured content: objections for prosecute, sed_contra + respondeo + replies for defend, refined claim + reasoning for synthesize — rendered as markdown>
+<the structured content: objections for prosecute, sed_contra + respondeo + replies for defend, verdict + surviving_text + attack_outcomes + defense_outcomes for synthesize — rendered as markdown>
 
 ## Metadata
 
@@ -410,7 +411,7 @@ date: <YYYY-MM-DD>
 
 ## Material issues (N)
 
-1. **<title>** — <one-sentence summary of refined claim>
+1. **<title>** — <one-sentence summary of synthesizer's surviving_text>
    - Constructive fix: <suggestion>
    - Full debate: [[../3_debates/<slug>/99_summary|debate summary]]
 
