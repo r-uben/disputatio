@@ -142,11 +142,11 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
 ---
 
 ### [T6] Dev log for comparison run
-- **Status:** pending
+- **Status:** done (filed as `docs/log/2026-04-11_e2e-test-gemini-fix.md`, plus `2026-04-13_v3-targeting-interventions-and-eval.md` for the V3/V4 follow-on)
 - **Priority:** low
-- **Files:** `docs/log/2026-04-11_comparison-run.md`
+- **Files:** `docs/log/2026-04-11_e2e-test-gemini-fix.md`, `docs/log/2026-04-13_v3-targeting-interventions-and-eval.md`
 - **Description:** Document the comparison run decisions, findings, and lessons learned. This is the dev log entry per the branching workflow in CLAUDE.md.
 - **Acceptance Criteria:**
-  - [ ] Documents: what was done, why, key decisions, blockers hit, lessons learned
-  - [ ] Links to compare/README.md for results
-  - [ ] Notes the CLI failure modes and their fixes
+  - [x] Documents: what was done, why, key decisions, blockers hit, lessons learned
+  - [x] Links to compare/README.md for results
+  - [x] Notes the CLI failure modes and their fixes
