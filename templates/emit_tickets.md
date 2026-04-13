@@ -8,7 +8,6 @@ Disputatio uses a ticket DAG for durable, resumable, auditable orchestration. Cl
 ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/
 ```
 
-(The `tests/` subfolder will be dropped once the skill is production-ready.)
 
 The ticket file lives at `<paper-folder>/_artifacts/tickets.json`. It is a dict keyed by ticket ID. All path references in tickets are **relative to the paper folder**, not to the repo or to the Obsidian vault root. Agent-ctl is invoked with `--cwd <paper-folder>` so every relative path resolves correctly.
 

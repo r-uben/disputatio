@@ -6,7 +6,7 @@ Two evaluation methodologies are used. They are independent and answer different
 
 ---
 
-## 1. LLM-as-judge against a reference review (`compare/judge.py`)
+## 1. LLM-as-judge against a reference review (`docs/archive/compare/judge.py`)
 
 This replicates [coarse.ink](https://coarse.ink/)'s benchmark methodology so that disputatio's score is directly comparable to coarse.ink's published numbers.
 
@@ -23,9 +23,9 @@ Each dimension is scored 1.0–6.0 (coarse.ink displays this as `X/5` because th
 
 **Procedure:**
 
-1. Adapt the disputatio output: `compare/adapt.py` flattens the structured Obsidian referee report into the flat-review format coarse.ink uses (Overall Feedback → Detailed Comments).
+1. Adapt the disputatio output: `docs/archive/compare/adapt.py` flattens the structured Obsidian referee report into the flat-review format coarse.ink uses (Overall Feedback → Detailed Comments).
 2. Optionally, generate a coarse baseline if one doesn't exist (`coarse_sonnet46.md` is a one-pass Sonnet 4.6 review of the same paper).
-3. Run `compare/judge.py <paper>` — sends both reviews + the reference + (optionally) the paper PDF to the judge model.
+3. Run `docs/archive/compare/judge.py <paper>` — sends both reviews + the reference + (optionally) the paper PDF to the judge model.
 4. Judge produces a JSON-structured `QualityReport` with per-dimension scores, reasoning, strengths, weaknesses.
 5. By default, **positional-bias mitigation** is enabled: judge sees the same comparison twice with reviews A/B swapped, scores are inverted on the swap, and the two reports are averaged. This controls for "judge prefers whichever review it sees first."
 
@@ -83,7 +83,7 @@ Panel mode produces lower absolute scores (more critical synthesis) but the gap 
 - **Generalisation.** *n* = 1 paper. The targeting result does not establish that disputatio beats coarse on arbitrary papers. A second paper attempt (population-genetics) used a stale skill version on the disputatio side and was withdrawn pending re-run.
 - **Cross-judge robustness.** All numbers are from Gemini 2.5 Pro. The same comparison with Opus or GPT-4 as judge has not been run. Could be a Gemini-specific preference.
 - **Effort-matched comparison.** Coarse is one Sonnet pass (~30 s, ~$0.05 in API equivalent). Disputatio is ~2 h with three agents and many calls. They are not effort-matched. The fair claim is "given more compute and a structured protocol, you can produce a better review" — not "this is more efficient."
-- **Adapter dependence.** The adapter `compare/adapt.py` is a confound. Different extraction choices (which sections to include, how to strip jargon) move the disputatio score by 0.5+ points without changing the underlying review. The current adapter (post-`30f2032`) is the one we benchmark with; different adapter choices would produce different numbers.
+- **Adapter dependence.** The adapter `docs/archive/compare/adapt.py` is a confound. Different extraction choices (which sections to include, how to strip jargon) move the disputatio score by 0.5+ points without changing the underlying review. The current adapter (post-`30f2032`) is the one we benchmark with; different adapter choices would produce different numbers.
 
 ---
 
@@ -163,12 +163,12 @@ For publication-grade evidence on the disputatio thesis ("debate reduces overcla
 
 | File | Purpose |
 |---|---|
-| `compare/judge.py` | The LLM-as-judge harness. CLI: `judge.py <paper> [--review <file>] [--reference <file>] [--also-coarse] [--panel] [--model <model>]` |
-| `compare/adapt.py` | Flattens disputatio's Obsidian referee report into coarse-compatible review format. CLI: `adapt.py [folder] [--report <path>] [-o <out>]` |
-| `compare/<paper>/coarse_sonnet46.md` | Single-pass Sonnet 4.6 baseline review |
-| `compare/<paper>/coarse_review.md` | An earlier coarse baseline |
-| `compare/<paper>/reference_review.md` | Default reference (the one judge.py uses by default) |
-| `compare/<paper>/reference_review_stanford.md` | Stanford Agentic Reviewer output |
-| `compare/<paper>/eval_*.md` | Per-run scorecards from judge.py |
+| `docs/archive/compare/judge.py` | The LLM-as-judge harness. CLI: `judge.py <paper> [--review <file>] [--reference <file>] [--also-coarse] [--panel] [--model <model>]` |
+| `docs/archive/compare/adapt.py` | Flattens disputatio's Obsidian referee report into coarse-compatible review format. CLI: `adapt.py [folder] [--report <path>] [-o <out>]` |
+| `docs/archive/compare/<paper>/coarse_sonnet46.md` | Single-pass Sonnet 4.6 baseline review |
+| `docs/archive/compare/<paper>/coarse_review.md` | An earlier coarse baseline |
+| `docs/archive/compare/<paper>/reference_review.md` | Default reference (the one judge.py uses by default) |
+| `docs/archive/compare/<paper>/reference_review_stanford.md` | Stanford Agentic Reviewer output |
+| `docs/archive/compare/<paper>/eval_*.md` | Per-run scorecards from judge.py |
 | `templates/evaluation.md` | The per-finding rubric |
 | `<vault>/<paper-slug>/_evaluation/` | Per-paper blinded annotation outputs (manifest, prompts, annotations, scorecard) |

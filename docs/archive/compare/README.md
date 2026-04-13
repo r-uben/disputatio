@@ -1,4 +1,12 @@
-# Disputatio vs Coarse.ink — Comparison
+# Disputatio vs Coarse.ink — Comparison (archived)
+
+> **Archived 2026-04-13.** This was the cross-review comparison tooling
+> used through mid-April 2026. It is superseded by the per-paper
+> `_evaluation/` sub-DAG documented in `templates/evaluation.md` (inside
+> each Obsidian paper folder), which runs blinded per-finding annotation
+> end-to-end without a separate `compare/` pipeline. Kept here as a
+> historical baseline and because the website case-study pages still
+> reference these artifacts.
 
 Benchmark comparison of disputatio (seven-method dialectic debate) against
 coarse.ink (multi-agent single-pass review) using coarse's own evaluation
