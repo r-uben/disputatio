@@ -273,7 +273,13 @@ def _call_judge(
     model: str = JUDGE_MODEL,
     max_tokens: int = 8192,
 ) -> dict:
-    """Call LLM and parse JSON response."""
+    """Call LLM and parse JSON response.
+
+    Some judge models (notably gemini-3.1-pro-preview) occasionally emit
+    JSON with invalid LaTeX backslash escapes or extra commentary outside
+    the JSON block. Try strict parse first; on failure, attempt a salvage
+    pass before giving up.
+    """
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_content},
@@ -286,11 +292,58 @@ def _call_judge(
         response_format={"type": "json_object"},
     )
     text = resp.choices[0].message.content
+
     # Strip markdown fences if present
-    if text.strip().startswith("```"):
-        lines = text.strip().split("\n")
-        text = "\n".join(lines[1:-1])
-    return json.loads(text)
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        # Drop opening fence (and language tag) plus closing fence
+        text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first_err:
+        # Salvage: extract the largest balanced {...} block, clean LaTeX
+        # backslash escapes, and retry. If that still fails, raise the
+        # original error with context for debugging.
+        salvaged = _salvage_judge_json(text)
+        if salvaged is not None:
+            return salvaged
+        raise json.JSONDecodeError(
+            f"{first_err.msg} (and salvage failed). "
+            f"First 200 chars of judge response: {text[:200]!r}",
+            first_err.doc,
+            first_err.pos,
+        )
+
+
+def _salvage_judge_json(text: str) -> dict | None:
+    """Best-effort JSON salvage for malformed judge output. Returns the
+    parsed dict on success, None on failure.
+
+    Strategy: find the outermost {...}, normalise runaway backslashes
+    (collapse runs of 2+ to 2, then double remaining bare backslashes
+    that precede invalid escape chars), strip control characters and
+    trailing commas. Same logic as agent_ctl._clean_json_text.
+    """
+    import re as _re
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    candidate = text[start : end + 1]
+    candidate = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", candidate)
+    candidate = _re.sub(r"\\{2,}", r"\\\\", candidate)
+    for _ in range(3):
+        fixed = _re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', candidate)
+        if fixed == candidate:
+            break
+        candidate = fixed
+    candidate = _re.sub(r",\s*([}\]])", r"\1", candidate)
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
 
 
 # ---------------------------------------------------------------------------
