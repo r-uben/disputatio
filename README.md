@@ -140,6 +140,7 @@ See [`docs/methods.md`](docs/methods.md) for a deeper breakdown.
 - [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
 - [`docs/methods.md`](docs/methods.md) — the seven methods, what each detects, when each is most useful, examples from the targeting-interventions run.
 - [`docs/evaluation.md`](docs/evaluation.md) — the judge.py methodology (replicates coarse.ink), per-finding blinded annotation, results on targeting-interventions, what we cannot yet claim.
+- [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending beyond the Claude/Codex/Gemini trio (Kimi, Ollama, OpenCode, etc.); architecture independence, role rotation past N>3, scoring math, agent_ctl refactor sketch.
 - [`docs/roadmap.md`](docs/roadmap.md) — known bugs, planned improvements, what V4 should fix.
 - [`docs/log/`](docs/log/) — dated dev log entries with decisions and trade-offs from each working session.
 - [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
