@@ -66,16 +66,33 @@ Notes:
 
 ## Flags the builder translates
 
-`build_ollama_cmd` reads `ticket["flags"]` and translates known keys onto the Ollama argv. Current translations:
+`build_ollama_cmd` reads `ticket["flags"]` and translates known keys onto the actual `ollama run` argv. The CLI does not expose per-call sampling options (`temperature`, `num_ctx`, `num_predict`, etc.) — those are Modelfile parameters set at model-build time or via the REST `POST /api/generate` endpoint. Tickets that need them either pre-build a Modelfile variant of the model with the values baked in, or talk to the REST API directly (out of scope for `agent_ctl.py` today).
 
 | `flags` key | Translation | Notes |
 |---|---|---|
-| `temperature` | `--temperature <float>` (in options) | Ollama accepts via `/set` or `--options` |
-| `num_ctx` | context-window override | For models where the default is too small for the paper |
-| `num_predict` | max output tokens | Ollama default (128) is too small for discovery JSON |
+| `format` | `--format <string>` | Pass `"json"` to force the model into JSON output mode — useful for discovery tickets where `_salvage_stdout_json` parses the response |
+| `hidethinking` | `--hidethinking` | Strip `<think>...</think>` blocks from the output. Use with reasoning models like `qwen3:*` and `deepseek-r1:*` where the thinking block bloats stdout and complicates JSON parsing |
+| `think` | `--think <true\|false\|high\|medium\|low>` | Disable thinking entirely with `false` (faster + cleaner output) or set the effort level. `qwen3` family supports the verbal levels |
+| `keepalive` | `--keepalive <duration>` | How long to keep the model resident in VRAM after the call. Default is 5m; set to `30m` if running multiple sequential tickets against the same model so the model does not reload between calls |
+| `nowordwrap` | `--nowordwrap` | Do not soft-wrap output. Cleaner for downstream parsing |
+| `verbose` | `--verbose` | Show timings; useful when debugging a slow model |
+| `temperature`, `num_ctx`, `num_predict`, `top_p`, `top_k`, `seed`, `repeat_penalty` | warn and ignore | Listed only so callers get a clear stderr message pointing at the REST-API path or the Modelfile workaround. Setting them in `flags` does NOT take effect through `ollama run` |
 | (other keys) | ignored with stderr warning | — |
 
-Unknown keys produce a one-line warning, same as OpenCode.
+### Pre-built Modelfile variants
+
+If a paper consistently needs a custom temperature or context window across many tickets, build a named Modelfile variant once and reference it by name in tickets:
+
+```
+ollama create qwen3:32b-disputatio -f - <<EOF
+FROM qwen3:32b
+PARAMETER temperature 0.0
+PARAMETER num_ctx 32768
+PARAMETER num_predict 4096
+EOF
+```
+
+Then ticket `model` becomes `qwen3:32b-disputatio` and the parameters are baked in. This is the recommended path for production runs; raw `qwen3:32b` is fine for sanity-check passes.
 
 ## Preflight the orchestrator should do
 

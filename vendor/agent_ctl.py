@@ -357,30 +357,72 @@ def build_ollama_cmd(prompt: str, model: str,
                      **_unused) -> list[str]:
     """Build the ollama run command.
 
-    `ollama run <model> "<prompt>"` runs a local model in one shot.
-    Large prompts are piped on stdin; see _ollama_stdin_rewrite.
+    `ollama run [flags] <model> "<prompt>"` runs a local model in
+    one shot. Large prompts are piped on stdin; see
+    _ollama_stdin_rewrite.
 
-    Ollama expects per-call options via `--options key=value` pairs or
-    a JSON object. For simplicity we currently support:
-      - temperature   -> --options temperature=<float>
-      - num_ctx       -> --options num_ctx=<int>
-      - num_predict   -> --options num_predict=<int>
+    NOTE on per-call sampling options: `ollama run` does NOT expose
+    flags for temperature, num_ctx, num_predict, etc. Those are
+    Modelfile parameters, set either at model-build time or via the
+    REST `POST /api/generate` endpoint with an `options` payload.
+    For tickets that need them, use the REST API directly (out of
+    scope here) or build a Modelfile variant of the model with
+    pre-set parameters and reference it by name.
 
-    Unknown keys warn and are ignored. See templates/agents/ollama.md
-    for ticket conventions and preflight checks.
+    Known flag translations from `flags` (matches real ollama CLI):
+      - format        -> --format <string>     (e.g. "json" forces JSON)
+      - hidethinking  -> --hidethinking        (strip <think> blocks)
+      - think         -> --think <true|false|high|medium|low>
+      - keepalive     -> --keepalive <duration>
+      - nowordwrap    -> --nowordwrap
+      - verbose       -> --verbose
+    Unknown keys produce a stderr warning and are ignored. Any
+    non-CLI options (temperature, num_ctx, ...) trigger an explicit
+    warning pointing the user at the REST-API path.
+
+    See templates/agents/ollama.md for ticket conventions and
+    preflight checks.
     """
-    cmd = ["ollama", "run", model, prompt]
-
     flags = flags or {}
-    ollama_opts = {}
-    for key in ("temperature", "num_ctx", "num_predict"):
-        if key in flags:
-            ollama_opts[key] = flags[key]
-    for key, value in ollama_opts.items():
-        cmd.extend(["--options", f"{key}={value}"])
 
+    # Surface a clear warning for keys that look like sampling options
+    # but cannot be passed via `ollama run`. Without this, callers will
+    # set temperature in the ticket and silently get the model default.
+    _api_only = {"temperature", "num_ctx", "num_predict", "top_p",
+                 "top_k", "seed", "repeat_penalty"}
     for key in flags:
-        if key not in {"temperature", "num_ctx", "num_predict"}:
+        if key in _api_only:
+            print(
+                f"agent-ctl: ollama ignoring flag {key!r} -- per-call "
+                "sampling options are not exposed by `ollama run`. Use "
+                "the REST /api/generate endpoint with an options payload "
+                "or pre-build a Modelfile with the value baked in.",
+                file=sys.stderr,
+            )
+
+    cmd = ["ollama", "run"]
+
+    if "format" in flags:
+        cmd.extend(["--format", str(flags["format"])])
+    if flags.get("hidethinking"):
+        cmd.append("--hidethinking")
+    if "think" in flags:
+        # Must use `--think=<value>` with equals; the space form
+        # (`--think false`) makes ollama's CLI parser treat the value
+        # as the model name and fail with "pull model manifest: file
+        # does not exist". Verified against ollama CLI behaviour.
+        cmd.append(f"--think={flags['think']}")
+    if "keepalive" in flags:
+        cmd.extend(["--keepalive", str(flags["keepalive"])])
+    if flags.get("nowordwrap"):
+        cmd.append("--nowordwrap")
+    if flags.get("verbose"):
+        cmd.append("--verbose")
+
+    known = _api_only | {"format", "hidethinking", "think", "keepalive",
+                         "nowordwrap", "verbose"}
+    for key in flags:
+        if key not in known:
             print(
                 f"agent-ctl: ollama ignoring unknown flag {key!r} "
                 f"(promote to a translation in build_ollama_cmd if load-bearing)",
@@ -390,15 +432,17 @@ def build_ollama_cmd(prompt: str, model: str,
     if extra_flags:
         cmd.extend(extra_flags)
 
+    cmd.extend([model, prompt])  # model and prompt MUST be the last two
     return cmd
 
 
 def _ollama_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """Ollama takes the prompt as a trailing positional arg; drop it
+    """Ollama takes the prompt as the trailing positional arg; drop it
     and pipe from stdin instead. `ollama run` treats stdin as the
-    prompt when the positional is absent."""
-    # Prompt is always at cmd[3] because cmd = ["ollama", "run", model, prompt, ...opts]
-    return [c for i, c in enumerate(cmd) if i != 3]
+    prompt when the positional is absent. The model name is the
+    second-to-last element and is preserved.
+    """
+    return cmd[:-1]
 
 
 # ── AgentSpec registry ───────────────────────────────────────────────────────
@@ -954,20 +998,26 @@ def _outputs_exist(ticket: dict, cwd: str) -> bool:
 def _clean_json_text(raw: str) -> str:
     """Clean raw text for JSON parsing.
 
-    Fixes common issues from Gemini's write_file output:
+    Fixes common issues from agent stdout:
+    - ANSI escape sequences (CSI, OSC, private-mode) — ollama emits
+      cursor-hide/show and bracketed-paste markers even in non-TTY
+      mode, which land in the script(1) capture as '\\x1b[?25l' etc.
+      and break json.loads if left in place.
     - Control characters embedded in strings (from LaTeX in paper text)
     - Invalid backslash escapes (\\p, \\a, \\L, etc. from LaTeX notation)
     - Runaway backslash chains from the previous iterative cleaner
     - Trailing commas in arrays/objects
 
-    Strategy: two-pass. First normalize any run of 2+ backslashes down to
-    exactly two (one literal backslash in JSON). This kills the runaway
-    `\\\\\\\\\\sum` patterns that the prior cleaner would produce by
-    repeatedly doubling. Then double up any *remaining* lone backslashes
-    that precede an invalid JSON escape character, using a negative
-    lookbehind so we don't disturb already-escaped pairs.
+    Strategy: strip ANSI first (otherwise the surviving '[?25l' literal
+    tokens still poison the stream), then strip remaining control
+    chars, then the two-pass backslash normaliser.
     """
     cleaned = raw
+    # Strip full ANSI escape sequences: CSI (ESC [...cmd), OSC
+    # (ESC ]...BEL or ST), and two-byte ESC commands (ESC @-_).
+    cleaned = re.sub(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]", "", cleaned)
+    cleaned = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", cleaned)
+    cleaned = re.sub(r"\x1b[@-_]", "", cleaned)
     # Strip control chars except newline, carriage return, tab
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
     # Pass 1: collapse runs of 2+ backslashes to exactly 2.
