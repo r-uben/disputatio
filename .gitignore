@@ -5,5 +5,12 @@ build/
 .env
 *.pyc
 .ruff_cache/
+TODO.md
+
+# Runtime state from /disputatio and agent-ctl runs invoked at the repo root.
+# Per-paper artifacts belong inside the Obsidian workspace, not here.
+.claude/
+_artifacts/
+output/
 # workspace/ is NOT gitignored — agents (gemini CLI) treat gitignored paths as unreadable.
 # Instead, just don't stage workspace files when committing.
