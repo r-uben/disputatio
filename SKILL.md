@@ -62,7 +62,7 @@ The review proceeds in five phases. Each phase corresponds to one or more waves 
 
 Each of the three agents reads the paper once and produces a neutral **paper map**: claims, equations, propositions, assumptions, parameters, datasets, citations, section anchors, and OCR-corrupted regions. No judgments yet.
 
-Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders them as markdown into `20_orientation/<agent>.md`. The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
+Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders them as markdown into `0_orientation/<agent>.md`. The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
 
 Run all three agents in parallel. Estimated time: ~15-20 minutes wall clock (Codex with `--full-auto` does deep web cross-referencing).
 
@@ -70,7 +70,7 @@ Run all three agents in parallel. Estimated time: ~15-20 minutes wall clock (Cod
 
 Each agent runs **all five generative methods** (M2-M6) on the paper, using its own paper map as the cache. Each method produces one JSON output file containing all issues it found. Total: 3 agents × 5 methods = **15 discovery sweeps**, producing 15 JSON files.
 
-Raw outputs land in `_artifacts/json/discover_<agent>_m<N>.json`. Claude then renders them as markdown, organized by method, into `30_discovery/m<N>/<agent>.md`.
+Raw outputs land in `_artifacts/json/discover_<agent>_m<N>.json`. Claude then renders them as markdown, organized by method, into `1_discovery/m<N>/<agent>.md`.
 
 **Parallelism**: the 3 agents run in parallel. Within each agent, the 5 methods should also run in parallel where the CLI supports it (if not, sequential within the agent). Target wall clock: 10-15 minutes.
 
@@ -129,9 +129,9 @@ Claude executes the `final_report` ticket inline and writes two outputs:
    - Web-verified external evidence
    - Overall assessment
 
-2. **`60_final_report/referee_report.md`** — the human-facing deliverable, rendered from the JSON using `templates/obsidian_render.md`.
+2. **`4_report/referee_report.md`** — the human-facing deliverable, rendered from the JSON using `templates/obsidian_render.md`.
 
-Claude also updates `00_review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself — with all its numbered subfolders and the top-level index — IS the final live report.
+Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself — with all its numbered subfolders and the top-level index — IS the final live report.
    - Final assessment at the bottom
 
 ## Workspace structure
@@ -139,20 +139,20 @@ Claude also updates `00_review.md` at the top of the paper folder to set `phase:
 **The Obsidian folder IS the workspace.** There is no separate scratch area. Every review is a self-contained folder inside the Obsidian vault. Curated markdown (the human-facing review) lives in numbered top-level folders; raw machine artifacts (tickets, JSON outputs, prompts, session logs) live inside `_artifacts/`.
 
 ```
-~/.../notes/work/referee-reports/tests/<paper-slug>/
+~/.../notes/work/referee-reports/<paper-slug>/
 │
-├── 00_review.md                          # top-level index: metadata, status, TOC
+├── review.md                          # top-level index: metadata, status, TOC
 │
-├── 10_paper/
+├── _paper/
 │   └── paper.md                          # source paper
 │
-├── 20_orientation/                       # 3 paper maps as markdown
+├── 0_orientation/                       # 3 paper maps as markdown
 │   ├── 00_orientation.md
 │   ├── claude.md
 │   ├── codex.md
 │   └── gemini.md
 │
-├── 30_discovery/                         # organized BY METHOD
+├── 1_discovery/                         # organized BY METHOD
 │   ├── 00_discovery.md
 │   ├── m2_contradictions/
 │   │   ├── 00_m2.md
@@ -161,13 +161,13 @@ Claude also updates `00_review.md` at the top of the paper folder to set `phase:
 │   │   └── gemini.md
 │   └── m3_transformations/ ... m6_disentangling/
 │
-├── 40_ranking/
+├── 2_ranking/
 │   ├── 00_ranking.md
 │   ├── issue_register.md                 # canonical source of truth for all issues
 │   ├── triage.md
 │   └── verification.md
 │
-├── 50_debates/                           # one folder per debated issue
+├── 3_debates/                           # one folder per debated issue
 │   ├── 00_debates.md
 │   ├── 01_<slug>/
 │   │   ├── 00_issue.md
@@ -177,7 +177,7 @@ Claude also updates `00_review.md` at the top of the paper folder to set `phase:
 │   │   └── 99_summary.md
 │   └── ...
 │
-├── 60_final_report/
+├── 4_report/
 │   └── referee_report.md                 # the deliverable
 │
 └── _artifacts/                           # machine artifacts, non-markdown
@@ -236,7 +236,7 @@ $A result 01
 
 When `/disputatio <path>` is invoked, Claude runs a decision loop. Each iteration: read state from disk, match the current phase, do ONE thing, write results to disk. No multi-step sequential protocol — just a lookup table.
 
-**State**: `$PAPER/_artifacts/tickets.json` (the DAG) + `$PAPER/00_review.md` frontmatter (human-readable phase).
+**State**: `$PAPER/_artifacts/tickets.json` (the DAG) + `$PAPER/review.md` frontmatter (human-readable phase).
 
 **Loop**: repeat until `final_report` ticket status is `done`:
 
@@ -265,14 +265,14 @@ MATCH current state → action:
 │ discover_codex_* or                 │ Run: $A run-dag tickets.json --concurrent 3          │
 │ discover_gemini_* = pending         │ Wait for completion. Validate outputs.               │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all discover = done,                │ RENDER discovery (JSON → markdown in 30_discovery/). │
+│ all discover = done,                │ RENDER discovery (JSON → markdown in 1_discovery/). │
 │ no merge_rank ticket exists         │ Execute merge_rank inline: read 18 JSONs, triage,    │
 │                                     │ dedupe, rank, write ranked_issues.json + triage.json.│
-│                                     │ Render 40_ranking/ markdown. Emit verify ticket.     │
+│                                     │ Render 2_ranking/ markdown. Emit verify ticket.     │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ verify = pending                    │ Run: $A run-dag tickets.json --concurrent 1          │
 │                                     │ (Gemini web verification). Validate output.          │
-│                                     │ Render 40_ranking/verification.md.                   │
+│                                     │ Render 2_ranking/verification.md.                   │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
 │ no debate tickets exist             │ Apply budget tiering. Write prompts.                 │
@@ -282,11 +282,11 @@ MATCH current state → action:
 │                                     │ After each synthesis: read output, check status.     │
 │                                     │ If continue + budget remains → emit next round.      │
 │                                     │ If converged/none → mark issue terminal.             │
-│                                     │ Render debate markdown in 50_debates/.               │
+│                                     │ Render debate markdown in 3_debates/.               │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ all debate tickets terminal,        │ Execute final_report inline: read all syntheses +     │
 │ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
-│                                     │ Update 00_review.md to phase: complete.              │
+│                                     │ Update review.md to phase: complete.              │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ final_report = done                 │ EXIT. Review complete.                               │
 └─────────────────────────────────────┴──────────────────────────────────────────────────────┘
@@ -297,11 +297,11 @@ MATCH current state → action:
 When no `tickets.json` exists:
 
 1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
-2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/tests/<paper-slug>/`
-3. Create directory structure: `mkdir -p $PAPER/{10_paper,20_orientation,30_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},40_ranking,50_debates,60_final_report,_artifacts/{prompts,json,sessions}}`
-4. If input is `.pdf`: run `socr <input>` → copy result to `$PAPER/10_paper/paper.md`. If input is `.md`: copy directly.
-5. Copy the PDF (if available) to `$PAPER/10_paper/paper.pdf`
-6. Write `$PAPER/00_review.md` with frontmatter: `phase: orientation`
+2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
+3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_evaluation}`
+4. If input is `.pdf`: run `socr <input>` → copy result to `$PAPER/_paper/paper.md`. If input is `.md`: copy directly.
+5. Copy the PDF (if available) to `$PAPER/_paper/paper.pdf`
+6. Write `$PAPER/review.md` with frontmatter: `phase: orientation`
 7. Generate 3 orientation prompts (see "Prompt generation" below)
 8. Write `$PAPER/_artifacts/tickets.json` with 3 orient tickets
 
@@ -312,8 +312,8 @@ To generate a prompt for a ticket:
 1. Read the relevant template from `templates/` (e.g., `orient.md`, `discover.md`)
 2. For discovery: also read the method template from `templates/methods/<method>.md`
 3. Substitute placeholders:
-   - `{{paper_text}}` → contents of `10_paper/paper.md` (used in orient prompts only)
-   - `{{paper_path}}` → `10_paper/paper.md` (relative path for agents to read)
+   - `{{paper_text}}` → contents of `_paper/paper.md` (used in orient prompts only)
+   - `{{paper_path}}` → `_paper/paper.md` (relative path for agents to read)
    - `{{paper_map_path}}` → `_artifacts/json/orient_<agent>.json`
    - `{{output_path}}` → `_artifacts/json/<ticket_id>.json`
    - `{{method_content}}` → full text of the method template
@@ -355,9 +355,9 @@ Every action writes to disk. Nothing lives only in Claude's context.
 | Prompts sent to agents | `_artifacts/prompts/<ticket_id>.md` | Before launching ticket |
 | Raw JSON output | `_artifacts/json/<ticket_id>.json` | After ticket completes |
 | Agent session logs | `_artifacts/sessions/<ticket_id>.log` | Auto-archived by agent-ctl; written by Claude for inline tickets |
-| Curated markdown | Numbered folders (20_orientation/, etc.) | After each wave |
+| Curated markdown | Numbered folders (0_orientation/, etc.) | After each wave |
 | DAG state | `_artifacts/tickets.json` | After every action |
-| Phase status | `00_review.md` frontmatter | At each major transition |
+| Phase status | `review.md` frontmatter | At each major transition |
 
 ### Resumability
 

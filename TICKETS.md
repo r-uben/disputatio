@@ -66,8 +66,8 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
     - Prompts → `_artifacts/prompts/<ticket_id>.md`
     - Raw JSON output → `_artifacts/json/<ticket_id>.json`
     - Session logs → `_artifacts/sessions/<ticket_id>.log` (agent-ctl handles this for external agents; Claude writes its own reasoning summary for inline tickets)
-    - Curated markdown → numbered folders (20_orientation/, 30_discovery/, etc.)
-    - Status updates → tickets.json + 00_review.md frontmatter
+    - Curated markdown → numbered folders (0_orientation/, 1_discovery/, etc.)
+    - Status updates → tickets.json + review.md frontmatter
   - Add `## Resumability`: on re-invocation, read tickets.json, skip done tickets, resume from first non-terminal state
 - **What gets removed from SKILL.md:** The current `## Protocol` section (steps 0-4) is replaced by the decision table. The phase descriptions stay as reference but are no longer the execution path.
 - **Acceptance Criteria:**
@@ -75,7 +75,7 @@ The templates, methods, and ticket schema are proven (comparison run beat a huma
   - [ ] Each state transition is self-contained (Claude doesn't need to remember previous iterations)
   - [ ] Every Claude action writes at least one file to disk before proceeding
   - [ ] tickets.json is updated after every action (not batched)
-  - [ ] 00_review.md phase field updated at each major transition
+  - [ ] review.md phase field updated at each major transition
   - [ ] Inline ticket execution logs a reasoning summary to `_artifacts/sessions/<ticket_id>.log`
   - [ ] Re-invoking `/disputatio` on a paper folder with existing tickets.json resumes correctly
 

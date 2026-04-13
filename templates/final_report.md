@@ -91,11 +91,11 @@ Write `_artifacts/json/final.json`:
 
 ### Step 3: Write the human-facing report
 
-Write `60_final_report/referee_report.md` using the rendering spec from `templates/obsidian_render.md` (Type: Final report). The markdown is a projection of `final.json` — if the two disagree, the JSON wins.
+Write `4_report/referee_report.md` using the rendering spec from `templates/obsidian_render.md` (Type: Final report). The markdown is a projection of `final.json` — if the two disagree, the JSON wins.
 
 ### Step 4: Update the top-level index
 
-Update `00_review.md`:
+Update `review.md`:
 - Set frontmatter `phase: complete`
 - Update the Status line
 - Fill in the "Headline findings" section with the material issues
@@ -111,6 +111,6 @@ Update `00_review.md`:
 
 Two files:
 1. `_artifacts/json/final.json`
-2. `60_final_report/referee_report.md`
+2. `4_report/referee_report.md`
 
-Plus an update to `00_review.md`.
+Plus an update to `review.md`.

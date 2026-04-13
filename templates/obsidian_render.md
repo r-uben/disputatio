@@ -1,6 +1,6 @@
 # Obsidian rendering template
 
-Between waves, Claude reads the raw JSON outputs in `_artifacts/json/` and writes human-readable markdown into the curated folders (`20_orientation/`, `30_discovery/`, etc.). This template specifies how to transform each artifact type.
+Between waves, Claude reads the raw JSON outputs in `_artifacts/json/` and writes human-readable markdown into the curated folders (`0_orientation/`, `1_discovery/`, etc.). This template specifies how to transform each artifact type.
 
 The principle: **the JSON is the machine format, the markdown is the human format**. Both are preserved. The markdown is never the source of truth — if the two disagree, the JSON wins.
 
@@ -24,7 +24,7 @@ The `ticket` field is a link back to the originating ticket in `_artifacts/ticke
 ## Type: Paper map (orientation)
 
 **Source**: `_artifacts/json/orient_<agent>.json`  
-**Destination**: `20_orientation/<agent>.md`
+**Destination**: `0_orientation/<agent>.md`
 
 ```markdown
 ---
@@ -128,7 +128,7 @@ date: <YYYY-MM-DD>
 ## Type: Orientation overview
 
 **Source**: all three `_artifacts/json/orient_*.json`  
-**Destination**: `20_orientation/00_orientation.md`
+**Destination**: `0_orientation/00_orientation.md`
 
 ```markdown
 ---
@@ -166,7 +166,7 @@ date: <YYYY-MM-DD>
 ## Type: Discovery issue (one method, one agent)
 
 **Source**: `_artifacts/json/discover_<agent>_<method>.json`  
-**Destination**: `30_discovery/<method>/<agent>.md`
+**Destination**: `1_discovery/<method>/<agent>.md`
 
 ```markdown
 ---
@@ -210,7 +210,7 @@ date: <YYYY-MM-DD>
 ## Type: Discovery method summary (across agents)
 
 **Source**: all three `_artifacts/json/discover_*_<method>.json` for one method  
-**Destination**: `30_discovery/<method>/00_<method>.md`
+**Destination**: `1_discovery/<method>/00_<method>.md`
 
 ```markdown
 ---
@@ -254,7 +254,7 @@ Issues only one agent flagged:
 ## Type: Issue register entry
 
 **Source**: merged issues after `merge_and_rank`  
-**Destination**: single entry inside `40_ranking/issue_register.md`
+**Destination**: single entry inside `2_ranking/issue_register.md`
 
 ```markdown
 ### <issue_id>: <short title>
@@ -262,9 +262,9 @@ Issues only one agent flagged:
 - **Rank score**: N/15 (centrality C, cross-agent A×2, specificity S, severity V)
 - **Status**: pending | in debate | converged | dropped
 - **Impact**: material | local | none
-- **Sources**: [[30_discovery/m5_immanent/claude|claude-m5]], [[30_discovery/m3_transformations/codex|codex-m3]]
+- **Sources**: [[1_discovery/m5_immanent/claude|claude-m5]], [[1_discovery/m3_transformations/codex|codex-m3]]
 - **Needs web verification**: yes/no
-- **Debate folder**: [[50_debates/01_<slug>/00_issue]]
+- **Debate folder**: [[3_debates/01_<slug>/00_issue]]
 
 **Claim**: <the merged claim>
 
@@ -279,7 +279,7 @@ Issues only one agent flagged:
 ## Type: Debate round (prosecute/defend/synthesize)
 
 **Source**: `_artifacts/json/debate_<issue_id>_r<N>_<role>.json`  
-**Destination**: `50_debates/<rank>_<slug>/r<N>_<role>.md`
+**Destination**: `3_debates/<rank>_<slug>/r<N>_<role>.md`
 
 ```markdown
 ---
@@ -321,7 +321,7 @@ date: <YYYY-MM-DD>
 ## Type: Debate summary
 
 **Source**: last synthesis + the full round history  
-**Destination**: `50_debates/<rank>_<slug>/99_summary.md`
+**Destination**: `3_debates/<rank>_<slug>/99_summary.md`
 
 ```markdown
 ---
@@ -335,7 +335,7 @@ date: <YYYY-MM-DD>
 # <Issue Title> — Debate Summary
 
 > [[00_issue|← Original issue]]  
-> [[../../40_ranking/issue_register#<issue_id>|Register entry]]
+> [[../../2_ranking/issue_register#<issue_id>|Register entry]]
 
 ## Status
 
@@ -377,7 +377,7 @@ date: <YYYY-MM-DD>
 ## Type: Final report
 
 **Source**: all synthesis outputs + issue register  
-**Destination**: `60_final_report/referee_report.md`
+**Destination**: `4_report/referee_report.md`
 
 ```markdown
 ---
@@ -399,7 +399,7 @@ date: <YYYY-MM-DD>
 
 1. **<title>** — <one-sentence summary of refined claim>
    - Constructive fix: <suggestion>
-   - Full debate: [[../50_debates/<slug>/99_summary|debate summary]]
+   - Full debate: [[../3_debates/<slug>/99_summary|debate summary]]
 
 2. ...
 
@@ -429,7 +429,7 @@ date: <YYYY-MM-DD>
 
 ## Type: Top-level review index
 
-**Destination**: `00_review.md` (top of paper folder)
+**Destination**: `review.md` (top of paper folder)
 
 ```markdown
 ---
@@ -447,13 +447,13 @@ date: <YYYY-MM-DD>
 
 ## Quick links
 
-- [[10_paper/paper|Source paper]]
-- [[10_paper/metadata|Metadata]]
-- [[20_orientation/00_orientation|Orientation]] — 3 paper maps
-- [[30_discovery/00_discovery|Discovery]] — 15 method sweeps
-- [[40_ranking/00_ranking|Ranking]] and [[40_ranking/issue_register|Issue register]]
-- [[50_debates/00_debates|Debates]]
-- [[60_final_report/referee_report|Final report]]
+- [[_paper/paper|Source paper]]
+- [[_paper/metadata|Metadata]]
+- [[0_orientation/00_orientation|Orientation]] — 3 paper maps
+- [[1_discovery/00_discovery|Discovery]] — 15 method sweeps
+- [[2_ranking/00_ranking|Ranking]] and [[2_ranking/issue_register|Issue register]]
+- [[3_debates/00_debates|Debates]]
+- [[4_report/referee_report|Final report]]
 - [[_artifacts/manifest|Artifacts manifest]]
 
 ## Progress
@@ -484,4 +484,4 @@ date: <YYYY-MM-DD>
 
 5. **Use tables where the JSON has a list of objects**, prose where the JSON has a single rich field.
 
-6. **Links between debate rounds use relative paths**: `[[r1_prosecute]]` within the same issue folder, `[[../02_other_issue/00_issue]]` across issues, `[[../../40_ranking/issue_register]]` up and across.
+6. **Links between debate rounds use relative paths**: `[[r1_prosecute]]` within the same issue folder, `[[../02_other_issue/00_issue]]` across issues, `[[../../2_ranking/issue_register]]` up and across.

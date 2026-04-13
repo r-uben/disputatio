@@ -4,7 +4,7 @@ High-precision academic paper review via seven-method dialectic debate. This is 
 
 **Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`<paper-folder>/_artifacts/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. Session logs are auto-archived. The entire review is resumable, auditable, and replayable. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
 
-**Obsidian is the workspace.** Every review is a self-contained folder inside the Obsidian vault at `notes/work/referee-reports/tests/<paper-slug>/`. Curated markdown lives in numbered folders (`00_review.md`, `10_paper/`, `20_orientation/`, ...); raw artifacts live in `_artifacts/` as non-markdown files. See `templates/obsidian_structure.md` and `templates/obsidian_render.md`.
+**Obsidian is the workspace.** Every review is a self-contained folder inside the Obsidian vault at `notes/work/referee-reports/<paper-slug>/`. Curated markdown lives in numbered folders (`review.md`, `_paper/`, `0_orientation/`, ...); raw artifacts live in `_artifacts/` as non-markdown files. See `templates/obsidian_structure.md` and `templates/obsidian_render.md`.
 
 ### How it works
 
@@ -61,14 +61,14 @@ disputatio/
 A review lives inside the Obsidian vault, not this repo:
 
 ```
-notes/work/referee-reports/tests/<paper-slug>/
-├── 00_review.md                     # top-level index
-├── 10_paper/paper.md
-├── 20_orientation/                  # 3 paper maps as markdown
-├── 30_discovery/                    # organized by method
-├── 40_ranking/                      # issue_register.md is the source of truth
-├── 50_debates/                      # one folder per debated issue
-├── 60_final_report/referee_report.md
+notes/work/referee-reports/<paper-slug>/
+├── review.md                     # top-level index
+├── _paper/paper.md
+├── 0_orientation/                  # 3 paper maps as markdown
+├── 1_discovery/                    # organized by method
+├── 2_ranking/                      # issue_register.md is the source of truth
+├── 3_debates/                      # one folder per debated issue
+├── 4_report/referee_report.md
 └── _artifacts/                      # tickets.json, prompts/, sessions/, json/
 ```
 
