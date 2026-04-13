@@ -109,6 +109,7 @@ All paths below are relative to the paper folder (`<paper-folder>` root). Raw JS
 | `defend` | `_artifacts/json/debate_<issue>_r<N>_defend.json` | prosecute output, `_paper/paper.md` | rotating |
 | `synthesize` | `_artifacts/json/debate_<issue>_r<N>_synthesize.json` | prosecute + defend outputs | rotating |
 | `final_report` | `_artifacts/json/final.json`, `4_report/referee_report.md` | all debate synthesis outputs | claude |
+| `evaluate` | `_artifacts/json/eval_<finding_id>_<annotator>.json` | `_paper/paper.md`, `_artifacts/json/eval_<finding_id>_payload.json` | external (default codex/`gpt-5.4-mini`) |
 
 ## Wave protocol
 
@@ -332,6 +333,41 @@ One ticket:
 ```
 
 Note: `final_report` is a claude-typed ticket, executed inline. Claude writes both the structured `_artifacts/json/final.json` and the human-readable `4_report/referee_report.md`. It also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
+
+### Wave 7 — Per-finding evaluation (emitted after `final_report = done`)
+
+For each finding in `_artifacts/json/ranked_issues.json` (and each sub-finding for aggregated issues), emit one `evaluate` ticket pointing at a pseudonymised payload. The default annotator is **codex with `gpt-5.4-mini`** — cheap, fast, matches the manual baseline from 2026-04-13. See `templates/evaluation.md` for protocol and `templates/evaluate.md` for the prompt body.
+
+```json
+{
+  "evaluate_merged_001_codex-mini": {
+    "id": "evaluate_merged_001_codex-mini",
+    "type": "evaluate",
+    "agent": "codex",
+    "model": "gpt-5.4-mini",
+    "family": "openai",
+    "flags": {},
+    "prompt_path": "_artifacts/prompts/evaluate_merged_001_codex-mini.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/eval_merged_001_payload.json"
+    ],
+    "outputs": [
+      "_artifacts/json/eval_merged_001_codex-mini.json"
+    ],
+    "depends_on": ["final_report"],
+    "status": "pending",
+    "timeout_s": 300,
+    "max_attempts": 1
+  }
+}
+```
+
+Pseudonymisation is upstream of the ticket: before emitting, Claude writes one `_artifacts/json/eval_<finding_id>_payload.json` per finding containing only `{claim, quote, quote_location, evidence}`. The annotator's prompt references the payload, never the original `ranked_issues.json` — so it cannot see which agent or method surfaced the finding, what its merge rank was, or how many agents agreed.
+
+After all `evaluate` tickets are `done`, Claude **runs the aggregator inline** (no ticket): reads every `_artifacts/json/eval_*_<annotator>.json`, computes the rate counts, writes `_artifacts/json/eval_aggregate.json` (machine truth) plus `_evaluation/00_evaluation.md` and `_evaluation/annotations.md` (curated markdown). Aggregation is deterministic and a third agent adds no value.
+
+For aggregated findings (`aggregated: true` with `sub_findings`), emit one ticket per sub-finding using `eval_<finding_id>.<sub_letter>_payload.json` paths. The aggregator surfaces per-sub scores in the scorecard alongside an averaged top-line.
 
 ## Run sequence
 

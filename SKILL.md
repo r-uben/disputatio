@@ -56,7 +56,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 
 ## Protocol
 
-The review proceeds in five phases. Each phase corresponds to one or more waves of tickets (see `templates/emit_tickets.md` for the exact ticket definitions).
+The review proceeds in six phases. Each phase corresponds to one or more waves of tickets (see `templates/emit_tickets.md` for the exact ticket definitions).
 
 ### Phase 0 — Orientation (parallel, all agents)
 
@@ -132,7 +132,16 @@ Claude executes the `final_report` ticket inline and writes two outputs:
 2. **`4_report/referee_report.md`** — the human-facing deliverable, rendered from the JSON using `templates/obsidian_render.md`.
 
 Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself — with all its numbered subfolders and the top-level index — IS the final live report.
-   - Final assessment at the bottom
+
+### Phase 5 — Per-finding self-evaluation
+
+After the report is written, the orchestrator runs a quality pass on the review itself. For each merged finding (and each sub-finding for aggregated issues), Claude writes a pseudonymised payload `_artifacts/json/eval_<finding_id>_payload.json` containing only `{claim, quote, quote_location, evidence}` — the substantive fields, with all agent/method/rank metadata stripped. One `evaluate` ticket per finding is then dispatched to a cheap external annotator (default: codex with `gpt-5.4-mini`).
+
+Each annotator returns a two-axis judgement: `quote_verified ∈ {yes, partial, no}` and `calibration ∈ {supported, overclaimed, unsupported}`. The aggregator (Claude inline, no ticket) reads every annotation, computes per-rate counts, and writes `_artifacts/json/eval_aggregate.json` plus the curated `_evaluation/00_evaluation.md` and `_evaluation/annotations.md`.
+
+The evaluation **does not feed back into the review** — it is a separate quality assessment, recorded alongside the review for the human to read. The `overclaim_rate` is the metric that earns its keep: it discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass review (which keeps them).
+
+See `templates/evaluation.md` for the protocol and `templates/evaluate.md` for the per-finding prompt body.
 
 ## Workspace structure
 
@@ -180,12 +189,20 @@ Claude also updates `review.md` at the top of the paper folder to set `phase: co
 ├── 4_report/
 │   └── referee_report.md                 # the deliverable
 │
+├── _evaluation/                          # per-finding self-evaluation
+│   ├── 00_evaluation.md                  # aggregate scorecard
+│   ├── annotations.md                    # per-finding rows
+│   └── disagreements.md                  # only when ≥2 annotators ran (deferred)
+│
 └── _artifacts/                           # machine artifacts, non-markdown
     ├── manifest.md                       # human-readable index
     ├── tickets.json                      # the DAG — source of truth for orchestration
     ├── prompts/                          # one .md per ticket
     ├── sessions/                         # raw agent reasoning traces (.log, never wiped)
-    └── json/                             # raw structured outputs (.json)
+    └── json/                             # raw structured outputs (.json), incl.
+                                          # eval_<id>_payload.json (pseudonymised input)
+                                          # eval_<id>_<annotator>.json (annotation)
+                                          # eval_aggregate.json (aggregator output)
 ```
 
 See `templates/obsidian_structure.md` for the complete specification.
@@ -288,7 +305,22 @@ MATCH current state → action:
 │ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
 │                                     │ Update review.md to phase: complete.              │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ final_report = done                 │ EXIT. Review complete.                               │
+│ final_report = done,                │ For each merged finding (and each sub-finding):      │
+│ no evaluate tickets exist           │ write _artifacts/json/eval_<id>_payload.json with    │
+│                                     │ only {claim, quote, quote_location, evidence}, then  │
+│                                     │ emit one evaluate ticket per finding routed to       │
+│                                     │ codex/gpt-5.4-mini. Run via $A run-dag --concurrent 4│
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ evaluate tickets pending/running    │ $A run-dag --concurrent 4. Wait for completion.      │
+│                                     │ Validate each output JSON has the two-axis fields.   │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all evaluate tickets done,          │ Execute aggregator inline: read all eval_*_<ann>.json│
+│ no eval_aggregate.json              │ files, compute counts and rates, write              │
+│                                     │ _artifacts/json/eval_aggregate.json. Render          │
+│                                     │ _evaluation/00_evaluation.md + annotations.md from   │
+│                                     │ the aggregate JSON.                                  │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ eval_aggregate.json exists          │ EXIT. Review complete and self-evaluated.            │
 └─────────────────────────────────────┴──────────────────────────────────────────────────────┘
 ```
 
