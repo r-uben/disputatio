@@ -7,10 +7,10 @@ OpenCode (`opencode` CLI) is a **gateway** that routes to many model providers t
 Non-interactive mode (what disputatio uses):
 
 ```
-opencode run --prompt "<text>" -m <provider>/<model> [--agent <name>] [other flags]
+opencode run -m <provider>/<model> [--agent <name>] [other flags] "<prompt>"
 ```
 
-- `--prompt` accepts the prompt as a string. For prompts larger than ~10 KB, `agent_ctl.py` writes the prompt to a temp file and pipes via stdin; the `stdin_rewrite` for this transport drops the `--prompt` flag and its value before piping (same pattern as Codex).
+- The prompt is a **positional** argument (variadic in the upstream CLI), passed last. Earlier drafts of this doc used `--prompt`, which is wrong for `opencode run` (that flag belongs to the default tui subcommand). For prompts larger than ~10 KB, `agent_ctl.py` writes the prompt to a temp file, drops the trailing positional from the argv, and pipes the file on stdin — `opencode run` reads stdin when no message positional is present.
 - `-m <provider>/<model>` is REQUIRED in disputatio. Never rely on the default; always pass it explicitly from the ticket. This also forces the orchestrator to make the family assignment consciously.
 - Authentication is managed by OpenCode itself (`opencode providers` / `opencode auth`). `agent_ctl.py` does not unset provider-specific env vars for this transport — if a user has `OPENAI_API_KEY` set and picks `openai/gpt-4o`, OpenCode uses that key. This is intentional: OpenCode is the source of truth for provider credentials.
 
@@ -68,8 +68,10 @@ Notes:
 | `flags` key | OpenCode argument | Notes |
 |---|---|---|
 | `agent` | `--agent <name>` | OpenCode's built-in agent personas; rarely used in disputatio |
-| `temperature` | via model config, if supported | Depends on underlying provider |
-| `max_tokens` | via model config, if supported | Depends on underlying provider |
+| `log_level` | `--log-level <DEBUG\|INFO\|WARN\|ERROR>` | Useful when triaging a failing transport |
+| `pure` | `--pure` | Run without external plugins; use when plugin behaviour is suspected of polluting outputs |
+| `variant` | `--variant <high\|max\|minimal>` | Provider-specific reasoning effort (the OpenCode equivalent of codex's `model_reasoning_effort`) |
+| `thinking` | `--thinking` | Show thinking blocks in the output |
 | (other keys) | ignored with stderr warning | Fail visibly rather than silently pretend to apply |
 
 Unknown flags do not block launch; they print a single-line warning to the session log. If a flag matters for correctness, promote it to an explicit field here and add the translation in `build_opencode_cmd`.

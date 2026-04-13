@@ -294,20 +294,28 @@ def build_opencode_cmd(prompt: str, model: str,
                        **_unused) -> list[str]:
     """Build the opencode run command.
 
-    `opencode run --prompt <text> -m <provider>/<model> [extra]` is the
-    non-interactive entry point. Model is REQUIRED in disputatio usage
-    (never rely on the default) so the caller supplies it explicitly.
+    `opencode run [message..] -m <provider>/<model> [other flags]` is
+    the non-interactive entry point. The message is a POSITIONAL
+    argument (variadic in the upstream CLI), not a --prompt flag.
+    Model is REQUIRED in disputatio usage; the caller supplies it.
 
     Known flag translations from `flags`:
       - agent            -> --agent <name>
       - log_level        -> --log-level <debug|info|warn|error>
       - pure             -> --pure (bool)
+      - variant          -> --variant <high|max|minimal>  (provider-specific
+                                                           reasoning effort)
+      - thinking         -> --thinking (show thinking blocks)
     Unknown keys produce a stderr warning and are ignored. Promote to
     explicit translations here when a flag proves load-bearing.
 
+    NOTE on stdin rewriting: prompt MUST stay as the trailing positional
+    so _opencode_stdin_rewrite can drop the last element when piping.
+    Do not append flags AFTER the prompt.
+
     See templates/agents/opencode.md for ticket shape and conventions.
     """
-    cmd = ["opencode", "run", "--prompt", prompt, "-m", model]
+    cmd = ["opencode", "run", "-m", model]
 
     flags = flags or {}
     if "agent" in flags:
@@ -316,9 +324,13 @@ def build_opencode_cmd(prompt: str, model: str,
         cmd.extend(["--log-level", str(flags["log_level"])])
     if flags.get("pure"):
         cmd.append("--pure")
+    if "variant" in flags:
+        cmd.extend(["--variant", str(flags["variant"])])
+    if flags.get("thinking"):
+        cmd.append("--thinking")
 
     for key in flags:
-        if key not in {"agent", "log_level", "pure"}:
+        if key not in {"agent", "log_level", "pure", "variant", "thinking"}:
             print(
                 f"agent-ctl: opencode ignoring unknown flag {key!r} "
                 f"(promote to a translation in build_opencode_cmd if load-bearing)",
@@ -328,13 +340,15 @@ def build_opencode_cmd(prompt: str, model: str,
     if extra_flags:
         cmd.extend(extra_flags)
 
+    cmd.append(prompt)  # MUST stay last — see docstring
     return cmd
 
 
 def _opencode_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """OpenCode takes the prompt as `--prompt <text>` at indices 2-3;
-    drop both and pipe the prompt on stdin instead."""
-    return [c for i, c in enumerate(cmd) if i not in (2, 3)]
+    """OpenCode takes the prompt as a trailing positional; drop it
+    when piping the prompt on stdin. opencode reads stdin when no
+    positional message is given."""
+    return cmd[:-1]
 
 
 def build_ollama_cmd(prompt: str, model: str,
