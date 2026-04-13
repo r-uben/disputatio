@@ -337,7 +337,57 @@ MATCH current state → action:
 
 ### INIT procedure
 
-When no `tickets.json` exists:
+When no `tickets.json` exists, the orchestrator runs **preflight first**, then workspace creation, then ticket emission. Failing fast at preflight time avoids burning 60–90 minutes on avoidable setup failures (expired OAuth, missing CLI, broken template) discovered only at phase N.
+
+#### Step 0 — Preflight (fail-fast checks before any work)
+
+Before creating the workspace or calling any agent, verify the environment is ready. Run every check; if any fails, **abort with a clear message stating what failed and how to fix it**. Do NOT create the paper folder until preflight passes — a failed preflight should leave zero new artifacts on disk.
+
+Checks, in order:
+
+1. **Agent authentication.** For every transport that will be used in Wave 1 (by default: `codex`, `gemini`; `claude` is inline and needs no check), launch a minimal ping session through `agent-ctl`:
+
+   ```
+   agent-ctl start codex  "Reply with the single word: pong" --timeout 60
+   agent-ctl start gemini "Reply with the single word: pong" --timeout 60
+   agent-ctl wait <codex-sid> <gemini-sid>
+   agent-ctl result <codex-sid>  # must contain 'pong'
+   agent-ctl result <gemini-sid> # must contain 'pong'
+   ```
+
+   Any non-zero exit, timeout, or missing `pong` → auth is broken. Typical fixes: `codex logout && codex login` for Codex; re-run `gemini` interactively once for Gemini OAuth. After the user re-authenticates, re-invoke `/disputatio` from scratch.
+
+   If the planned team includes non-default transports (opencode, ollama), add their ping to this list. Ollama: use one of the pulled models from `ollama list` and a short prompt.
+
+2. **Template placeholder sanity.** Every template that will be substituted at emit time must have all its `{{placeholder}}` tokens enumerated in the "Prompt generation" section below. Quick scan:
+
+   ```
+   grep -l '{{' templates/*.md templates/methods/*.md templates/agents/*.md templates/conventions/*.md
+   ```
+
+   For each file that contains `{{...}}` tokens, confirm every token appears in the "Prompt generation" substitution table. An unknown token means the template was edited without updating the generator — abort with the file path and the offending token.
+
+3. **Vault write probe.** Before creating `$PAPER/`, verify the Obsidian vault root is writable:
+
+   ```
+   touch ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/.disputatio-preflight && rm ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/.disputatio-preflight
+   ```
+
+   A permission error or a stale iCloud lock surfaces here instead of at ticket-launch time. If it fails, tell the user to open Obsidian once (to sync) or check iCloud Drive status.
+
+4. **OCR backend probe** (only when input is `.pdf`). Verify `socr` is available:
+
+   ```
+   which socr && socr --version
+   ```
+
+   If missing, tell the user to install smart-ocr before restarting. Skipping the OCR check for `.md` inputs is fine — the copy is straightforward.
+
+5. **Agent-ctl state-file lock probe.** The launcher's state file (`~/.claude/agent-sessions.json`) uses `fcntl` locking; a stale lock from a crashed prior invocation can block launches. The ping checks above implicitly exercise this, so no extra step is needed — but if every ping times out at exactly 60 s, suspect a stale lock and suggest `agent-ctl cleanup`.
+
+Preflight typically takes 30–60 seconds wall-clock (dominated by the two ping calls). If all checks pass, proceed to Step 1.
+
+#### Step 1..8 — Workspace creation and wave-1 emission
 
 1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
 2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
