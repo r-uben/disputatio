@@ -4,6 +4,19 @@ Between waves, Claude reads the raw JSON outputs in `_artifacts/json/` and write
 
 The principle: **the JSON is the machine format, the markdown is the human format**. Both are preserved. The markdown is never the source of truth — if the two disagree, the JSON wins.
 
+## Wikilink wrapping (every render step)
+
+Before writing any curated markdown, Claude runs an **entity wrap** pass that turns plain mentions into Obsidian wikilinks so the knowledge graph connects across reviews. The procedure is mechanical, not generative:
+
+1. Read the union of `entities` from all three orientation JSONs (`_artifacts/json/orient_*.json`). This gives a deduplicated list of canonical names per type (people, cited_papers, concepts, datasets, institutions, venues, topics, software).
+2. For each canonical name, build a search pattern that matches both the canonical form and documented aliases (full forms, common abbreviations, plurals).
+3. While rendering the markdown body, wrap every match in `[[Canonical Name]]`. For prose where the canonical form reads awkwardly, use the alias pipe: `[[difference-in-differences|DiD]]`, `[[2020__galeotti__targeting-interventions-networks|Galeotti, Golub & Goyal (2020)]]`.
+4. Apply the wrap to body text only. Frontmatter, code fences, table headers, and existing wikilinks are left alone.
+
+Conventions for canonical names live in `templates/conventions/wikilinks.md`. Render does not invent or canonicalize names — agents already produced them in canonical form during orientation. If render encounters a mention that *should* be an entity but is not in any orient JSON's `entities` block, it stays as plain text and the omission is noted in `_artifacts/sessions/render_<phase>.log` so the orient prompts can be tightened on the next paper.
+
+Wikilinks apply to every rendered phase: orientation summaries, discovery findings, ranking issue register, debate prosecute/defend/synthesize bodies, the final report, and the evaluation annotations. The graph edges accumulate as more papers go through the pipeline.
+
 ## Common frontmatter
 
 Every rendered markdown file gets a minimal frontmatter block:
