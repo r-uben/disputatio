@@ -59,13 +59,22 @@ Score each merged issue on four dimensions. Each dimension is scored 0-3.
 - 2 = main empirical or theoretical result
 - 3 = the paper's central claim
 
-**Cross-agent support** (which agents found it):
-- 0 = found by one agent only
-- 1 = found by two agents
-- 2 = found by all three agents
-- 3 = found by all three agents via different methods
+**Cross-agent support** — based on model **family**, not transport.
 
-Note: **cross-agent support is more valuable than cross-method support within a single agent.** Five methods on one model are correlated; agreement across architectures is stronger evidence.
+What counts as "an agent" for this score is the *family* field on each ticket that produced a contributing discovery JSON. Open `_artifacts/tickets.json` alongside the discovery outputs: each `discover_*` ticket carries `"family"` (written by the orchestrator at emit time per `templates/agents/families.md`). Group findings by the family of the ticket that produced them.
+
+Counting rules:
+- `f` = number of distinct families that flagged the issue.
+- `w` = number of within-family repeats (e.g. two opencode sessions against the same Meta Llama count as one family with one repeat).
+- Add a `+1` method bonus if at least two different M-numbers (M2..M6) surfaced it across any agents.
+
+**Cross-agent support = min(3, f + 0.5·w + method_bonus)**
+
+For the common 3-agent case (codex → `openai`, gemini → `google`, claude → `anthropic`), `w = 0` always and the score reduces to: 0 = one family, 1 = two, 2 = three, 3 = three plus cross-method. Same shape as the pre-family design.
+
+For larger or mixed configurations (e.g. codex + gemini + opencode/moonshot + opencode/meta), each distinct family increments `f`; two opencode sessions against Llama models from different routing providers still count as one family (`meta`) with a within-family repeat.
+
+Rationale: **cross-architecture agreement is the strongest independence signal.** Two models from the same family trained on overlapping data will repeat each other's errors; two models from different families independently arriving at the same conclusion is evidence the finding is real. Transport choice (which CLI launched the model) does not affect the correlation — only the architecture does.
 
 **Evidence specificity** (how concrete is the finding):
 - 0 = general concern with no specific quote

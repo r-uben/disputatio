@@ -20,11 +20,33 @@ Every ticket has the same shape. Fields marked `(required)` must be present; oth
 {
   "id": "orient_claude",                     // unique, stable (required)
   "type": "orient",                          // disputatio ticket type (required)
-  "agent": "claude",                         // claude | codex | gemini (required)
-  "prompt_path": "_artifacts/_artifacts/prompts/orient_claude.md",
+  "agent": "claude",                         // transport name: any AgentSpec in
+                                             // vendor/agent_ctl.py (required)
+  "model": "opus-4.6",                       // model identifier for the transport
+                                             // (required for gateway transports
+                                             // like opencode/ollama; optional for
+                                             // single-family transports, which
+                                             // fall back to spec.default_model)
+  "family": "anthropic",                     // model-architecture family from
+                                             // templates/agents/families.md
+                                             // (required; the launcher rejects
+                                             // tickets whose family is missing
+                                             // or outside the canonical set).
+                                             // Single-family transports can set
+                                             // it to the spec's implicit_family;
+                                             // gateway transports must match
+                                             // the chosen model per the rules
+                                             // in templates/agents/families.md
+  "flags": {},                               // free-form per-call knobs. build_cmd
+                                             // picks what it knows how to translate
+                                             // (e.g. reasoning_effort, temperature,
+                                             // num_ctx). Unknown keys print a
+                                             // warning and are ignored. Validation
+                                             // is at the CLI, not in Python
+  "prompt_path": "_artifacts/prompts/orient_claude.md",
                                              // relative to paper folder (required for non-claude tickets)
   "inputs": [                                // files this ticket consumes (informational)
-    "_paper/_paper/paper.md"
+    "_paper/paper.md"
   ],
   "outputs": [                               // files this ticket must produce (required)
     "_artifacts/json/orient_claude.json"
@@ -34,17 +56,13 @@ Every ticket has the same shape. Fields marked `(required)` must be present; oth
   "attempt": 0,                              // retry counter (default: 0)
   "max_attempts": 2,                         // default 2
   "timeout_s": 1200,                         // per-attempt timeout in seconds
-                                             // recommended: 1200 (20 min) for orient/discover
-                                             // — agents with web search access (codex, gemini)
-                                             // can take longer than the default 300s when they
-                                             // cross-reference external sources. Short timeouts
-                                             // cause the agent to be killed mid-file-write
+                                             // recommended: 1200 (20 min) for orient/discover on
+                                             // cloud transports, 1800+ for local Ollama models
   "output_format": "json_stdout",            // optional. Set to "json_stdout" for agents that
-                                             // cannot write files directly (Gemini CLI).
-                                             // run-dag will salvage the JSON block from stdout
-                                             // and write it to the first output path
-                                             // automatically on successful completion.
-  "model": "gpt-5.4",                        // optional model override
+                                             // cannot write files directly (Gemini CLI, Ollama).
+                                             // run-dag salvages the JSON block from stdout
+                                             // and writes it to the first output path
+                                             // automatically on successful completion
   "cwd": "/absolute/path",                   // optional working directory override
   "session_id": null,                        // filled by agent-ctl when launched
   "started_at": null,                        // ISO timestamp, filled on launch
