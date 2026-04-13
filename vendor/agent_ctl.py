@@ -163,8 +163,20 @@ def _clean_env() -> dict:
 # ── Command builders ─────────────────────────────────────────────────────────
 
 def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
-                    extra_flags: list[str] | None) -> list[str]:
-    """Build the codex exec command."""
+                    extra_flags: list[str] | None,
+                    flags: dict | None = None,
+                    **_unused) -> list[str]:
+    """Build the codex exec command.
+
+    Known flag translations from `flags`:
+      - reasoning_effort -> -c model_reasoning_effort=<value>
+    Unknown keys in flags warn and are ignored.
+
+    NOTE on stdin rewriting: `prompt` MUST stay as the trailing
+    positional argument so _codex_stdin_rewrite (which drops the last
+    element when piping) keeps working. Do not append flags AFTER the
+    prompt.
+    """
     cmd = ["codex", "exec", "--full-auto"]
 
     # Check if cwd is a git repo; if not, add --skip-git-repo-check
@@ -175,10 +187,22 @@ def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
     cmd.extend(["-m", model])
     cmd.extend(["--output-last-message", str(result_file)])
 
+    flags = flags or {}
+    if "reasoning_effort" in flags:
+        cmd.extend(["-c", f"model_reasoning_effort={flags['reasoning_effort']}"])
+
+    for key in flags:
+        if key not in {"reasoning_effort"}:
+            print(
+                f"agent-ctl: codex ignoring unknown flag {key!r} "
+                f"(promote to a translation in build_codex_cmd if load-bearing)",
+                file=sys.stderr,
+            )
+
     if extra_flags:
         cmd.extend(extra_flags)
 
-    cmd.append(prompt)
+    cmd.append(prompt)  # MUST stay last — see docstring
     return cmd
 
 
@@ -226,6 +250,105 @@ def _gemini_stdin_rewrite(cmd: list[str]) -> list[str]:
     return fixed
 
 
+def build_opencode_cmd(prompt: str, model: str,
+                       extra_flags: list[str] | None = None,
+                       flags: dict | None = None,
+                       **_unused) -> list[str]:
+    """Build the opencode run command.
+
+    `opencode run --prompt <text> -m <provider>/<model> [extra]` is the
+    non-interactive entry point. Model is REQUIRED in disputatio usage
+    (never rely on the default) so the caller supplies it explicitly.
+
+    Known flag translations from `flags`:
+      - agent            -> --agent <name>
+      - log_level        -> --log-level <debug|info|warn|error>
+      - pure             -> --pure (bool)
+    Unknown keys produce a stderr warning and are ignored. Promote to
+    explicit translations here when a flag proves load-bearing.
+
+    See templates/agents/opencode.md for ticket shape and conventions.
+    """
+    cmd = ["opencode", "run", "--prompt", prompt, "-m", model]
+
+    flags = flags or {}
+    if "agent" in flags:
+        cmd.extend(["--agent", str(flags["agent"])])
+    if "log_level" in flags:
+        cmd.extend(["--log-level", str(flags["log_level"])])
+    if flags.get("pure"):
+        cmd.append("--pure")
+
+    for key in flags:
+        if key not in {"agent", "log_level", "pure"}:
+            print(
+                f"agent-ctl: opencode ignoring unknown flag {key!r} "
+                f"(promote to a translation in build_opencode_cmd if load-bearing)",
+                file=sys.stderr,
+            )
+
+    if extra_flags:
+        cmd.extend(extra_flags)
+
+    return cmd
+
+
+def _opencode_stdin_rewrite(cmd: list[str]) -> list[str]:
+    """OpenCode takes the prompt as `--prompt <text>` at indices 2-3;
+    drop both and pipe the prompt on stdin instead."""
+    return [c for i, c in enumerate(cmd) if i not in (2, 3)]
+
+
+def build_ollama_cmd(prompt: str, model: str,
+                     extra_flags: list[str] | None = None,
+                     flags: dict | None = None,
+                     **_unused) -> list[str]:
+    """Build the ollama run command.
+
+    `ollama run <model> "<prompt>"` runs a local model in one shot.
+    Large prompts are piped on stdin; see _ollama_stdin_rewrite.
+
+    Ollama expects per-call options via `--options key=value` pairs or
+    a JSON object. For simplicity we currently support:
+      - temperature   -> --options temperature=<float>
+      - num_ctx       -> --options num_ctx=<int>
+      - num_predict   -> --options num_predict=<int>
+
+    Unknown keys warn and are ignored. See templates/agents/ollama.md
+    for ticket conventions and preflight checks.
+    """
+    cmd = ["ollama", "run", model, prompt]
+
+    flags = flags or {}
+    ollama_opts = {}
+    for key in ("temperature", "num_ctx", "num_predict"):
+        if key in flags:
+            ollama_opts[key] = flags[key]
+    for key, value in ollama_opts.items():
+        cmd.extend(["--options", f"{key}={value}"])
+
+    for key in flags:
+        if key not in {"temperature", "num_ctx", "num_predict"}:
+            print(
+                f"agent-ctl: ollama ignoring unknown flag {key!r} "
+                f"(promote to a translation in build_ollama_cmd if load-bearing)",
+                file=sys.stderr,
+            )
+
+    if extra_flags:
+        cmd.extend(extra_flags)
+
+    return cmd
+
+
+def _ollama_stdin_rewrite(cmd: list[str]) -> list[str]:
+    """Ollama takes the prompt as a trailing positional arg; drop it
+    and pipe from stdin instead. `ollama run` treats stdin as the
+    prompt when the positional is absent."""
+    # Prompt is always at cmd[3] because cmd = ["ollama", "run", model, prompt, ...opts]
+    return [c for i, c in enumerate(cmd) if i != 3]
+
+
 # ── AgentSpec registry ───────────────────────────────────────────────────────
 #
 # Adding a new launchable agent is now a matter of writing one build_<name>_cmd
@@ -233,53 +356,131 @@ def _gemini_stdin_rewrite(cmd: list[str]) -> list[str]:
 # and adding one AgentSpec entry below. Dispatch sites look up the spec by
 # name and call spec.build_cmd / spec.stdin_rewrite — no new if/elif branches.
 #
-# `family` tags which model family the agent belongs to, so the merge/rank
-# step can credit cross-family agreement at full weight and within-family
-# agreement at reduced weight (see docs/adding-agents.md, Question 1).
+# `implicit_family` marks transports whose family is fixed by the CLI
+# itself (codex always hits OpenAI, gemini always hits Google). The
+# orchestrator still writes `family` into every ticket for schema
+# uniformity, but the launcher can fill it in from the spec if the
+# ticket omits it. Gateway transports (opencode, ollama) leave this
+# None; their tickets MUST carry family.
 #
-# `inline_only=True` marks agents the orchestrator (Claude Code) runs itself
-# rather than through agent-ctl. These must never reach the launch path —
-# the old else-fallthrough misrouted claude tickets to Gemini with a sonnet
-# model ID, producing 404s.
+# `supports_multi_turn` gates cmd_send. Transports that set False are
+# refused explicitly instead of silently falling through to hardcoded
+# resume logic.
+#
+# `inline_only=True` marks agents the orchestrator (Claude Code) runs
+# itself rather than through agent-ctl. These must never reach the
+# launch path — the old else-fallthrough misrouted claude tickets to
+# Gemini with a sonnet model ID, producing 404s.
+#
+# Per-CLI behavior (invocation, model-string conventions, flag
+# translation) is documented in markdown under templates/agents/,
+# because Claude-as-orchestrator reads those files at emit time to
+# pick the right family and model for each ticket. See
+# docs/transport-model-family.md for why the semantics live there
+# rather than in this file.
 
 @dataclass(frozen=True)
 class AgentSpec:
     name: str
-    family: str
     default_model: str
     fallback_model: str | None = None
     unset_env_keys: tuple[str, ...] = ()
     inline_only: bool = False
+    supports_multi_turn: bool = False
     build_cmd: Callable[..., list[str]] | None = None
     stdin_rewrite: Callable[[list[str]], list[str]] | None = None
+    implicit_family: str | None = None
 
 
 AGENTS: dict[str, AgentSpec] = {
     "claude": AgentSpec(
         name="claude",
-        family="anthropic",
         default_model="opus-4.6",
         inline_only=True,
+        implicit_family="anthropic",
     ),
     "codex": AgentSpec(
         name="codex",
-        family="openai",
         default_model="gpt-5.4",
         fallback_model="gpt-5.4-mini",
         unset_env_keys=("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"),
+        supports_multi_turn=True,
         build_cmd=build_codex_cmd,
         stdin_rewrite=_codex_stdin_rewrite,
+        implicit_family="openai",
     ),
     "gemini": AgentSpec(
         name="gemini",
-        family="google",
         default_model="gemini-3.1-pro-preview",
         fallback_model="gemini-3-flash-preview",
         unset_env_keys=("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        supports_multi_turn=True,
         build_cmd=build_gemini_cmd,
         stdin_rewrite=_gemini_stdin_rewrite,
+        implicit_family="google",
+    ),
+    "opencode": AgentSpec(
+        name="opencode",
+        default_model="anthropic/claude-sonnet-4-6",
+        supports_multi_turn=False,
+        build_cmd=build_opencode_cmd,
+        stdin_rewrite=_opencode_stdin_rewrite,
+        implicit_family=None,  # gateway: ticket must supply family
+    ),
+    "ollama": AgentSpec(
+        name="ollama",
+        default_model="qwen2.5:32b",
+        supports_multi_turn=False,
+        build_cmd=build_ollama_cmd,
+        stdin_rewrite=_ollama_stdin_rewrite,
+        implicit_family=None,  # gateway: ticket must supply family
     ),
 }
+
+
+# ── Canonical family vocabulary ──────────────────────────────────────────────
+#
+# The launcher refuses gateway-transport tickets whose family is missing
+# or outside this set. Vocabulary lives in templates/agents/families.md;
+# this list mirrors it. Keep the two in sync when a new architecture
+# lands — the markdown file is the source of truth Claude reads when
+# emitting tickets.
+
+_CANONICAL_FAMILIES: frozenset[str] = frozenset({
+    "alibaba", "anthropic", "cohere", "deepseek", "google",
+    "meta", "microsoft", "mistral", "moonshot", "openai", "xai",
+})
+
+
+def _validate_ticket_family(ticket: dict, spec: AgentSpec) -> None:
+    """Refuse to launch a ticket whose family is missing or unknown.
+
+    For single-family transports (implicit_family set), the field may
+    be absent (the launcher fills it in) but if present must match.
+    For gateway transports (implicit_family None), the field is
+    required and must be in _CANONICAL_FAMILIES.
+    """
+    fam = ticket.get("family")
+    tid = ticket.get("id", "<unknown>")
+    if spec.implicit_family is not None:
+        if fam is None:
+            return  # orchestrator elided; launcher will fill from spec
+        if fam != spec.implicit_family:
+            sys.exit(
+                f"ticket {tid}: family={fam!r} conflicts with transport "
+                f"{spec.name!r} (implicit family: {spec.implicit_family!r})"
+            )
+        return
+    if not fam:
+        sys.exit(
+            f"ticket {tid}: gateway transport {spec.name!r} requires an "
+            "explicit 'family' field. See templates/agents/families.md."
+        )
+    if fam not in _CANONICAL_FAMILIES:
+        sys.exit(
+            f"ticket {tid}: unknown family {fam!r}. "
+            f"Canonical set: {sorted(_CANONICAL_FAMILIES)}."
+        )
 
 
 def _launchable_spec(agent: str) -> AgentSpec:
@@ -345,10 +546,13 @@ def cmd_start(args) -> None:
 
     # Every build_cmd accepts the full kwarg set; agents that don't need
     # result_file or cwd ignore them. Keeps dispatch agent-agnostic.
+    # Family validation is ticket-driven; the CLI start path skips it
+    # (interactive smoke tests do not produce ranking inputs).
     agent_cmd = spec.build_cmd(
         prompt=args.prompt, model=model,
         result_file=result_file, cwd=cwd,
         extra_flags=args.flags,
+        flags={},
     )
 
     env = _clean_env()
@@ -400,6 +604,22 @@ def cmd_send(args) -> None:
     model = meta["model"]
     timeout = args.timeout or meta.get("timeout", DEFAULT_TIMEOUT)
     turn = meta.get("turn", 1) + 1
+
+    # Refuse multi-turn for transports that have not opted in. The
+    # codex/gemini resume blocks below are agent-specific (different
+    # CLI shapes for resume), and silently falling through for new
+    # transports would either produce wrong commands or attempt the
+    # gemini path against an unrelated CLI. Each new transport must
+    # set supports_multi_turn=True AND grow an explicit branch here
+    # before send works for it.
+    spec = AGENTS.get(agent)
+    if spec is None or not spec.supports_multi_turn:
+        sys.exit(
+            f"agent-ctl: transport {agent!r} does not support multi-turn "
+            "sessions. Start a new session instead, or set "
+            "supports_multi_turn=True on the AgentSpec and add a resume "
+            "branch in cmd_send."
+        )
 
     # For Gemini: capture UUID from previous turn if not yet captured
     if agent == "gemini" and not meta.get("gemini_uuid"):
@@ -818,6 +1038,7 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
         raise ValueError(f"Ticket {ticket['id']} has no prompt or prompt_path")
 
     spec = _launchable_spec(agent)
+    _validate_ticket_family(ticket, spec)
     timeout = ticket.get("timeout_s", DEFAULT_TIMEOUT)
     model = ticket.get("model") or spec.default_model
     ticket_cwd = ticket.get("cwd", cwd)
@@ -831,6 +1052,7 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
         prompt=prompt, model=model,
         result_file=result_file, cwd=ticket_cwd,
         extra_flags=None,
+        flags=ticket.get("flags") or {},
     )
 
     env = _clean_env()
