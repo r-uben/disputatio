@@ -7,13 +7,16 @@ Uses `script -q` on macOS to defeat output buffering so progress is visible
 in real time. Supports multi-turn sessions via `send`.
 
 Subcommands:
-    start   codex|gemini "prompt" [--model M] [--cwd /path] [--timeout S] [--flags ...]
+    start   <agent> "prompt" [--model M] [--cwd /path] [--timeout S] [--flags ...]
     send    <id> "follow-up message" [--timeout S]
     check   <id> [--tail N]
     result  <id>
     kill    <id>
     status
-    cleanup [--agent codex|gemini]
+    cleanup [--agent <agent>]
+
+Launchable agents are defined in the AGENTS registry (see `class AgentSpec`).
+Adding a new agent is one build_<name>_cmd function plus one AGENTS entry.
 """
 
 import argparse
@@ -25,28 +28,17 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 STATE_FILE = Path.home() / ".claude" / "agent-sessions.json"
 OUTPUT_DIR = Path("/tmp/agent-ctl")
 
-# Env vars to unset per agent (conflict with OAuth auth)
-UNSET_KEYS = {
-    "codex": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"),
-    "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
-}
-
-# Default models per agent
-DEFAULT_MODELS = {
-    "codex": "gpt-5.4",
-    "gemini": "gemini-3.1-pro-preview",
-}
-
-# Fallback model if primary hits capacity exhaustion (429)
-FALLBACK_MODELS = {
-    "gemini": "gemini-3-flash-preview",
-}
+# Per-agent defaults (models, OAuth-conflicting env vars, fallback on 429)
+# live on each AgentSpec in the AGENTS registry below. See `class AgentSpec`
+# and adding-agents.md for how to register a new agent.
 
 # Default timeout (seconds) — 5 minutes
 DEFAULT_TIMEOUT = 300
@@ -113,12 +105,17 @@ GEMINI_UUID_RE = re.compile(
 )
 
 
+def _all_unset_keys() -> set[str]:
+    """Union of env vars to strip across every registered agent."""
+    keys: set[str] = set()
+    for spec in AGENTS.values():
+        keys.update(spec.unset_env_keys)
+    return keys
+
+
 def gemini_latest_uuid(cwd: str) -> str | None:
     """Return the UUID of the most recently created Gemini session."""
-    all_unset = set()
-    for keys in UNSET_KEYS.values():
-        all_unset.update(keys)
-    env = {k: v for k, v in os.environ.items() if k not in all_unset}
+    env = {k: v for k, v in os.environ.items() if k not in _all_unset_keys()}
 
     try:
         out = subprocess.run(
@@ -160,10 +157,7 @@ def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
 
 def _clean_env() -> dict:
     """Build environment with all conflicting keys removed."""
-    all_unset = set()
-    for keys in UNSET_KEYS.values():
-        all_unset.update(keys)
-    return {k: v for k, v in os.environ.items() if k not in all_unset}
+    return {k: v for k, v in os.environ.items() if k not in _all_unset_keys()}
 
 
 # ── Command builders ─────────────────────────────────────────────────────────
@@ -188,12 +182,17 @@ def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
     return cmd
 
 
-def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> list[str]:
+def build_gemini_cmd(prompt: str, model: str,
+                     extra_flags: list[str] | None = None,
+                     **_unused) -> list[str]:
     """Build the gemini headless command.
 
     Always passes --yolo so Gemini can write files directly via write_file
     tool. Without --yolo, Gemini blocks on tool approval in headless mode
     and falls back to dumping JSON to stdout.
+
+    Accepts extra kwargs (result_file, cwd) for signature uniformity with
+    other build_*_cmd functions in the AGENTS registry, but ignores them.
     """
     cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text", "--yolo"]
 
@@ -203,6 +202,102 @@ def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> 
     return cmd
 
 
+# ── Per-agent stdin rewriters ────────────────────────────────────────────────
+#
+# When a prompt exceeds PROMPT_SIZE_THRESHOLD it is piped via stdin from a
+# temp file instead of passed as a shell argument. Each agent's CLI has a
+# different expectation for what the command looks like when the prompt is
+# on stdin, so each AgentSpec carries its own rewriter.
+
+def _codex_stdin_rewrite(cmd: list[str]) -> list[str]:
+    """Codex takes the prompt as a trailing positional; drop it when piping."""
+    return cmd[:-1]
+
+
+def _gemini_stdin_rewrite(cmd: list[str]) -> list[str]:
+    """Gemini takes the prompt as `-p <text>`; keep the flag, blank the value.
+
+    `-p/--prompt` is documented as "appended to input on stdin (if any)",
+    so setting `-p ""` and piping the file to stdin makes Gemini treat the
+    piped content as the prompt.
+    """
+    fixed = list(cmd)
+    fixed[2] = ""
+    return fixed
+
+
+# ── AgentSpec registry ───────────────────────────────────────────────────────
+#
+# Adding a new launchable agent is now a matter of writing one build_<name>_cmd
+# function (and a stdin rewriter if the CLI has a non-trivial prompt shape)
+# and adding one AgentSpec entry below. Dispatch sites look up the spec by
+# name and call spec.build_cmd / spec.stdin_rewrite — no new if/elif branches.
+#
+# `family` tags which model family the agent belongs to, so the merge/rank
+# step can credit cross-family agreement at full weight and within-family
+# agreement at reduced weight (see docs/adding-agents.md, Question 1).
+#
+# `inline_only=True` marks agents the orchestrator (Claude Code) runs itself
+# rather than through agent-ctl. These must never reach the launch path —
+# the old else-fallthrough misrouted claude tickets to Gemini with a sonnet
+# model ID, producing 404s.
+
+@dataclass(frozen=True)
+class AgentSpec:
+    name: str
+    family: str
+    default_model: str
+    fallback_model: str | None = None
+    unset_env_keys: tuple[str, ...] = ()
+    inline_only: bool = False
+    build_cmd: Callable[..., list[str]] | None = None
+    stdin_rewrite: Callable[[list[str]], list[str]] | None = None
+
+
+AGENTS: dict[str, AgentSpec] = {
+    "claude": AgentSpec(
+        name="claude",
+        family="anthropic",
+        default_model="opus-4.6",
+        inline_only=True,
+    ),
+    "codex": AgentSpec(
+        name="codex",
+        family="openai",
+        default_model="gpt-5.4",
+        fallback_model="gpt-5.4-mini",
+        unset_env_keys=("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"),
+        build_cmd=build_codex_cmd,
+        stdin_rewrite=_codex_stdin_rewrite,
+    ),
+    "gemini": AgentSpec(
+        name="gemini",
+        family="google",
+        default_model="gemini-3.1-pro-preview",
+        fallback_model="gemini-3-flash-preview",
+        unset_env_keys=("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        build_cmd=build_gemini_cmd,
+        stdin_rewrite=_gemini_stdin_rewrite,
+    ),
+}
+
+
+def _launchable_spec(agent: str) -> AgentSpec:
+    """Return the spec for a launchable (non-inline) agent, or exit."""
+    spec = AGENTS.get(agent)
+    if spec is None:
+        sys.exit(
+            f"agent-ctl: unknown agent '{agent}'. "
+            f"Known agents: {', '.join(sorted(AGENTS))}."
+        )
+    if spec.inline_only:
+        sys.exit(
+            f"agent-ctl: agent '{agent}' is inline-only and must be executed "
+            "by the orchestrator (Claude Code), not dispatched to agent-ctl."
+        )
+    return spec
+
+
 def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
                      ticket_id: str = "") -> str:
     """Build shell command string, using temp file + stdin for large prompts.
@@ -210,30 +305,25 @@ def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
     For prompts under PROMPT_SIZE_THRESHOLD, quotes the prompt inline
     (existing behavior). For larger prompts, writes to a temp file and
     pipes via stdin to avoid shell argument limits and LaTeX escaping.
+    The per-agent stdin shape is carried by the AgentSpec.
     """
     if len(prompt) <= PROMPT_SIZE_THRESHOLD:
         return " ".join(_quote(c) for c in agent_cmd)
 
-    # Write prompt to temp file
     safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", ticket_id or "prompt")
     prompt_file = Path(f"/tmp/agent_ctl_{safe_id}_{int(time.time())}.md")
     prompt_file.write_text(prompt, encoding="utf-8")
 
-    if agent == "codex":
-        # Codex: remove the trailing prompt arg, pipe from file
-        # cmd = ["codex", "exec", "--full-auto", ..., prompt]
-        cmd_without_prompt = agent_cmd[:-1]
-        quoted = " ".join(_quote(c) for c in cmd_without_prompt)
-        return f"cat {_quote(str(prompt_file))} | {quoted}"
-    else:
-        # Gemini: remove the prompt value (index 2) but keep -p flag (index 1).
-        # Gemini CLI: -p/--prompt "Appended to input on stdin (if any)."
-        # So we pass -p "" and pipe the prompt file to stdin.
-        # cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text", "--yolo"]
-        cmd_fixed = list(agent_cmd)
-        cmd_fixed[2] = ""  # replace prompt text with empty string, keep -p at [1]
-        quoted = " ".join(_quote(c) for c in cmd_fixed)
-        return f"cat {_quote(str(prompt_file))} | {quoted}"
+    spec = AGENTS.get(agent)
+    if spec is None or spec.stdin_rewrite is None:
+        # Fall back to inline quoting for unknown agents or agents that do
+        # not declare a stdin rewriter. Upstream callers should never reach
+        # this branch in practice — cmd_start / _launch_ticket guard first.
+        return " ".join(_quote(c) for c in agent_cmd)
+
+    cmd_for_stdin = spec.stdin_rewrite(agent_cmd)
+    quoted = " ".join(_quote(c) for c in cmd_for_stdin)
+    return f"cat {_quote(str(prompt_file))} | {quoted}"
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -248,30 +338,18 @@ def cmd_start(args) -> None:
     outfile = OUTPUT_DIR / f"session-{sid}.txt"
     result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
+    spec = _launchable_spec(agent)
     cwd = args.cwd or os.getcwd()
-    model = args.model or DEFAULT_MODELS[agent]
+    model = args.model or spec.default_model
     timeout = args.timeout or DEFAULT_TIMEOUT
 
-    # Build agent-specific command. Only codex and gemini are launchable
-    # subprocesses — other agents (notably "claude") are executed inline by
-    # the orchestrator and should never reach this dispatch. Raising rather
-    # than silently falling through to gemini avoids the misroute that
-    # produced 404s when claude tickets were dispatched as gemini calls
-    # against a `sonnet` model.
-    if agent == "codex":
-        agent_cmd = build_codex_cmd(prompt=args.prompt, model=model,
-                                    result_file=result_file, cwd=cwd,
-                                    extra_flags=args.flags)
-    elif agent == "gemini":
-        agent_cmd = build_gemini_cmd(prompt=args.prompt, model=model,
-                                     extra_flags=args.flags)
-    else:
-        sys.exit(
-            f"agent-ctl: unknown agent '{agent}'. "
-            "Only 'codex' and 'gemini' are launchable via agent-ctl. "
-            "Tickets with agent='claude' are executed inline by the "
-            "orchestrator (Claude Code) — do not dispatch them here."
-        )
+    # Every build_cmd accepts the full kwarg set; agents that don't need
+    # result_file or cwd ignore them. Keeps dispatch agent-agnostic.
+    agent_cmd = spec.build_cmd(
+        prompt=args.prompt, model=model,
+        result_file=result_file, cwd=cwd,
+        extra_flags=args.flags,
+    )
 
     env = _clean_env()
     shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
@@ -569,12 +647,14 @@ def _save_tickets(path: Path, tickets: dict) -> None:
 def _ticket_ready(ticket: dict, tickets: dict) -> bool:
     """A ticket is ready if pending and all deps are done.
 
-    Claude-typed tickets are executed inline by Claude Code (the orchestrator),
-    not by run-dag. Skip them so they aren't misrouted through the Gemini CLI.
+    Inline-only agents (claude and any other spec with inline_only=True)
+    are executed by the orchestrator, not run-dag, so they never enter
+    the ready pool here.
     """
     if ticket.get("status") != "pending":
         return False
-    if ticket.get("agent") == "claude":
+    spec = AGENTS.get(ticket.get("agent", ""))
+    if spec is None or spec.inline_only:
         return False
     for dep_id in ticket.get("depends_on", []):
         dep = tickets.get(dep_id)
@@ -737,8 +817,9 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
     if not prompt:
         raise ValueError(f"Ticket {ticket['id']} has no prompt or prompt_path")
 
+    spec = _launchable_spec(agent)
     timeout = ticket.get("timeout_s", DEFAULT_TIMEOUT)
-    model = ticket.get("model") or DEFAULT_MODELS[agent]
+    model = ticket.get("model") or spec.default_model
     ticket_cwd = ticket.get("cwd", cwd)
 
     sid = next_id(state)
@@ -746,12 +827,11 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
     outfile = OUTPUT_DIR / f"session-{sid}.txt"
     result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
-    if agent == "codex":
-        agent_cmd = build_codex_cmd(prompt=prompt, model=model,
-                                    result_file=result_file, cwd=ticket_cwd,
-                                    extra_flags=None)
-    else:
-        agent_cmd = build_gemini_cmd(prompt=prompt, model=model, extra_flags=None)
+    agent_cmd = spec.build_cmd(
+        prompt=prompt, model=model,
+        result_file=result_file, cwd=ticket_cwd,
+        extra_flags=None,
+    )
 
     env = _clean_env()
     shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
@@ -883,15 +963,17 @@ def cmd_run_dag(args) -> None:
                         ticket["attempt"] = attempt
                         ticket.pop("session_id", None)
 
-                        # If Gemini hit 429s, fall back to a more available model
-                        if agent == "gemini" and agent in FALLBACK_MODELS:
-                            if log_text and (
-                                "MODEL_CAPACITY_EXHAUSTED" in log_text
-                                or log_text.count("429") > 5
-                            ):
-                                fallback = FALLBACK_MODELS[agent]
-                                ticket["model"] = fallback
-                                print(f"[{tid}] 429 capacity exhaustion detected, falling back to {fallback}")
+                        # If this agent defines a fallback model and the log
+                        # shows capacity exhaustion (the Gemini 429 pattern),
+                        # switch to the fallback on the next attempt.
+                        fallback_spec = AGENTS.get(agent)
+                        fallback = fallback_spec.fallback_model if fallback_spec else None
+                        if fallback and log_text and (
+                            "MODEL_CAPACITY_EXHAUSTED" in log_text
+                            or log_text.count("429") > 5
+                        ):
+                            ticket["model"] = fallback
+                            print(f"[{tid}] capacity exhaustion detected, falling back to {fallback}")
 
                         # Backoff delay before retry to avoid hammering
                         # rate-limited APIs (e.g., Gemini 429s)
@@ -1065,7 +1147,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_start = sub.add_parser("start", help="Start a new agent session")
-    p_start.add_argument("agent", choices=["codex", "gemini"], help="Agent to use")
+    p_start.add_argument("agent", choices=sorted(n for n, s in AGENTS.items() if not s.inline_only), help="Agent to use")
     p_start.add_argument("prompt", help="The prompt to send")
     p_start.add_argument("-m", "--model", help="Model override")
     p_start.add_argument("--cwd", help="Working directory")
@@ -1103,7 +1185,7 @@ def main():
     p_dagstatus.add_argument("tickets", help="Path to tickets.json")
 
     p_cleanup = sub.add_parser("cleanup", help="Kill sessions and clear state")
-    p_cleanup.add_argument("--agent", choices=["codex", "gemini"],
+    p_cleanup.add_argument("--agent", choices=sorted(n for n, s in AGENTS.items() if not s.inline_only),
                            help="Only clean up sessions for this agent")
 
     args = parser.parse_args()
