@@ -55,7 +55,13 @@ A run on a typical economics or statistics paper takes **~2 hours wall clock** e
 - `claude` CLI authenticated (Claude Pro / Claude Code).
 - `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`.
 - `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`.
-- `agent-ctl` (ships with the user's Claude Code skills) for ticket DAG execution.
+- `agent-ctl` installed at `~/.claude/skills/agent_ctl.py` for ticket DAG execution. A vendored snapshot lives in [`vendor/agent_ctl.py`](vendor/agent_ctl.py); install with:
+  ```bash
+  mkdir -p ~/.claude/skills
+  cp vendor/agent_ctl.py ~/.claude/skills/agent_ctl.py
+  chmod +x ~/.claude/skills/agent_ctl.py
+  ```
+  See [`vendor/README.md`](vendor/README.md) for details.
 - An Obsidian vault to host the per-paper review folder. The skill writes everything inside `notes/work/referee-reports/<paper-slug>/`.
 
 ---
