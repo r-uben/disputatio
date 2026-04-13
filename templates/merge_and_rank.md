@@ -34,6 +34,21 @@ Cluster remaining issues by whether they point to the same underlying concern. T
 
 For each cluster, produce a single merged issue that takes the strongest version of the claim and aggregates the evidence from all members.
 
+### Step 2b: Atomicity check (one issue, one location)
+
+Each merged issue must be **atomic**: one claim, one primary quote, one primary location. This is required for the per-finding evaluation protocol (`templates/evaluation.md`) — findings that bundle N sub-issues under "various locations" cannot be annotated triple-by-triple and must be rejected here.
+
+Rules:
+- **One `quote`, one `quote_location`.** The `quote` field must be a verbatim passage from the paper. "Multiple locations" or "Various" is not allowed.
+- **If a cluster contains N related-but-distinct errors** (e.g. "15 notation typos across the appendix"), split it into N separate merged issues, each with its own triple. Ranking can then correctly assign low centrality/severity to each one; they won't dominate the top-N cutoff.
+- **Exception — true aggregate findings**: if the *aggregate pattern itself* is the finding (e.g. "the appendix lacks proofreading rigor" as an editorial judgment), produce one merged issue with:
+  - `aggregated: true`
+  - `sub_findings: [{quote, quote_location, evidence}, ...]` — one entry per sub-item
+  - The top-level `quote` is the most representative sub-item, not a placeholder
+- **Never** emit a merged issue whose `quote` is a summary ("Multiple locations in Appendix A and Online Appendix") or whose `quote_location` says "Various".
+
+This atomicity rule keeps evaluation tractable and prevents a single bundled finding from evading per-triple scrutiny.
+
 ### Step 3: Ranking
 
 Score each merged issue on four dimensions. Each dimension is scored 0-3.
@@ -96,8 +111,26 @@ Output a single file `_artifacts/json/ranked_issues.json` containing all merged 
         {"agent": "codex", "method": "m3", "issue_id": "m3_issue_001"}
       ],
       "needs_web_verification": true,
-      "verification_query": "Does the paper's citation of Chodorow-Reich (2021) support the claimed MPC of 0.03?"
+      "verification_query": "Does the paper's citation of Chodorow-Reich (2021) support the claimed MPC of 0.03?",
+      "aggregated": false
     }
+  ]
+}
+```
+
+For aggregated findings (rare — only when the *pattern* is itself the finding):
+
+```json
+{
+  "id": "merged_099",
+  "claim": "The appendix shows insufficient proofreading, with 15 distinct notation/transcription errors across OA1–OA3.",
+  "quote": "u_i^1(G) = sqrt(n)",
+  "quote_location": "Online Appendix, Lemma OA1",
+  "evidence": "Representative example; see sub_findings for the full list.",
+  "aggregated": true,
+  "sub_findings": [
+    {"quote": "u_i^1(G) = sqrt(n)", "quote_location": "Lemma OA1", "evidence": "Should be 1/sqrt(n) by the Perron-Frobenius normalization convention."},
+    {"quote": "...", "quote_location": "...", "evidence": "..."}
   ]
 }
 ```
