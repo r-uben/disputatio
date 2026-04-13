@@ -156,18 +156,18 @@ See [`docs/methods.md`](docs/methods.md) for a deeper breakdown.
 - The `agent-ctl` shipped today routes any non-`codex` agent through the Gemini CLI. Claude-typed tickets get misrouted to `gemini -m sonnet` and 404. A local one-line patch in `_ticket_ready` skips Claude tickets so the orchestrator runs them inline. Needs proper upstream fix.
 - Gemini's OAuth silently expires mid-run with no error surfacing through `agent-ctl`. Long runs need to detect `FatalCancellationError` and halt the DAG with an actionable message.
 - Gemini's JSON outputs frequently have runaway LaTeX escapes (`\\\\\\\\\\sum`) that the existing cleaner doesn't handle. A two-pass cleanup (collapse `\\{2,}` → `\\\\` first, then escape-fix) works.
-- `templates/final_report.md` produces two heading formats (`### N. Title` for material, `N. **Title.**` for local). The downstream adapter `compare/adapt.py` only matched the second; one-shot extraction missed all material issues until patched. Fixed in commit `30f2032`.
+- `templates/final_report.md` produces two heading formats (`### N. Title` for material, `N. **Title.**` for local). The downstream adapter `docs/archive/compare/adapt.py` only matched the second; one-shot extraction missed all material issues until patched. Fixed in commit `30f2032`.
 - Synthesis prompts use `{{prosecution}}` / `{{defense}}` placeholders that should be just-in-time injected before each synthesis ticket runs. Currently they ship as literal `[[WILL BE INJECTED]]` markers; Gemini compensates by reading the JSON files directly via `--yolo`, but this is fragile.
 
 ---
 
 ## Provenance and evaluation harness
 
-The benchmark harness lives under `compare/`:
+The benchmark harness lives under `docs/archive/compare/`:
 
-- `compare/adapt.py` — flattens a disputatio referee report into the format used by [coarse.ink](https://coarse.ink/) for cross-system comparison.
-- `compare/judge.py` — replicates coarse.ink's judging methodology (LLM-as-judge against a reference review with positional-bias mitigation; supports panel mode).
-- `compare/<paper-name>/` — per-paper artifacts (paper.md, paper.pdf, reference reviews, coarse baselines, evaluation outputs).
+- `docs/archive/compare/adapt.py` — flattens a disputatio referee report into the format used by [coarse.ink](https://coarse.ink/) for cross-system comparison.
+- `docs/archive/compare/judge.py` — replicates coarse.ink's judging methodology (LLM-as-judge against a reference review with positional-bias mitigation; supports panel mode).
+- `docs/archive/compare/<paper-name>/` — per-paper artifacts (paper.md, paper.pdf, reference reviews, coarse baselines, evaluation outputs).
 
 To re-evaluate a finished disputatio run:
 

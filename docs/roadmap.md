@@ -9,7 +9,7 @@ State of the world after the V3 run on targeting-interventions (2026-04-12).
 The disputatio thesis ("debate reduces overclaiming") has *n* = 1 evidence on theory papers. To make a defensible general claim:
 
 1. **Re-run on population-genetics** with the current skill. The earlier comparison on this paper used a stale disputatio version; the public website page is currently marked "DRAFT — DO NOT CITE" pending a fresh run. ~2 h compute.
-2. **Run two more papers** end-to-end (cortical-circuits, coset-codes both have reference + coarse baselines staged in `compare/`). Gives *n* = 4 for the holistic comparison. ~4 h additional compute.
+2. **Run two more papers** end-to-end (cortical-circuits, coset-codes both have reference + coarse baselines staged in `docs/archive/compare/`). Gives *n* = 4 for the holistic comparison. ~4 h additional compute.
 3. **Cross-judge validation** on targeting-interventions. Re-run `judge.py` with Opus and GPT-4 as judges (~5 samples each) to confirm the win isn't a Gemini-family preference. ~30 min.
 4. **Cross-annotator** for the per-finding evaluation. Re-annotate targeting-interventions findings with Gemini and Opus as annotators (currently only Codex). ~20 min per annotator.
 
@@ -77,7 +77,7 @@ When `--model gemini/gemini-3.1-pro-preview` is used, the judge sometimes return
 
 ## Adapter limitations
 
-The `compare/adapt.py` flattener was patched in commit `30f2032` to handle the current `templates/final_report.md` heading formats. It now extracts:
+The `docs/archive/compare/adapt.py` flattener was patched in commit `30f2032` to handle the current `templates/final_report.md` heading formats. It now extracts:
 
 - Material issues (`### N. Title` format with `**Refined claim.**` / `**Constructive fix.**` bold sub-fields)
 - Local issues (`N. **Title.**` numbered list format)
