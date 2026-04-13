@@ -52,21 +52,53 @@ Given the quote is real, does the stated evidence actually establish the claim a
 
 ## Procedure
 
-1. Open `_artifacts/json/ranked_issues.json` and `_paper/paper.md` side-by-side.
-2. For each finding: read the quote at the cited location in the paper; judge `quote_verified`. If `no`, set `calibration: unsupported` automatically and move on.
-3. If `quote_verified ∈ {yes, partial}`: read the paper's surrounding context and the finding's `evidence` field. Judge `calibration`.
-4. Record notes for every `overclaimed` or `unsupported` finding so the judgment is auditable.
-5. When all findings annotated, compute aggregates in `00_evaluation.md`.
+The evaluation phase runs after `final_report = done` and the orchestrator has not yet emitted any `evaluate` tickets. Wave-style emission, mirroring discovery.
 
-### Blinding (recommended)
+1. Open `_artifacts/json/ranked_issues.json` and walk the merged-issues array.
+2. For each issue, build a **payload JSON** at `_artifacts/json/eval_<finding_id>_payload.json` containing only `{claim, quote, quote_location, evidence}` — the four substantive fields. Do NOT include `agent`, `method`, `confidence`, `support_score`, `centrality`, or any merge metadata. The annotator must judge the finding on its own merits, not on which model surfaced it.
+3. For each (finding × annotator) pair, emit one `evaluate` ticket pointing at the payload + the operational template `templates/evaluate.md`. The default annotator is **codex with `gpt-5.4-mini`** (cheap, fast, matches the manual baseline from 2026-04-13). One annotator per finding is enough for the first iteration; two-annotator double-blind is a follow-on.
+4. Run the eval tickets through `agent-ctl run-dag`. Each produces one `_artifacts/json/eval_<finding_id>_<annotator>.json` with the two-axis annotation.
+5. Aggregate inline: read all eval JSONs, deduplicate per finding, compute the scorecard, write `_evaluation/00_evaluation.md` and `_evaluation/annotations.md`. Aggregation is a Claude-inline step (no ticket); the inputs are deterministic and a third agent adds no value at the aggregation level.
 
-If evaluating multiple review versions (V2, V3, coarse, reference) on the same paper, strip review-identity labels before annotating. Randomize order. Annotator should not know which finding came from which system until after all annotations are complete.
+### Aggregated findings
 
-### Double annotation (recommended for publication)
+If a finding has `aggregated: true` with a `sub_findings` array, the orchestrator emits **one ticket per sub-finding** with payload IDs `eval_<finding_id>.<sub_letter>_payload.json`. The aggregate-level claim itself is not annotated separately — the rubric judges concrete quotes against the paper, and the aggregate-level claim does not have a single concrete quote (per `templates/merge_and_rank.md` Step 2b's atomicity rule). The aggregator computes per-sub scores and surfaces the average in the scorecard alongside the per-sub breakdown.
 
-For any ambiguous finding, get a second annotator and resolve disagreements. Report inter-annotator agreement.
+### Blinding
+
+The pseudonymisation is automatic and minimal: the payload sent to the annotator already strips agent/method/confidence/support metadata. The finding's `id` (`merged_NNN`) is used as the ticket key but does not leak which model surfaced it (merge IDs are assigned post-merge in arrival order). No randomised pseudonym map is needed for single-review evaluation; the metadata strip is sufficient because there is no review-version contrast to bias against.
+
+For cross-review comparison (out of scope for the first evaluation harness), randomised pseudonyms across reviews would be needed. Defer until that comparison is genuinely required.
+
+### Double annotation (deferred)
+
+Inter-annotator agreement requires two annotators per finding. Same ticket shape, different `agent`/`model`. Aggregator surfaces disagreements in `_evaluation/disagreements.md`. Not in v1; the protocol is unchanged when it lands.
 
 ## Output files
+
+### `_artifacts/json/eval_aggregate.json` — machine source of truth
+
+```json
+{
+  "annotator": "codex/gpt-5.4-mini",
+  "n_findings": 27,
+  "counts": {
+    "quote_verified": {"yes": 22, "partial": 4, "no": 1},
+    "calibration":    {"supported": 18, "overclaimed": 6, "unsupported": 3}
+  },
+  "rates": {
+    "fabrication_rate":  0.037,
+    "support_rate":      0.667,
+    "overclaim_rate":    0.222,
+    "unsupported_rate":  0.111
+  },
+  "per_finding": [
+    {"finding_id": "merged_001", "quote_verified": "yes", "calibration": "supported", "notes": ""}
+  ]
+}
+```
+
+The markdown files below are projections of this JSON. If they disagree, the JSON wins. Re-running aggregation regenerates both atomically.
 
 ### `_evaluation/annotations.md`
 
