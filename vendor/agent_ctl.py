@@ -20,6 +20,8 @@ Adding a new agent is one build_<name>_cmd function plus one AGENTS entry.
 """
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -50,7 +52,31 @@ PROMPT_SIZE_THRESHOLD = 10240  # 10 KB
 
 # ── State helpers ────────────────────────────────────────────────────────────
 
+_LOCK_FILE = STATE_FILE.with_suffix(".lock")
+
+
+@contextlib.contextmanager
+def _state_lock():
+    """Hold an advisory exclusive lock on ~/.claude/agent-sessions.lock
+    for the duration of state read+write. Concurrent agent-ctl
+    invocations (start, run-dag, status, cleanup) serialise here
+    instead of racing on next_id() and clobbering each other's
+    session entries on save_state(). Lock file is per-user; the
+    state file is also per-user, so cross-user races do not arise."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_LOCK_FILE, "w") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def load_state() -> dict:
+    """Read the state file. Callers that mutate must hold _state_lock()
+    and use save_state(). Single read-only callers (status, check) can
+    skip the lock; they may see a momentary stale read but never
+    corruption because save_state() writes atomically."""
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text())
@@ -60,11 +86,23 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    """Write the state file atomically: write to a sibling temp path
+    and rename over the target. POSIX rename is atomic on the same
+    filesystem, so a concurrent reader either sees the old file or
+    the new one — never a half-written one."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.replace(STATE_FILE)
 
 
 def next_id(state: dict) -> str:
-    """Return next sequential session ID like '01', '02', ..."""
+    """Return next sequential session ID like '01', '02', ...
+
+    Caller must hold _state_lock() between this call and the
+    subsequent save_state(state), otherwise two concurrent starts
+    can compute the same ID and clobber each other.
+    """
     existing = [int(k) for k in state if k.isdigit()]
     return f"{max(existing, default=0) + 1:02d}"
 
@@ -530,51 +568,49 @@ def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 def cmd_start(args) -> None:
-    state = load_state()
-    state = reap_finished(state)
-
     agent = args.agent
-    sid = next_id(state)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    outfile = OUTPUT_DIR / f"session-{sid}.txt"
-    result_file = OUTPUT_DIR / f"session-{sid}-result.md"
-
     spec = _launchable_spec(agent)
     cwd = args.cwd or os.getcwd()
     model = args.model or spec.default_model
     timeout = args.timeout or DEFAULT_TIMEOUT
 
-    # Every build_cmd accepts the full kwarg set; agents that don't need
-    # result_file or cwd ignore them. Keeps dispatch agent-agnostic.
-    # Family validation is ticket-driven; the CLI start path skips it
-    # (interactive smoke tests do not produce ranking inputs).
-    agent_cmd = spec.build_cmd(
-        prompt=args.prompt, model=model,
-        result_file=result_file, cwd=cwd,
-        extra_flags=args.flags,
-        flags={},
-    )
+    # Hold the state lock across read+next_id+launch+save so two
+    # concurrent `start` invocations cannot compute the same ID.
+    with _state_lock():
+        state = load_state()
+        state = reap_finished(state)
+        sid = next_id(state)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        outfile = OUTPUT_DIR / f"session-{sid}.txt"
+        result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
-    env = _clean_env()
-    shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
-    pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
+        agent_cmd = spec.build_cmd(
+            prompt=args.prompt, model=model,
+            result_file=result_file, cwd=cwd,
+            extra_flags=args.flags,
+            flags={},
+        )
 
-    state[sid] = {
-        "pid": pid,
-        "agent": agent,
-        "status": "running",
-        "model": model,
-        "cwd": cwd,
-        "prompt": args.prompt[:200],
-        "outfile": str(outfile),
-        "result_file": str(result_file),
-        "timeout": timeout,
-        "turn": 1,
-        "gemini_uuid": None,  # populated after first turn completes
-        "started": datetime.now(timezone.utc).isoformat(),
-        "ended": None,
-    }
-    save_state(state)
+        env = _clean_env()
+        shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
+        pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
+
+        state[sid] = {
+            "pid": pid,
+            "agent": agent,
+            "status": "running",
+            "model": model,
+            "cwd": cwd,
+            "prompt": args.prompt[:200],
+            "outfile": str(outfile),
+            "result_file": str(result_file),
+            "timeout": timeout,
+            "turn": 1,
+            "gemini_uuid": None,  # populated after first turn completes
+            "started": datetime.now(timezone.utc).isoformat(),
+            "ended": None,
+        }
+        save_state(state)
 
     print(f"Session {sid} started ({agent})")
     print(f"  PID:     {pid}")
@@ -1043,40 +1079,48 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
     model = ticket.get("model") or spec.default_model
     ticket_cwd = ticket.get("cwd", cwd)
 
-    sid = next_id(state)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    outfile = OUTPUT_DIR / f"session-{sid}.txt"
-    result_file = OUTPUT_DIR / f"session-{sid}-result.md"
+    # Re-acquire the state lock and refresh from disk so we see any
+    # session entries written by concurrent agent-ctl processes since
+    # the run-dag loop last loaded state. Without this, two run-dag
+    # invocations (or a run-dag + a manual `start`) would compute the
+    # same next_id and overwrite each other's session record.
+    with _state_lock():
+        state = load_state()
+        state = reap_finished(state)
+        sid = next_id(state)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        outfile = OUTPUT_DIR / f"session-{sid}.txt"
+        result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
-    agent_cmd = spec.build_cmd(
-        prompt=prompt, model=model,
-        result_file=result_file, cwd=ticket_cwd,
-        extra_flags=None,
-        flags=ticket.get("flags") or {},
-    )
+        agent_cmd = spec.build_cmd(
+            prompt=prompt, model=model,
+            result_file=result_file, cwd=ticket_cwd,
+            extra_flags=None,
+            flags=ticket.get("flags") or {},
+        )
 
-    env = _clean_env()
-    shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
-                                 ticket_id=ticket["id"])
-    pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
+        env = _clean_env()
+        shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
+                                     ticket_id=ticket["id"])
+        pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
 
-    state[sid] = {
-        "pid": pid,
-        "agent": agent,
-        "status": "running",
-        "model": model,
-        "cwd": ticket_cwd,
-        "prompt": prompt[:200],
-        "outfile": str(outfile),
-        "result_file": str(result_file),
-        "timeout": timeout,
-        "turn": 1,
-        "gemini_uuid": None,
-        "started": datetime.now(timezone.utc).isoformat(),
-        "ended": None,
-        "ticket_id": ticket["id"],
-    }
-    save_state(state)
+        state[sid] = {
+            "pid": pid,
+            "agent": agent,
+            "status": "running",
+            "model": model,
+            "cwd": ticket_cwd,
+            "prompt": prompt[:200],
+            "outfile": str(outfile),
+            "result_file": str(result_file),
+            "timeout": timeout,
+            "turn": 1,
+            "gemini_uuid": None,
+            "started": datetime.now(timezone.utc).isoformat(),
+            "ended": None,
+            "ticket_id": ticket["id"],
+        }
+        save_state(state)
     return sid
 
 
