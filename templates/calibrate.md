@@ -1,30 +1,37 @@
-# Calibration prompt (Phase 5, pre-report)
+# Calibration prompt (v6, two-pass wrapping debate)
 
-Calibration is a **blinded per-finding quality gate** that runs between debate and final-report. It catches overclaimed and unverifiable findings *before* they enter the referee letter, not after. Replaces the old post-hoc evaluation as the primary calibration mechanism for any candidate report content. The post-hoc evaluation (`templates/evaluation.md`) remains available for A/B comparison across review versions but is no longer the pipeline's calibration loop.
+Calibration is a **blinded per-finding quality gate** that wraps debate in v6: Pass 1 runs on every candidate panel row from merge, the four-way escalation gate reads Pass 1 results to decide which findings enter debate, and Pass 2 runs on debate survivors to narrow their `surviving_text` before the panel is rendered. This is the primary quality mechanism in the pipeline. The post-hoc evaluation (`templates/evaluation.md`) is a separate A/B comparison tool, not the calibration loop.
 
-## Why this runs
+## Why this flow exists
 
-The 2026-04-14 v4 run on Galeotti-Golub-Goyal shipped a report with 56.2% overclaim rate on its 16 report-entering findings (vs v3's 37.5% on the top-8 debated cohort). Diagnosis: the v4 redesign correctly routed strong-consensus issues away from the debate stage's closure ritual, but that ritual had been doing unacknowledged polish work — softening overclaimed raw merge_rank language into narrower, more defensible synthesizer `refined_claim` text. Removing debate on settled issues removed the softener. Phase 5 calibration restores the softener as a cheap single-model check, without the theatre cost of full dialectic.
+v5 ran calibration after debate on the top-N by rank_score, then shipped a referee letter. Result: 56.2% overclaim rate on report-entering findings in the 2026-04-14 v4 run, and debate budget wasted on claims that a cheap first-pass calibrator would have killed or narrowed immediately. v6 reverses the order: calibrate first (cheap, kills obvious overclaims), then fire the four-way gate, then debate only on gate-clearers, then calibrate again on debate survivors.
 
 ## What this does NOT do
 
-- Does not rediscover issues — if discovery missed something, calibration will not invent it (run the coarse-style baseline diff instead).
-- Does not re-rank — `rank_score` from merge is preserved.
-- Does not re-adjudicate debated issues — `prosecution_wins` and `defense_wins` verdicts stand. Calibration operates on the *surviving_text* of debated winners (prosecution_wins + split) and on the raw claim of settled issues; it can demote or rewrite but cannot overturn a debate verdict.
+- Does not rediscover issues — if discovery missed something, calibration will not invent it (the Phase 1 holistic pass and Wave 2.5 baseline are the coverage mechanisms).
+- Does not re-rank — `rank_score` from merge is preserved for panel ordering.
+- Does not override the four-way gate — Pass 1's verdict feeds the gate but does not itself decide escalation.
 
-## Which findings enter calibration
+## Which findings enter calibration — v6 two-pass model
 
-**Every finding that would otherwise enter the final report**:
-- All `status: settled` merged issues (they skipped debate — calibration is their only quality gate).
-- All debated issues with verdict `prosecution_wins` (material concerns) — calibrate the synthesizer's `surviving_text`.
-- All debated issues with verdict `split` (local concerns) — calibrate the narrower surviving claim.
-- All debated issues with verdict `escalate` — calibrate the open question; overclaimed escalations get reworded to more cautious phrasing.
-- Aggregated findings: calibrate each `sub_finding` independently (same rule as post-hoc evaluation).
+**Pass 1 (Wave 5a, before the gate)**: every row in `_artifacts/json/panel_rows_candidates.json` produced by `templates/merge_and_rank.md` Step 6. No filter; the pass annotates all of them with `quote_verified` × `calibration` verdicts.
 
-**What does NOT enter calibration:**
-- `defense_wins` debated issues (already dropped from report).
-- Triaged findings (already gone at merge).
-- `appendix_issues` (optional — run calibration on them if budget allows; otherwise ship with a note that calibration did not check them).
+Disposition after Pass 1:
+
+- `quote_verified: no` OR `calibration: unsupported` → drop. Written to `_calibration/dropped_pass1.json` with reason. Does NOT enter the four-way gate or debate.
+- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite via `templates/polish.md`; re-annotate once; if still failing → drop or demote one tier; if passing → mark `calibration_pass1.verdict: calibrated_narrowed`.
+- `calibration: supported` + `quote_verified: yes` → mark `calibration_pass1.verdict: supported`.
+
+Pass 1 survivors (supported or calibrated_narrowed) flow into Wave 5b gate evaluation.
+
+**Pass 2 (Wave 5d, after debate)**: every debate survivor (verdict in {prosecution_wins, split, escalate}) re-annotated against the synthesizer's `surviving_text`. Same rubric, same disposition rules. Written to `calibration_pass2` field.
+
+Pass 2 does NOT fire on findings that bypassed debate — their Pass 1 verdict is final and flows straight to the panel.
+
+**What does NOT enter calibration at any point:**
+- Triaged findings from merge Step 1 (already dropped pre-merge).
+- Findings killed by defender in debate (verdict: defense_wins) — written to `_calibration/dropped_by_defense.json`, do not get a Pass 2.
+- `dropped_at_merge` items from merge Step 6's atomicity/validator rejections.
 
 ## Blinding
 

@@ -15,7 +15,7 @@ v5 introduced this pass after the v4 run on Galeotti-Golub-Goyal missed the Sect
 
 ## What it does NOT do
 
-- Does not replace discovery. Discovery's 18 sweeps produce far more candidate issues than a single-shot review. Baseline is a safety net, not the main channel.
+- Does not replace discovery. The v6 holistic pass plus nine discovery tickets (three tracks × three families) produce far more candidate issues than a single-shot review. Baseline is a coverage sentinel, not the main channel.
 - Does not enter ranking. Baseline findings that overlap with our merged set are discarded (we already have the concern). Baseline findings that are *unique* get forced into a targeted one-round debate.
 - Does not change rank_score. The baseline's own internal ranking is ignored; we only care about the set of concerns it names.
 
@@ -106,12 +106,18 @@ for b in coarse_unique:
         "claim": b["concern"],
         "quote": b["quote"],
         "quote_location": b["quote_location"],
-        "evidence": f"Surfaced by coarse-style single-shot baseline; not independently found by disputatio's 18-sweep discovery. Investigate whether this was a discovery miss or merge over-aggregation.",
+        "evidence": f"Surfaced by coarse-style single-shot baseline; not independently found by the v6 holistic pass + 9-ticket discovery. Investigate whether this was a discovery miss or merge over-aggregation.",
         "falsifier": None,
         "rank_score": 8,  # conservative default; will not sit at the top
         "scores": {"centrality": 2, "cross_agent_support": 0, "evidence_specificity": 2, "severity": 2 if b["severity"] == "material" else 1},
-        "status": "debate",  # force into debate — we need adjudication since cross-agent support is 0
-        "status_reason": "baseline-unique; disputatio discovery did not independently surface this",
+        "debate_hint": {
+            # baseline-unique rows: single-family signal by construction; let the
+            # four-way gate in Phase 4 decide whether this escalates, like any
+            # other row. Baseline is a coverage sentinel, not a router.
+            "cross_family_disagreement": "none",
+            "evidence_conflict_in_paper": "unknown",
+            "severity_sensitive": b["severity"] == "material"
+        },
         "sources": [{"agent": "baseline", "method": "single_shot_opus", "issue_id": f"baseline_{i}"}],
         "needs_web_verification": False,
         "aggregated": False

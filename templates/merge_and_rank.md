@@ -1,17 +1,30 @@
-# Merge and rank prompt
+# Merge and rank prompt (v6)
 
-After 3 agents have each run 5 discovery methods, you have up to 15 sets of candidate issues. This prompt describes how to merge them into a single ranked list.
+After Phase 2 completes, you have up to nine discovery JSON files — three tracks (`holistic_candidates`, `broad_critic`, `narrow_evidence`) × three families (anthropic, openai, google). This prompt describes how to merge them into atomic panel-row candidates.
 
 ## Inputs
 
-All 15 discovery JSON files (3 agents × 5 methods), each containing `{"issues": [...]}`:
+Nine discovery JSON files, each containing `{"track": "...", "agent": "<family>", "issues": [...]}`:
 
 ```
-_artifacts/json/discover_claude_m2.json
-_artifacts/json/discover_claude_m3.json
-...
-_artifacts/json/discover_gemini_m6.json
+_artifacts/json/discover_claude_holistic_candidates.json
+_artifacts/json/discover_claude_broad_critic.json
+_artifacts/json/discover_claude_narrow_evidence.json
+_artifacts/json/discover_codex_holistic_candidates.json
+_artifacts/json/discover_codex_broad_critic.json
+_artifacts/json/discover_codex_narrow_evidence.json
+_artifacts/json/discover_gemini_holistic_candidates.json
+_artifacts/json/discover_gemini_broad_critic.json
+_artifacts/json/discover_gemini_narrow_evidence.json
 ```
+
+Plus one optional file from Wave 2.5:
+
+```
+_artifacts/json/baseline_review.json   # coarse-style single-shot coverage sentinel (per templates/baseline.md)
+```
+
+Every discovery candidate has already passed the evidence compiler (`templates/evidence_compile.md`) at write time — its `quote` is guaranteed to substring-match `_paper/paper.md`, its `category` is guaranteed to be in the canonical vocabulary, and its evidence array is guaranteed non-empty.
 
 ## Procedure
 
@@ -251,38 +264,39 @@ In practice: most findings ship through calibration straight to the panel. The 0
 
 After ranking, status assignment, and baseline-diff augmentation, transform each surviving merged issue into a **v6 panel row** and write to `_artifacts/json/panel_rows_candidates.json`. This is the canonical structured output going into verify → debate → calibrate → render in v6. The legacy `ranked_issues.json` is preserved as the audit-trail artifact.
 
-For each merged issue with `status != "drop"`, emit a panel row matching the v6 schema (see `docs/v6-upstream-plan.md` and `templates/render_panel.md` for the full spec). Field mapping:
+For each merged issue that survived triage and the atomicity validator, emit a panel row matching the v6 schema (see `docs/v6-upstream-plan.md` and `templates/render_panel.md` for the full spec). Field mapping:
 
 ```
 merged issue                                    →  panel row
 -------------------------------------------------------------
 id (merged_NNN)                                 →  finding_id (F001, F002, ...) — zero-padded, re-indexed
 claim                                           →  concern (verbatim)
-(new)                                           →  category (inferred from method + quote context; one of:
-                                                    proof | empirics | identification | framing |
-                                                    robustness | interpretation | notation | other)
+category (already set by evidence compiler at   →  category (preserved unchanged — NO post-hoc
+ write time from canonical vocabulary)             re-categorisation; "other" rate > 10% logs warning
+                                                    per SKILL.md Explicit rules)
 scores.severity → 'material'|'local'|'nit'      →  severity (map: 3→material, 2→material, 1→local, 0→nit)
-scores.cross_agent_support / rank_score context →  confidence.band (high/medium/low derived from
-                                                    rank_score tertile within surviving set)
+(see note below)                                →  confidence.band: "not_calibrated"  (v6 placeholder)
 (populated downstream)                          →  priority.author / priority.referee
-quote + quote_location + evidence               →  evidence[] (array of one entry with support_type:
-                                                    "direct_quote", plus any additional quotes the
-                                                    evidence compiler captured)
+quote + quote_location + evidence[]             →  evidence[] (preserve every entry with its
+                                                    support_type; evidence compiler has already
+                                                    validated every quote)
 sources + family list per ticket                →  architecture_support.<family>.{supports, methods, notes}
+debate_hint (Step 3b output)                    →  debate_hint (preserved unchanged; Phase 4 gate reads it)
 (populated by Phase 4 debate, else not_run)     →  debate.{triggered, reason, verdict, what_survived, history}
-(populated by Phase 5 calibration)              →  calibration.{verdict, quote_verified, annotator_notes,
-                                                    narrowing_notes, drop_reason}
+(populated by Phase 5 calibration pass 1 and 2) →  calibration_pass1 / calibration_pass2
 (populated by Phase 6 renderer)                 →  suggested_action.author.fix / referee.how_to_use
 (compute from source ticket IDs + prompts)      →  audit.source_candidate_ids, prompt_trace_ids,
                                                     status: "survived" (panel rows from here) /
                                                     "dropped" (added to dropped_findings[] instead)
 ```
 
+**Confidence band policy (v6).** The panel row's `confidence.band` is initialised to the string `"not_calibrated"` at merge time. This is deliberate: `rank_score` is a relative ordering within one run, not an epistemic confidence measure, so labelling it `high | medium | low` at this stage would mislead the reader. A future release that ships observed calibration data on a benchmark corpus can replace `"not_calibrated"` with a real `band`; until then, the placeholder is more honest than fake precision. The render step in `templates/render_panel.md` displays `"not_calibrated"` verbatim in the panel table.
+
 The transform is a mechanical map — Claude (opus) executes it inline, no additional model call needed. The output `panel_rows_candidates.json` contains two top-level arrays:
 
 ```json
 {
-  "survived": [ /* panel row per status != "drop" issue */ ],
+  "survived": [ /* panel row per issue that survived triage + atomicity validator + baseline-diff injection */ ],
   "dropped_at_merge": [
     {
       "finding_id": "F_drop_001",

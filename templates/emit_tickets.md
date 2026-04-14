@@ -326,11 +326,65 @@ One ticket, Gemini only (because it owns web search):
 
 Note: verify writes a new file `ranked_issues_verified.json` instead of overwriting `ranked_issues.json`. This makes the run-dag output check straightforward. After verification, Claude updates the human-readable `2_ranking/verification.md` from the new file.
 
-### Wave 5 — Debate round 1 (emitted after verify)
+### Wave 5 — Calibration-wraps-debate (v6)
 
-**Cohort selection: status-driven, not score-driven.** Open `_artifacts/json/ranked_issues_verified.json`, filter to issues where `status == "debate"` (assigned by `merge_and_rank.md` Step 3b), sort by `rank_score` descending, take the top `--top-n` (default 8). If fewer than `--top-n` issues have `status == "debate"`, emit the smaller cohort. **If zero issues have `status == "debate"`, skip the debate phase entirely and proceed directly to the final report** — that is the correct outcome on consensus-heavy papers and saves substantial budget.
+v6 replaces v5's "debate-then-calibrate-top-N" with **calibration wrapping debate**: a first calibration pass runs on every panel-row candidate from merge, the four-way gate is evaluated over calibrated survivors, debate fires only on gate-clearers, and a second calibration pass narrows debate `surviving_text` before it enters the panel.
 
-For each cohort issue, emit three tickets. Example for `issue_001`:
+Concretely Wave 5 decomposes into three sub-waves that the orchestrator emits in sequence:
+
+#### Wave 5a — Calibration pass 1 (all candidates)
+
+For every row in `_artifacts/json/panel_rows_candidates.json` (produced by merge Step 6), emit one `calibrate` ticket per row. Default annotator: codex/gpt-5.4-mini; fallback: claude-sonnet-4.6. Ticket shape per `templates/calibrate.md`. Run with `agent-ctl run-dag _calibration/tickets.json --concurrent 4`.
+
+Output: `_calibration/annotations/<BF_id>.json` per row. The aggregator (Claude inline) applies disposition rules:
+
+- `quote_verified: no` OR `calibration: unsupported` → drop immediately; write to `_calibration/dropped_pass1.json` with reason; no debate, no further processing
+- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite ticket (gemini-3.1-pro-preview, per `templates/polish.md`) to narrow the claim; re-annotate once; if still failing → drop or demote one tier; if passing → mark as `calibrated_narrowed` and carry to gate evaluation
+- `calibration: supported` → carry to gate evaluation unchanged
+
+Write `_calibration/post_pass1_panel_rows.json` with the surviving set + `calibration_pass1` field populated on each row.
+
+#### Wave 5b — Four-way gate evaluation (inline, no tickets)
+
+The orchestrator applies the four-way escalation gate (spec in `SKILL.md` → Explicit rules) to every row in `_calibration/post_pass1_panel_rows.json`. Pseudocode:
+
+```python
+def should_escalate(row):
+    hint = row["debate_hint"]
+    cal1 = row["calibration_pass1"]
+    return (
+        hint["cross_family_disagreement"] == "strong"
+        and hint["evidence_conflict_in_paper"] == "yes"
+        and hint["severity_sensitive"] is True
+        and cal1["verdict"] in ("supported", "calibrated_narrowed")
+        and row["severity"] in ("material", "local")
+    )
+
+rows = json.load(open("_calibration/post_pass1_panel_rows.json"))
+to_debate = [r for r in rows if should_escalate(r)]
+to_panel  = [r for r in rows if not should_escalate(r)]
+
+json.dump({"debate": to_debate, "direct_to_panel": to_panel},
+          open("_artifacts/json/gate_decision.json", "w"))
+```
+
+If `len(to_debate) == 0`, Wave 5c is skipped entirely. Rows in `to_panel` proceed directly to Wave 6 (panel render).
+
+#### Wave 5c — Debate round 1 on gate-clearers (only)
+
+For each row in `gate_decision.json#debate`, emit the three-ticket prosecute/defend/synthesize triple. Role rotation for Round 1: claude prosecutes, codex defends, gemini synthesizes. Ticket shape unchanged from v5 (see example below). Rounds 2+ emitted post-synthesis if the verdict is `split` or `escalate` AND `N < --max-debate-rounds`; default cap is 2 rounds.
+
+After every synthesis, the finding's row is updated with the `debate` field (triggered, reason, verdict, what_survived, history). Rows with `verdict: defense_wins` are appended to `_calibration/dropped_by_defense.json` with the defender's counter-evidence; they do NOT re-enter calibration. Rows with `verdict: prosecution_wins` or `split` or `escalate` flow into Wave 5d.
+
+#### Wave 5d — Calibration pass 2 (debate survivors)
+
+For each debate survivor, emit a fresh `calibrate` ticket against the synthesizer's `surviving_text` (not the original claim). Same annotator, same rubric. Polish-rewrite fires the same way if needed. Output: `_calibration/post_pass2_panel_rows.json` with `calibration_pass2` field populated.
+
+Merge into final set: rows that went direct from Wave 5a → to_panel keep `calibration_pass1` only; rows that went through debate carry both `calibration_pass1` AND `calibration_pass2`. Both survive into the panel. The renderer reads whichever calibration is most recent on each row.
+
+Write `_calibration/final_findings.json` with the complete calibrated set, preserving both calibration passes per row, debate history per debated row, and dropped findings in separate arrays (dropped_pass1, dropped_by_defense, dropped_pass2).
+
+For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
 
 ```json
 {
@@ -386,6 +440,69 @@ For each cohort issue, emit three tickets. Example for `issue_001`:
 | 3 | gemini | claude | codex |
 
 Within a single issue's debate, the tickets are strictly sequential. Across issues, they are parallel (bounded by agent-ctl's `--concurrent` cap).
+
+### Four-way gate helper (machine-checkable)
+
+Executable form of the gate for orchestrator use. Save as a scratch script or embed in the orchestrator's Wave 5b step:
+
+```python
+import json, sys
+from pathlib import Path
+
+REQUIRED_SEVERITIES = {"material", "local"}
+REQUIRED_CAL_VERDICTS = {"supported", "calibrated_narrowed"}
+
+def should_escalate(row: dict) -> tuple[bool, str]:
+    """Return (escalate?, reason). reason names the first failing condition or 'all_conditions_met'."""
+    hint = row.get("debate_hint", {})
+    cal1 = row.get("calibration_pass1", {})
+    severity = row.get("severity")
+
+    # Condition 1 — cross-family disagreement real
+    if hint.get("cross_family_disagreement") != "strong":
+        return False, "cross_family_disagreement_not_strong"
+
+    # Condition 2 — evidence conflict in paper
+    if hint.get("evidence_conflict_in_paper") != "yes":
+        return False, "no_evidence_conflict_in_paper"
+
+    # Condition 3 — severity sensitive
+    if not hint.get("severity_sensitive"):
+        return False, "severity_not_sensitive_to_verdict"
+
+    # Condition 4 — finding would otherwise be user-visible
+    # (operationalised as: calibration didn't drop it AND severity is material/local)
+    if cal1.get("verdict") not in REQUIRED_CAL_VERDICTS:
+        return False, f"calibration_pass1_verdict_not_user_visible:{cal1.get('verdict')}"
+    if severity not in REQUIRED_SEVERITIES:
+        return False, f"severity_not_user_visible:{severity}"
+
+    return True, "all_conditions_met"
+
+
+def decide(post_pass1_path: Path, out_path: Path) -> dict:
+    rows = json.loads(post_pass1_path.read_text())
+    to_debate, to_panel = [], []
+    for r in rows:
+        ok, reason = should_escalate(r)
+        r["gate_decision"] = {"escalated": ok, "reason": reason}
+        (to_debate if ok else to_panel).append(r)
+
+    decision = {"debate": to_debate, "direct_to_panel": to_panel,
+                "summary": {"n_in": len(rows), "n_debate": len(to_debate), "n_panel": len(to_panel)}}
+    out_path.write_text(json.dumps(decision, indent=2))
+    return decision
+
+
+if __name__ == "__main__":
+    paper_dir = Path(sys.argv[1])
+    decide(
+        paper_dir / "_calibration/post_pass1_panel_rows.json",
+        paper_dir / "_artifacts/json/gate_decision.json",
+    )
+```
+
+Orchestrator runs this as the Wave 5b step and reads `gate_decision.json` to emit Wave 5c debate tickets (or skip to Wave 6 if `n_debate == 0`). The helper is deterministic — every reason is logged per row so the gate's behaviour is auditable.
 
 ### Wave 6+ — Subsequent rounds (emitted after each synthesize completes)
 
