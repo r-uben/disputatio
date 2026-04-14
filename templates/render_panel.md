@@ -1,12 +1,12 @@
 # Panel renderer prompt (v6, Phase 6)
 
-A single long-context model reads `_calibration/final_findings.json` and the full `panel.json` and produces three outputs: the panel rendered as markdown, a mode-specific prose memo, and an optional auxiliary rendering (revision plan for author mode, or referee-letter draft for referee mode). The writer can summarise rows that survived calibration; **it cannot invent findings, change a `calibration.verdict`, or restore a dropped row.**
+A single long-context model reads the compiled `_artifacts/json/panel.json` and produces three outputs: the panel rendered as markdown, a mode-specific prose memo, and an optional auxiliary rendering (revision plan for author mode, or referee-letter draft for referee mode). The writer can summarise rows that survived calibration; **it cannot invent findings, change a `calibration.verdict`, or restore a dropped row.** Row shape authority: `templates/schemas/panel_row.md`.
 
 This is the step that closes the prose-uniformity gap. Fragment assembly (what v5 did) produces stitched-together paragraphs with mixed voices. A single writer reading the entire panel produces consistent tone across all findings.
 
 ## Inputs
 
-- Panel JSON: `_calibration/final_findings.json` (or the v6 `panel.json` build at the same path if the renderer runs after panel compilation)
+- Panel JSON: `_artifacts/json/panel.json` — compiled inline by the orchestrator (Wave 7a) from `_calibration/final_findings.json` wrapped with paper/engine/holistic_pass/summary metadata. Renderer reads this file ONLY; it does not read `final_findings.json` or `panel_rows_candidates.json` directly.
 - Paper text: `_paper/paper.md` — for context and for verification that quotes resolve where the panel says they do
 - Mode: `author` or `referee` (from the engine section of the panel)
 
@@ -20,9 +20,9 @@ One-line-per-finding markdown table. Primary UI. Columns:
 
 | Severity | Confidence | Priority (mode-specific) | Category | Concern | Evidence | Verdict history | Suggested action |
 
-Render `priority` using the mode-specific vocabulary (`fix_before_submit | watch_in_review | can_ignore` for author, `endorse | verify_before_endorsing | skip` for referee). Render `confidence.band` as `high | medium | low`. Render the quote in the `Evidence` column truncated to ~140 characters with a wikilink to the full finding page.
+Render `priority` using the mode-specific vocabulary (`fix_before_submit | watch_in_review | can_ignore` for author, `endorse | verify_before_endorsing | skip` for referee). Render `confidence.band` verbatim — legitimate values are `high | medium | low | not_calibrated`. `not_calibrated` is not a missing value; it means the row skipped calibration (e.g., merge-only rows that never entered Pass 1), and it must appear in the table as-is. Render the quote in the `Evidence` column truncated to ~140 characters with a wikilink to the full finding page.
 
-Sort: by priority (highest first), then severity (`material` → `local` → `nit`), then confidence (high → low).
+Sort: by priority (highest first), then severity (`material` → `local` → `nit`), then `finding_id` (stable merge order). Do NOT sort on `confidence.band` — confidence is display metadata, not an ordering key.
 
 Follow the table with a **Dropped findings** section that lists every `dropped_findings[]` entry with its drop reason. This is mandatory — the whole point of calibration is that the system shows what it dropped and why, instead of hiding it.
 
