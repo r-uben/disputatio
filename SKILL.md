@@ -1,40 +1,47 @@
 ---
 name: disputatio
-description: High-precision academic paper review via seven-method dialectic debate
+description: Cross-architecture paper review panel for pre-submission authors and first-round referees
 ---
 
-# Disputatio
+# Disputatio (v6)
 
-Review an academic paper as a top-journal referee would, using seven methods of critical dialectic executed by three independent AI agents. The goal is not to be polite — the goal is to subject the paper to the kind of scrutiny that makes it publishable.
+A cross-architecture review panel designed for the two moments that matter before publication: before an author submits, and before a referee writes the report. The primary deliverable is a **finding panel** — each concern carries an exact quote, cross-architecture support, a contested-point debate trail (only when triggered), a calibration verdict, and a mode-specific priority label. The secondary deliverable is a single-writer prose memo summarizing the panel for the chosen reader (author or referee). Claims that do not survive verification are preserved in the audit trail with drop reasons — the system demonstrates restraint instead of hiding what got killed.
 
-Orchestration is durable: every agent call is a **ticket** in a DAG on disk. The pipeline is resumable, auditable, and replayable by construction.
+The pipeline is resumable, auditable, and replayable because every agent call is a ticket in a DAG on disk.
+
+## What this is not
+
+- **Not a polished referee letter as primary output.** The panel is primary; the memo is a secondary rendering.
+- **Not a majority-vote truth engine.** Cross-family agreement is one signal on a finding, not a verdict. The evidence-backed finding after calibration is the decisive object.
+- **Not a benchmark score generator.** Internal calibration is a quality gate, not a leaderboard.
 
 ## Usage
 
 ```
-/disputatio <path-to-paper> [--top-n 8] [--max-rounds 3] [--skip-web]
+/disputatio <path-to-paper> [--mode author|referee] [--max-debate-rounds 2] [--skip-web]
 ```
 
 Options:
-- `--top-n N` — debate the top N merged issues (default 8)
-- `--max-rounds R` — maximum debate rounds per issue (default 3)
-- `--skip-web` — disable web verification (default: enabled)
+- `--mode author` (default) — renders priority labels as `fix_before_submit | watch_in_review | can_ignore` and an optional revision plan.
+- `--mode referee` — renders priority labels as `endorse | verify_before_endorsing | skip` and an optional referee-letter draft.
+- `--max-debate-rounds R` — maximum rounds per escalated finding (default 2). Debate is escalation-only; most findings never trigger it.
+- `--skip-web` — disable web verification (default: enabled).
 
-## The seven methods
+Same engine, same panel, only the rendering differs between modes.
 
-Each method is described in detail under `templates/methods/`. They are not labels — they are operational procedures.
+## Three discovery tracks (v6)
 
-| # | Method | File | Role |
-|---|--------|------|------|
-| 1 | Structured disputation | `m1_disputation.md` | Gives every debate round its formal structure (quaestio → objections → sed contra → respondeo → replies) |
-| 2 | Interrogation by contradiction | `m2_contradiction.md` | Finds pairs of claims that cannot both be true |
-| 3 | Systematic transformation | `m3_transformation.md` | Runs each claim through eight mechanical transformations (negate, strengthen, weaken, substitute, reverse, consequence, boundary, analogy) |
-| 4 | Counterexample construction | `m4_counterexample.md` | Tries to construct a case satisfying the assumptions but violating the conclusion; exposes hidden lemmas |
-| 5 | Self-measured critique | `m5_immanent.md` | Finds the paper's own commitments and hunts for passages where the paper violates them. Strongest form of criticism |
-| 6 | Causal disentangling | `m6_disentangling.md` | For each causal claim, enumerates co-factors and co-effects the paper has not ruled out |
-| 7 | Iterative refinement | `m7_refinement.md` | Operates in synthesis: produces the refined claim after each round |
+v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised as three tracks, one family per track, per spec in `docs/v6-upstream-plan.md`. A track is chosen for the candidate signal it produces, not for philosophical lineage.
 
-Methods 2-6 are **generative** (they find issues). Method 1 is **structural** (it shapes each round). Method 7 is **iterative** (it refines claims across rounds).
+| Track | What it does | Templates used |
+|---|---|---|
+| **Holistic** (3 tickets, one per family) | Produces a paper spine, main claims, attack surfaces, and likely referee questions. This is where conceptual-scope concerns surface — the kind of concern a single-shot model catches by reading the paper as one object. | `templates/holistic.md` |
+| **Broad critic** (3 tickets, one per family) | Scans for contradictions, scope mismatches, commitment violations, and framing overclaims. This is the workhorse candidate generator. | `templates/methods/m2_contradiction.md`, `m5_immanent.md` |
+| **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction and transformation-based stress tests against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md` |
+
+Method 0 (mechanical proofreading / close reading), previously a standalone sweep, is now absorbed into the broad critic track. Method 1 (structured disputation) is reserved for escalated debate rounds. Method 7 (iterative refinement) is the synthesis step within debate.
+
+Every candidate concern from any track is forced through a **targeted evidence compiler** that pins the exact quote, location, and whether support is direct or inferred. No finding progresses without verbatim quote support or an explicit `derived_inference` tag.
 
 ## Ticket DAG orchestration
 
@@ -56,7 +63,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 
 ## Protocol
 
-The review proceeds in six phases. Each phase corresponds to one or more waves of tickets (see `templates/emit_tickets.md` for the exact ticket definitions).
+The review proceeds in seven phases (v6 adds a holistic pass up front and re-scopes debate to escalation-only). Each phase corresponds to one or more waves of tickets; see `templates/emit_tickets.md` for the ticket definitions.
 
 ### Phase 0 — Orientation (parallel, all agents)
 
@@ -66,19 +73,41 @@ Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders t
 
 Run all three agents in parallel. Estimated time: ~15-20 minutes wall clock (Codex with `--full-auto` does deep web cross-referencing).
 
-### Phase 1 — Discovery (fan-out-fan-out parallel)
+### Phase 1 — Holistic pass (v6, new)
 
-Each agent runs **all five generative methods** (M2-M6) on the paper, using its own paper map as the cache. Each method produces one JSON output file containing all issues it found. Total: 3 agents × 5 methods = **15 discovery sweeps**, producing 15 JSON files.
+Each of the three agents runs a **holistic conceptual pass** on the paper using its own paper map as the cache. Output per agent:
 
-Raw outputs land in `_artifacts/json/discover_<agent>_m<N>.json`. Claude then renders them as markdown, organized by method, into `1_discovery/m<N>/<agent>.md`.
+- **Paper spine** — the argumentative load path from setup to main claim
+- **Main claims** — explicit list of what the paper asserts
+- **Attack surfaces** — where a serious referee would push back (theory / empirics / identification / framing / robustness / exposition)
+- **Likely referee questions** — specific questions a first-round referee would raise
+- **Evidence-heavy scrutiny zones** — which sections need close engagement versus which can be scanned
 
-**Parallelism**: the 3 agents run in parallel. Within each agent, the 5 methods should also run in parallel where the CLI supports it (if not, sequential within the agent). Target wall clock: 10-15 minutes.
+This phase exists because single-shot reviewers have a structural advantage on conceptual-scope concerns when reading the paper as one object. The method-based discovery tracks in Phase 2 under-detect these; the holistic pass closes the gap. The three agents' holistic passes are NOT merged into a single paper map — each agent's pass becomes part of its own reading cache. The orchestrator does build a **canonical attack-surface index** (union across agents, dedup on surface description) that Phase 2 discovery tickets receive as context.
+
+Raw outputs in `_artifacts/json/holistic_<agent>.json`; rendered into `0_holistic/<agent>.md`. Run in parallel. ~10-15 minutes wall clock.
+
+Full spec in `templates/holistic.md`.
+
+### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
+
+Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time: `claim_scope_mismatch`, `proof_derivation_flaw`, `identification_empirical_design`, `robustness_missing_check`, `framing_literature_overreach`, or `notation_presentation_local`.
+
+| Track | Tickets | Input | Purpose |
+|---|---|---|---|
+| Holistic candidate generation | 3 (one per family) | paper map + own holistic pass + canonical attack-surface index | surface conceptual-scope concerns the method tracks under-detect |
+| Broad critic | 3 (one per family) | paper map + attack-surface index | scan for contradictions, scope mismatches, commitment violations, framing overclaims; absorbs former M0 close-reading |
+| Narrow evidence-judgment | 3 (one per family) | paper map + attack-surface index + priority attack surfaces | counterexample construction, transformation stress tests, causal disentangling — deep, evidence-heavy findings on a small set of targets |
+
+Raw outputs in `_artifacts/json/discover_<agent>_<track>.json`. Rendered into `1_discovery/<track>/<agent>.md`. All nine tickets run in parallel.
+
+**Evidence compiler** (inline, per candidate). Every candidate finding is passed through a compiler that retrieves the verbatim quote, pins the location, records whether support is `direct_quote` or `derived_inference`, and rejects the finding outright if neither is achievable. No concern reaches merge without an evidence object.
 
 **OCR-aware**: discovery prompts warn agents about OCR artifacts and instruct them not to flag corrupted passages as paper errors.
 
 **Web search**: not triggered in this phase. Closed-book discovery.
 
-### Phase 2 — Merge, rank, and verify
+### Phase 3 — Merge, rank, and verify
 
 After discovery, Claude executes the merge and rank procedure described in `templates/merge_and_rank.md`:
 
@@ -95,34 +124,35 @@ After discovery, Claude executes the merge and rank procedure described in `temp
 
 **Ranking priority**: cross-agent support is weighted double because it is the strongest signal. Five methods on one model are correlated; agreement across different architectures is much more meaningful.
 
-### Phase 3 — Dialectic debate (parallel across issues)
+### Phase 4 — Dialectic debate (v6: escalation-only)
 
-Each top-ranked issue enters a dialectic debate. The debate follows the structured disputation format (Method 1): quaestio → objections → sed contra → respondeo → replies → synthesis.
+Debate is NOT the default path in v6. Most findings ship directly to calibration (Phase 5) and then into the panel without ever triggering a prosecution round. Debate fires only when **contested-finding escalation** is warranted.
 
-**Role rotation** across rounds:
+A finding escalates to debate iff ALL of the following hold:
+
+1. **Cross-family disagreement is real** — at least one family flagged the concern with high confidence and at least one family was silent or flagged low-confidence variants that conflict with the main claim.
+2. **Evidence exists on both sides** — the evidence compiler found both supporting quotes and countervailing passages; the verdict is not obvious from the evidence object alone.
+3. **Severity would change on verdict** — the outcome determines whether the finding is `material`, `local`, or dropped. A finding whose severity is already `nit` does not escalate regardless of disagreement.
+4. **The finding would otherwise be user-visible** — no point debating concerns that are already below a priority threshold.
+
+All four conditions. If any is absent, the finding skips debate and proceeds to calibration with its evidence object intact. The v5 status-routing rule (`settled` vs `debate`) is subsumed by this four-way gate in v6.
+
+**Structure when debate does fire.** Prosecute → defend → synthesize, per `templates/prosecute.md` / `defend.md` / `synthesize.md`. Role rotation across rounds:
 
 | Round | Prosecutor | Defender | Synthesizer |
 |-------|-----------|----------|-------------|
 | 1 | Claude | Codex | Gemini |
 | 2 | Codex | Gemini | Claude |
-| 3 | Gemini | Claude | Codex |
 
-The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` for the selection heuristic) and applies them to the issue. The defender uses Method 1 to reply to each objection individually. The synthesizer applies Method 7 to produce the refined claim.
+Two rounds maximum by default (`--max-debate-rounds 2`); round 2 fires only if round-1 synthesis verdict is `split` or `escalate` AND the synthesizer explicitly states it cannot resolve without more input. `prosecution_wins` and `defense_wins` verdicts are terminal.
 
-**Parallelism**: issues are debated in parallel, but within an issue the path is strictly sequential (prosecute → defend → synthesize). Cap concurrent issues at 2-3 to avoid rate-limiting the weaker model (typically Gemini).
+**Verdict vocabulary** (unchanged from v5): `prosecution_wins`, `defense_wins`, `split`, `escalate`. No `converged` option.
 
-**Cohort selection — status-driven, not score-driven.** The merge phase tags every surviving issue with `status ∈ {settled, debate}` per the rule in `templates/merge_and_rank.md` Step 3b. Only `status: "debate"` issues — important but not yet settled — enter the debate phase, ordered by `rank_score` and capped at `--top-n`. Settled issues ship straight to the report unchallenged. **If zero issues have `status: "debate"`, the debate phase is skipped entirely** — the correct outcome on consensus-heavy papers.
+**Parallelism**: escalated issues debate in parallel, but within a single issue the path is strictly sequential. Cap concurrent issues at 2–3 to avoid rate-limiting the weakest transport (typically Gemini).
 
-**Termination rules — verdict-driven, not budget-tiered:**
-- Every issue starts with budget for round 1.
-- After each synthesis, the verdict decides funding for round N+1:
-  - `prosecution_wins` or `defense_wins` → terminal. No further rounds.
-  - `split` → fund round N+1 prosecuting the surviving (narrower) claim, if `N < max_rounds`.
-  - `escalate` → fund round N+1 focused on the verifiable point, if `N < max_rounds`. Also flag for human review.
-- The `converged` verdict was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
-- There is **no tier-based pre-allocation** of rounds. Budget follows tension, not pre-assigned rank tier.
+**Expected runtime**: on a typical economics or theory paper, 0–5 findings escalate. Most runs skip debate entirely. That is by design.
 
-### Phase 4 — Pre-publication calibration (v5, new)
+### Phase 5 — Pre-publication calibration (v5, carried into v6 with panel-row output)
 
 Before the final report is compiled, every candidate finding that would enter it runs through a **blinded per-finding calibration pass**. This replaces the previous pipeline's post-hoc evaluation as the primary quality loop — post-hoc evaluation survives only as an A/B comparison tool (see Phase 6).
 
@@ -140,24 +170,29 @@ Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on r
 
 Default annotator: **codex with `gpt-5.4-mini`**. Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
 
-### Phase 5 — Final report
+### Phase 6 — Panel + renderers (v6 replaces v5's "Final report")
 
-Claude executes the `final_report` ticket inline and writes two outputs:
+The v6 primary deliverable is a **finding panel**. Prose memos are secondary renderings driven entirely off the panel rows — no prose stage can introduce new content, only summarize what survived calibration.
 
-1. **`_artifacts/json/final.json`** — structured final report, consuming `_calibration/final_findings.json` (not the pre-calibration ranked set):
-   - Material issues (calibrated `prosecution_wins`)
-   - Local issues (calibrated `split` verdicts, plus demoted material)
-   - Settled issues (calibrated strong-consensus findings)
-   - Appendix issues (demoted overclaims that survived one rewrite, and low-rank settled items)
-   - Dropped issues with reason: either `defense_wins` at debate or killed by calibration (partial/unsupported)
-   - Web-verified external evidence
-   - Overall assessment
+1. **`_artifacts/json/panel.json`** — the canonical output. Consumes `_calibration/final_findings.json`. Top-level shape:
+   - `paper` — metadata
+   - `engine` — version, mode (`author` | `referee`), families list
+   - `holistic_pass` — paper spine + main claims + canonical attack-surface index (union of per-family holistic passes)
+   - `findings[]` — one row per surviving finding with `concern`, `category`, `severity`, `confidence.band`, mode-specific `priority`, `evidence[]` (each entry: quote, location, why, `support_type`), per-family `architecture_support`, `debate` (triggered, reason, verdict, what_survived, history), `calibration` (verdict, quote_verified, annotator_notes, narrowing_notes, drop_reason), `suggested_action.author.fix` and `suggested_action.referee.how_to_use`, full `audit` trail
+   - `dropped_findings[]` — findings killed by defender in debate or by calibration, with reason surfaced (not hidden)
+   - `summary.counts`, `summary.top_priorities`, `summary.author_memo`, `summary.referee_memo`
 
-2. **`4_report/referee_report.md`** — the human-facing deliverable. For v5, each surviving finding's `surviving_text` is rewritten by **gemini-3.1-pro-preview** (Phase 5.5 editorial polish) into one-paragraph referee-letter prose before rendering. The content is fixed by calibration; gemini only tightens the writing. This closes the prose-quality gap vs coarse.ink single-shot reviews.
+2. **`4_panel/panel.md`** — panel rendered as a table, one row per finding, columns = concern / severity / confidence / priority (mode-specific) / evidence snippet / verdict history (compressed). The primary UI that a reader opens first.
 
-Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself IS the final live report.
+3. **`4_panel/author_memo.md` OR `4_panel/referee_memo.md`** (depending on `--mode`) — a **single-writer prose memo** produced by a long-context model reading the entire `panel.json` in one pass. The writer can summarise rows but cannot invent findings or change a row's `calibration.verdict`. For `--mode author`, the memo prioritises fixes before submission; for `--mode referee`, it scaffolds a first-draft referee letter the human referee will edit.
 
-### Phase 6 — Post-hoc evaluation (A/B only)
+4. **`4_panel/revision_plan.md`** (optional, `--mode author`) or **`4_panel/referee_letter_draft.md`** (optional, `--mode referee`) — auxiliary renderings generated from the same panel. These are secondary; the panel is primary.
+
+Claude also updates `review.md` at the top of the paper folder to set `phase: complete`, `mode`, and populate the summary section.
+
+Writer model: **gemini-3.1-pro-preview** for prose (strong at long-form), or **claude-opus** when the panel has >30 findings and Gemini's context is a concern. Full spec in `templates/render_panel.md`.
+
+### Phase 7 — Post-hoc evaluation (A/B only)
 
 Still available, but no longer the pipeline's calibration loop. Use this when you want to compare disputatio v5 against another review (disputatio v3, coarse.ink, Stanford Agentic Reviewer) on the same paper. Same blinded rubric, same `BF###` manifest shape, but now the pool can contain findings from multiple review versions simultaneously.
 
