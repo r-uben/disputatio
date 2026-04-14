@@ -106,10 +106,10 @@ for b in baseline_items:
     if not match:
         # The baseline caught something disputatio missed.
         # Force it in as a debate-status merged issue at moderate rank.
-        merged_so_far.append(baseline_to_merged_issue(b, source="baseline", status="debate"))
+        merged_so_far.append(baseline_to_merged_issue(b, source="baseline"))
 ```
 
-Matching uses the rules in `templates/baseline.md`. Baseline items covered by the merged set are *discarded* (we already have the concern). Baseline items *not* covered are appended to the merged set as new issues with `status: debate` (forced adjudication, since cross-agent support is 0) and a conservative default rank_score of 8. This protects against merge-over-aggregation: even if disputatio's discovery surfaced the concern but merge lost it, the baseline recovers it.
+Matching uses the rules in `templates/baseline.md`. Baseline items covered by the merged set are *discarded* (we already have the concern). Baseline items *not* covered are appended to the merged set as new issues with `source: baseline` and a conservative default rank_score of 8; Phase 4's four-way escalation gate then decides independently whether any of them enters debate. In v6 the baseline is a **coverage sentinel, not a router** — if the baseline catches something the holistic pass should have caught, that is a signal to strengthen the holistic pass, not an automatic debate admission.
 
 Write `_artifacts/json/baseline_diff.json` recording which baseline items matched which merged issues and which went to forced debate. Include a `coverage_rate` = matched / total_baseline_items. A coverage rate below ~70% means discovery or merge is missing too much and the run should be flagged for investigation.
 
@@ -162,24 +162,27 @@ Maximum score: 3 + 6 + 3 + 3 = 15.
 
 `rank_score` is the **single canonical importance score**. It drives the ordering of the final report. It does NOT directly select the debate cohort — see Step 3b for the routing rule.
 
-### Step 3b: Assign status (drop / settled / debate)
+### Step 3b: Debate-eligibility flag (v6 — replaces v5 status routing)
 
-After scoring, every surviving merged issue gets a `status` that determines whether it enters debate. **There is no second score.** Status is a pure filter on top of `rank_score`.
+In v5 every surviving merged issue got a `status ∈ {settled, debate}` that determined whether it entered Phase 4. v6 **removes that status field** and replaces it with the four-way escalation gate in `SKILL.md` Phase 4, which is computed separately over the full panel-row set (including baseline-unique findings from Step 2c).
 
+Merge output therefore does NOT assign settled/debate. Instead it produces a `debate_hint` field on each merged issue summarising whether it is an escalation *candidate* by the three gate conditions merge can evaluate at this stage:
+
+```json
+"debate_hint": {
+  "cross_family_disagreement": "strong | moderate | none",  // Derived from sources: conflicting/missing flags
+  "evidence_conflict_in_paper": "yes | no | unknown",        // Does the paper's own text cut both ways?
+  "severity_sensitive": true | false                          // Would severity change if the claim survives scrutiny?
+}
 ```
-drop    = removed in Step 1 (triage). Already gone — never reaches the report.
-settled = strong corroboration AND strong evidence AND web-verification not inconclusive.
-          Specifically: cross_agent_support ≥ 2 (two or more model families flagged it)
-                    AND evidence_specificity ≥ 2 (specific quote + falsifier)
-                    AND (no web check requested OR web_verification.status ∈ {confirmed, refuted, unchecked}).
-debate  = everything else. Either contested across families, weak evidence, or web-verification
-          left it inconclusive — i.e. the issue is important enough to keep but not
-          settled enough to ship unchallenged.
-```
 
-Rationale: dialectic is for **unresolved but important** questions, not for high-disagreement-in-the-abstract and not for anything-that-ranks-high. Three families converging on a well-evidenced issue is exactly what should ship to the report unchallenged. Singletons that survive triage, partial-support findings, and web-inconclusive issues are exactly what needs adversarial pressure.
+The fourth gate condition (finding would otherwise be user-visible) is evaluated in Phase 4 after calibration and so is not in merge's purview.
 
-If a paper produces zero `debate`-status issues, the debate phase is **skipped entirely**. That is the correct outcome — it means findings are either solid or noise, not contested. Forcing debate when nothing is live produces theater (round-1 convergence on every issue, defenders conceding pre-settled points), which the 2026-04-13 v3 run on Galeotti-Golub-Goyal exemplified.
+Phase 4 reads `debate_hint` plus fresh calibration verdicts and decides which findings escalate. Debate selection is **not** merge's decision; merge only surfaces the evidence for the decision.
+
+**Why this changed.** v5's two-tier routing (settled → report unchallenged, debate → dialectic) was semantically clean but created exactly the schema-split problem v6 is trying to eliminate. Two routing theories (status-based vs four-way-gate) in adjacent files produced silent wrong execution risks. v6 makes the four-way gate the single authority for debate routing and treats merge's output as neutral.
+
+If the paper produces zero findings that trigger the four-way gate in Phase 4, debate is skipped entirely. That is the correct outcome on consensus-heavy papers.
 
 ### Step 4: Produce the ranked list
 
@@ -202,8 +205,11 @@ Output a single file `_artifacts/json/ranked_issues.json` containing all merged 
         "evidence_specificity": 3,
         "severity": 3
       },
-      "status": "settled | debate",
-      "status_reason": "one-sentence justification for the status assignment",
+      "debate_hint": {
+        "cross_family_disagreement": "strong | moderate | none",
+        "evidence_conflict_in_paper": "yes | no | unknown",
+        "severity_sensitive": true
+      },
       "sources": [
         {"agent": "claude", "method": "m5", "issue_id": "m5_issue_002"},
         {"agent": "codex", "method": "m3", "issue_id": "m3_issue_001"}
@@ -233,20 +239,13 @@ For aggregated findings (rare — only when the *pattern* is itself the finding)
 }
 ```
 
-### Step 5: Budget cut
+### Step 5: Debate selection (v6 — delegated to Phase 4's four-way gate)
 
-The full list is preserved in `ranked_issues.json`. Selection for the debate phase is **status-driven, then rank-ordered**:
+Merge does NOT pre-select the debate cohort. The full merged set flows into Phase 4, which applies the four-way escalation gate (cross-family disagreement real, evidence on both sides, severity would change on verdict, finding would be user-visible) to each finding independently.
 
-1. Filter to `status == "debate"` issues only.
-2. Sort by `rank_score` descending.
-3. Take the top `--top-n` (default 8) of the filtered list.
+`rank_score` remains the canonical importance ordering for the final panel table, but it does not gate debate eligibility in v6. An issue can have a very high rank_score and still skip debate if the four-way gate is not satisfied (e.g. all three families agreed, evidence is one-sided, and the panel would show the same result either way).
 
-If fewer than `--top-n` issues have `status == "debate"`, debate the smaller cohort (or zero, in which case the debate phase is skipped). Do not pad the cohort with `settled` issues to hit the cap.
-
-All `status != "drop"` issues — settled and debated alike — appear in the final report, ordered by `rank_score`. The report distinguishes:
-- **Settled** issues: shipped as referee comments without dialectic. Strong cross-architecture corroboration is itself the warrant.
-- **Debated** issues: shipped with their debate trace. The verdict (prosecution_wins / defense_wins / split) determines whether they appear as material concerns, surviving local concerns, or are dropped post-debate.
-- **Appendix concerns**: low-rank `settled` items the report deprioritises.
+In practice: most findings ship through calibration straight to the panel. The 0–5 findings that clear the four-way gate get the adversarial round. This is a deliberate compute reallocation away from v5's "debate the top-N by rank" and toward "debate only what is actually contested and stakes-worthy."
 
 ### Step 6: Emit v6 panel rows
 

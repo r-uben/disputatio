@@ -1,108 +1,146 @@
-## Disputatio
+## Disputatio (v6)
 
-High-precision academic paper review via seven-method dialectic debate. This is a Claude Code skill, not a Python package — Claude Code is the runtime.
+A cross-architecture paper-review panel for pre-submission authors and first-round referees. Primary deliverable is a **finding panel** — each concern with exact quote, cross-family support, debate trail (only when triggered), calibration verdict, and a mode-specific priority label. Secondary deliverables (prose memo, optional revision plan or referee-letter draft) are rendered off the panel; the writer cannot invent findings. Claims that do not survive verification are preserved in the audit trail with drop reasons — the system demonstrates restraint instead of hiding what got killed.
 
-**Orchestration is ticket-based.** Every agent call is a ticket in a DAG (`<paper-folder>/_artifacts/tickets.json`). Claude generates tickets in waves; `agent-ctl run-dag` executes them. Session logs are auto-archived. The entire review is resumable, auditable, and replayable. See `templates/emit_tickets.md` for the ticket schema and wave protocol.
+This is a Claude Code skill, not a Python package — Claude Code is the runtime.
 
-**Obsidian is the workspace.** Every review is a self-contained folder inside the Obsidian vault at `notes/work/referee-reports/<paper-slug>/`. Curated markdown lives in numbered folders (`review.md`, `_paper/`, `0_orientation/`, ...); raw artifacts live in `_artifacts/` as non-markdown files. See `templates/obsidian_structure.md` and `templates/obsidian_render.md`.
+### Authoritative spec
+
+**`SKILL.md` is the single source of truth for v6 orchestration.** When any other file in this repo disagrees with SKILL.md, SKILL.md wins. If you find a contradiction, patch the other file toward SKILL.md rather than the reverse.
+
+The templates are the authoritative spec for their respective phases:
+
+| Phase | Authoritative template |
+|-------|------------------------|
+| 0. Orient | `templates/orient.md` |
+| 1. Holistic | `templates/holistic.md` |
+| 2. Discovery (9 tickets across 3 tracks) | `templates/discover_holistic.md`, `templates/discover_broad.md`, `templates/discover_narrow.md` |
+| 3. Merge + rank + verify | `templates/merge_and_rank.md`, `templates/verify.md` |
+| 4. Debate (escalation-only) | `templates/prosecute.md`, `templates/defend.md`, `templates/synthesize.md` |
+| 5. Calibration | `templates/calibrate.md` + `templates/polish.md` (rewrite sub-step) |
+| 6. Panel + renderers | `templates/render_panel.md` |
+| 7. A/B evaluation (optional) | `templates/evaluation.md` + `templates/evaluate.md` |
+| Wave 1.5 aux | `templates/holistic.md` + inline attack-surface-index builder (see SKILL.md) |
+| Wave 2.5 aux (coverage sentinel) | `templates/baseline.md` |
+| Meta | `templates/emit_tickets.md` for the wave-level ticket schema |
 
 ### How it works
 
-`/disputatio paper.pdf` runs a five-phase pipeline orchestrated as a ticket DAG. Claude generates tickets in waves; `agent-ctl run-dag` executes each wave; between waves Claude inspects outputs and emits the next wave.
+`/disputatio <paper> [--mode author|referee]` runs a seven-phase pipeline orchestrated as a ticket DAG. Claude generates tickets in waves; `agent-ctl run-dag` executes each wave; between waves Claude inspects outputs and emits the next wave.
 
-0. **Orientation** — each of 3 agents reads the paper once and produces a neutral paper map (claims, equations, propositions, assumptions, parameters, citations). Paper maps are NOT merged — each agent uses its own as a cache to preserve model independence
-1. **Discovery** — each agent runs all 5 generative methods (M2-M6) on the paper using its own cache. Fan-out-fan-out parallelism: 3 agents × 5 methods = 15 concurrent discovery sweeps
-2. **Merge, rank, verify** — triage OCR artifacts, deduplicate across agents, rank by (centrality + 2×cross-agent-support + evidence specificity + severity), Gemini runs web verification on issues that need external facts
-3. **Dialectic debate** — top N issues enter structured disputation (quaestio → objections → sed contra → respondeo → replies → synthesis). Roles rotate across agents each round. Aggressive short-circuit rules
-4. **Final report** — structured final.json + live Obsidian note
+0. **Orientation** — each of 3 agents reads the paper once and produces a neutral paper map. Maps are NOT merged; each agent uses its own as a cache.
+1. **Holistic pass (v6, new)** — each agent produces a paper spine + main claims + attack surfaces + likely referee questions. The orchestrator unions these into a canonical attack-surface index that Phase 2 discovery uses as shared context.
+2. **Discovery** — 9 tickets total (3 agents × 3 tracks: `holistic_candidates`, `broad_critic`, `narrow_evidence`). Each candidate passes through an inline evidence compiler that pins a verbatim quote + location + `direct_quote | derived_inference` tag before the candidate is written.
+3. **Merge, rank, verify, emit panel rows** — atomic merge with programmatic verbatim-quote validator, rank scoring for importance ordering, Gemini web-verification on external-fact claims, baseline-diff coverage sentinel check, then emit `panel_rows_candidates.json`.
+4. **Debate (escalation-only)** — fires only when all four gate conditions hold (cross-family disagreement real, evidence on both sides, severity would change on verdict, finding would be user-visible). Most findings skip debate entirely. 2 rounds maximum default.
+5. **Calibration** — every candidate panel row runs through a blinded per-finding annotator. Overclaimed or partial-quote findings get one polish-rewrite attempt; unsupported ones drop. Result: calibrated panel rows.
+6. **Panel + renderers** — single long-context writer reads the calibrated set and produces `panel.json` (canonical) + `panel.md` (table view) + mode-specific memo + optional auxiliary (revision plan or referee-letter draft). Writer cannot invent findings or change verdicts.
+7. **A/B evaluation (optional)** — post-hoc blinded comparison vs prior versions or other systems. Not part of the default run.
 
-### The seven methods
+### Three discovery tracks (v6, replacing v5's seven methods)
 
-All seven are defined in `templates/methods/` as operational procedures. No philosopher names in the prompts — just mechanical steps the agents execute.
+Methods still exist (M0 close reading, M2 contradictions, M3 transformations, M4 counterexamples, M5 self-measured critique, M6 causal disentangling) but are **folded into three tracks** that each ticket runs:
 
-| # | Method | Role |
-|---|--------|------|
-| 1 | Structured disputation | Shapes every debate round |
-| 2 | Interrogation by contradiction | Finds pairs of claims that can't both be true |
-| 3 | Systematic transformation | 8 mechanical transforms per claim |
-| 4 | Counterexample construction | Exposes hidden lemmas |
-| 5 | Self-measured critique | Strongest method: finds paper violating its own commitments |
-| 6 | Causal disentangling | Enumerates co-factors and co-effects |
-| 7 | Iterative refinement | Synthesis across rounds |
+| Track | Templates in scope | Purpose |
+|---|---|---|
+| `holistic_candidates` | `holistic.md` output + attack-surface index | Conceptual-scope concerns the method tracks under-detect |
+| `broad_critic` | M0 + M2 + M5 fused | Contradictions, scope mismatches, commitment violations, transcription errors |
+| `narrow_evidence` | M3 + M4 + M6 fused, targeted at priority attack surfaces | Deep evidence-heavy findings on a small set of targets |
 
-### Structure
+M1 (structured disputation) is reserved for Phase 4 debate rounds. M7 (iterative refinement) is the synthesis step within debate.
+
+### Structure (v6 repo)
 
 ```
 disputatio/
-├── SKILL.md                         # full protocol
-├── CLAUDE.md                        # this file
-├── templates/
-│   ├── emit_tickets.md              # ticket schema + wave protocol
-│   ├── obsidian_structure.md        # per-paper Obsidian folder spec
-│   ├── obsidian_render.md           # how Claude renders JSON → curated markdown
-│   ├── orient.md                    # produce paper map
-│   ├── discover.md                  # run all 5 generative methods
-│   ├── merge_and_rank.md            # merge, dedupe, rank
-│   ├── verify.md                    # Gemini web verification
-│   ├── prosecute.md                 # pick 2-3 methods, build objections
-│   ├── defend.md                    # structured disputation reply
-│   ├── synthesize.md                # method 7 applied
-│   └── methods/
-│       ├── m1_disputation.md
-│       ├── m2_contradiction.md
-│       ├── m3_transformation.md
-│       ├── m4_counterexample.md
-│       ├── m5_immanent.md
-│       ├── m6_disentangling.md
-│       └── m7_refinement.md
-└── .gitignore
+├── SKILL.md                         # authoritative v6 protocol
+├── CLAUDE.md                        # this file — pointer to SKILL.md
+├── docs/
+│   ├── v6-upstream-plan.md          # product + architecture plan
+│   ├── log/                         # dated dev log
+│   └── ...
+└── templates/
+    ├── emit_tickets.md              # ticket schema + wave protocol
+    ├── obsidian_structure.md        # per-paper Obsidian folder spec
+    ├── obsidian_render.md           # rendering spec
+    ├── orient.md                    # Phase 0
+    ├── holistic.md                  # Phase 1 (v6)
+    ├── discover_holistic.md         # Phase 2 track 1 (v6)
+    ├── discover_broad.md            # Phase 2 track 2 (v6)
+    ├── discover_narrow.md           # Phase 2 track 3 (v6)
+    ├── merge_and_rank.md            # Phase 3
+    ├── verify.md                    # Phase 3 web-verify
+    ├── baseline.md                  # Wave 2.5 coverage sentinel
+    ├── prosecute.md                 # Phase 4 escalated-only
+    ├── defend.md                    # Phase 4
+    ├── synthesize.md                # Phase 4
+    ├── calibrate.md                 # Phase 5
+    ├── polish.md                    # Phase 5 rewrite sub-step
+    ├── render_panel.md              # Phase 6
+    ├── evaluation.md                # Phase 7 A/B protocol
+    ├── evaluate.md                  # Phase 7 per-finding prompt
+    └── methods/
+        ├── m1_disputation.md        # shapes debate rounds
+        ├── m2_contradiction.md      # subsumed into broad_critic
+        ├── m3_transformation.md     # subsumed into narrow_evidence
+        ├── m4_counterexample.md     # subsumed into narrow_evidence
+        ├── m5_immanent.md           # subsumed into broad_critic
+        ├── m6_disentangling.md      # subsumed into narrow_evidence
+        ├── m7_refinement.md         # used by synthesize.md
+        └── m0_close_reading.md      # subsumed into broad_critic
 ```
 
 A review lives inside the Obsidian vault, not this repo:
 
 ```
 notes/work/referee-reports/<paper-slug>/
-├── review.md                     # top-level index
-├── _paper/paper.md
-├── 0_orientation/                  # 3 paper maps as markdown
-├── 1_discovery/                    # organized by method
-├── 2_ranking/                      # issue_register.md is the source of truth
-├── 3_debates/                      # one folder per debated issue
-├── 4_report/referee_report.md
-└── _artifacts/                      # tickets.json, prompts/, sessions/, json/
+├── review.md                     # top-level index, mode, phase status
+├── _paper/paper.md               # socr-OCR'd source
+├── 0_orientation/                # per-agent paper maps
+├── 0_holistic/                   # per-agent holistic passes + attack-surface index
+├── 1_discovery/                  # per-agent, per-track candidate findings
+├── 2_ranking/                    # merged atomic findings + panel-row candidates
+├── 3_debates/                    # only escalated findings
+├── 4_panel/                      # panel.md table + panel.json + memo + optional aux
+├── _calibration/                 # blinded per-finding annotations + rewrites
+├── _evaluation/                  # optional A/B post-hoc comparison
+└── _artifacts/                   # tickets.json, prompts/, json/, sessions/
 ```
 
-See `templates/obsidian_structure.md` for the full folder spec.
+### Key v6 design decisions
 
-### Key design decisions
+- **Finding panel is primary, prose memo is secondary.** The writer renders the panel into prose; it cannot invent findings, change verdicts, or hide drops.
+- **Holistic pass closes the conceptual-scope gap** that method-based sweeps miss. 3 tickets, one per family.
+- **9-ticket discovery** (3 tracks × 3 families), down from the v3–v5 shape of 18. Track names are stable output anchors (`holistic_candidates`, `broad_critic`, `narrow_evidence`).
+- **Inline evidence compiler** enforces verbatim-quote discipline at write time, not merge time. Candidates without a quote object are dropped pre-write.
+- **Atomic merge with programmatic validator** — every merged issue's `quote` must substring-match `_paper/paper.md`. Cluster-split rules enforced.
+- **Baseline is a coverage sentinel, not a router.** Wave 2.5 single-shot opus runs in parallel with Phase 1+2; if it surfaces a conceptual-scope concern the holistic pass missed, that's a signal to strengthen the holistic pass, not a route into debate. (Active during the first v6 releases; retirement gated on 3+ papers of measurement.)
+- **Debate is escalation-only.** Four-way gate: cross-family disagreement real + evidence on both sides + severity would change on verdict + finding would be user-visible. Most findings skip debate.
+- **Calibration is the pre-publication quality gate.** Blinded per-finding annotator, demote-on-doubt, one polish rewrite per flagged finding, drop if still failing. Calibration writes onto panel rows.
+- **Single-writer rendering.** One long-context call (gemini-3.1-pro-preview default, opus fallback) reads the calibrated panel and produces panel.md + memo + optional aux in uniform voice.
+- **Mode flag propagates to priority labels.** `--mode author` renders `fix_before_submit | watch_in_review | can_ignore`. `--mode referee` renders `endorse | verify_before_endorsing | skip`. Same engine, same panel, different label vocabulary.
+- **Dropped findings surfaced, not hidden.** Panel output explicitly lists drops from debate defenders and calibration demote-to-drop, with reasons. System demonstrates restraint.
+- **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, replayable.
 
-- **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, replayable
-- **No Python runtime** for the skill logic — Claude Code orchestrates, agents communicate via files, agent-ctl is the only moving part
-- **Three independent readers** — each agent produces its own paper map; maps are never merged. Cross-agent consensus on issues is the strongest signal
-- **Methods, not labels** — prompts describe procedures operationally. Agents execute the method without knowing its philosophical lineage
-- **Five generative + one structural + one iterative = 7 methods** — every method has a natural slot, none is redundant
-- **Web search is an on-demand specialty** — Gemini owns it; other agents flag issues for verification; web search is not sprayed across every discovery pass
-- **Cross-agent support weighted ×2** — the strongest ranking signal (more robust than cross-method within one agent)
-- **Pre-debate triage + round-1 early-kill + stalled-debate termination** — aggressive short-circuits keep runtime bounded
-- **Role rotation with 3-round cap** — different agents prosecute, defend, synthesize across rounds
-- **Deterministic ticket emission** — only Claude (via the wave protocol) emits new tickets. Agents never self-schedule more work
-
-### Lessons from testing
+### Lessons from testing (historical, kept for operational wisdom)
 
 - **Codex needs `--full-auto`** (now default in agent-ctl) to write files
-- **Gemini needs `--yolo`** (now default in agent-ctl) to write files via `write_file` tool. Without it, Gemini blocks on tool approval in headless mode. Files must be within the CWD workspace
-- **Gemini model: `gemini-3.1-pro-preview`** is the default (matches `/gemini` skill). If it hits 429 MODEL_CAPACITY_EXHAUSTED, agent-ctl falls back to `gemini-3-flash-preview`. The 429s are server-side capacity, not quota — retrying with backoff usually resolves them
-- **Gemini writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes. agent-ctl's `run-dag` now auto-cleans JSON files after write (fixes `\p`, `\a`, control chars, trailing commas)
-- **Stdout salvaging is the fallback**, not the primary path. With `--yolo`, Gemini writes files directly. `_salvage_stdout_json` catches cases where `write_file` fails or the file is outside workspace
-- **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise
-- **YOU MUST use `socr` for every PDF input — no exceptions.** Not `pdftotext`, not `pdftohtml`, not any "digital PDFs are fine" shortcut. socr preserves equations, figure captions, and structural cues the review depends on; skipping it because the PDF "looks typeset" degrades every downstream phase (paper map, method prompts, figure-linked issues). The prior lesson file said pdftotext was acceptable for digital PDFs — that guidance is revoked.
-- **Canonical socr invocation:** `socr process <pdf> --unified --save-figures -o <out>`. `--unified` is the v2.3.0 page-level tiered pipeline: per-page difficulty classification (prose / tables / math), native extraction for prose, local/cloud VLM for complex pages, per-page quality scoring with auto-escalation to the cloud, and consensus + repair stages. There is no meaningful math-vs-text fork — routing is per page, not per document. See `~/.claude/skills/ocr/SKILL.md` ("Why `--unified` is the default now") for the rationale.
-- **If a specific page comes out wrong under `--unified`**, fix the classifier or escalation rule (socr side) — do **not** switch engines for the whole document. `--multi-engine mistral,gemini` is the consensus-grade alternative for critical papers. Never fall back to `pdftotext`. Bare `socr process paper.pdf` (no `--unified`) is banned: it triggers the `gemini-ocr-cli` v0.3.0 whole-doc empty-output bug.
-- **Long prompts need temp files** — inline shell escaping breaks beyond a few KB
-- **`$A wait <ids>` eliminates polling loops** — use it
+- **Gemini needs `--yolo`** (now default in agent-ctl) to write files via `write_file` tool. Without it, Gemini blocks on tool approval in headless mode.
+- **Gemini model: `gemini-3.1-pro-preview`** is the default. Server-side 429s are capacity, not quota — retrying with backoff usually resolves.
+- **Gemini writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes. `agent-ctl run-dag` auto-cleans JSON files after write.
+- **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise.
+- **YOU MUST use `socr` for every PDF input — no exceptions.** Not `pdftotext`, not `pdftohtml`. socr preserves equations, figure captions, and structural cues the review depends on.
+- **Canonical socr invocation:** `socr process <pdf> --unified --save-figures -o <out>`. `--unified` is the v2.3.0 page-level tiered pipeline. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
+- **If a specific page comes out wrong under `--unified`**, fix the classifier or escalation rule (socr side). Do not switch engines for the whole document. `--multi-engine mistral,gemini` is the consensus-grade alternative.
+- **Long prompts need temp files** — inline shell escaping breaks beyond a few KB.
+- **`$A wait <ids>` eliminates polling loops** — use it.
+- **Codex hits weekly cap every ~1 full run** on ChatGPT Pro. High-volume users need a direct API-key transport; `agent-ctl` currently supports only the OAuth path.
+- **Haiku cannot handle 140KB-paper prompts** — long-context beta not enabled on subagent subscription. Use sonnet or opus for long-context annotation.
 
 ### Prerequisites
 
-- `codex` CLI installed and authenticated (ChatGPT Pro)
-- `gemini` CLI installed and authenticated (Google OAuth)
-- `agent-ctl` (`~/.claude/skills/agent_ctl.py`) with `wait`, `run-dag`, and `dag-status` subcommands, and `--full-auto` default for Codex
+- `claude` CLI authenticated (Claude Pro / Claude Code)
+- `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`
+- `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`
+- `agent-ctl` at `~/.claude/skills/agent_ctl.py` with `wait`, `run-dag`, `dag-status`, `--full-auto` default for Codex
+- Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/` with a `work/referee-reports/` subtree

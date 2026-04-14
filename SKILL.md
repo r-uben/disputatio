@@ -5,6 +5,8 @@ description: Cross-architecture paper review panel for pre-submission authors an
 
 # Disputatio (v6)
 
+**This file is the authoritative v6 orchestration spec.** When any other file in this repo disagrees with SKILL.md, SKILL.md wins — patch the other file toward SKILL.md. The templates under `templates/` are the authoritative prompts and sub-protocols for each phase; they MUST be consistent with the phase descriptions below. The repo also ships a number of documents (dev logs, architecture notes, roadmap, evaluation methodology) that are descriptive or historical and do NOT define orchestration behaviour.
+
 A cross-architecture review panel designed for the two moments that matter before publication: before an author submits, and before a referee writes the report. The primary deliverable is a **finding panel** — each concern carries an exact quote, cross-architecture support, a contested-point debate trail (only when triggered), a calibration verdict, and a mode-specific priority label. The secondary deliverable is a single-writer prose memo summarizing the panel for the chosen reader (author or referee). Claims that do not survive verification are preserved in the audit trail with drop reasons — the system demonstrates restraint instead of hiding what got killed.
 
 The pipeline is resumable, auditable, and replayable because every agent call is a ticket in a DAG on disk.
@@ -158,7 +160,7 @@ Before the final report is compiled, every candidate finding that would enter it
 
 Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on report-entering findings because strong-consensus "settled" findings skipped the debate stage — which had been doing an unacknowledged polish pass by softening overclaimed raw language into narrower synthesizer `refined_claim` text. Phase 4 restores that polish as a cheap single-model pass, without the theatre cost of full dialectic.
 
-**Inputs.** All `status: settled` merged issues, plus debated issues with verdict `prosecution_wins` / `split` / `escalate` (their `surviving_text`). Defense-wins and triaged findings do not enter calibration because they are already dropped.
+**Inputs.** All panel-row candidates from merge (Step 6 of `templates/merge_and_rank.md`), plus any updates to debated rows from Phase 4 (verdict, `surviving_text`). Findings killed by defense during Phase 4 do not enter calibration — they are written directly to `dropped_findings[]` with the defender's counter-evidence as the drop reason.
 
 **Blinding.** Same blinding protocol as the post-hoc evaluation (randomised `BF###` IDs in a shuffled pool, manifest_blind.json private, no metadata leak in the prompt).
 
@@ -229,7 +231,8 @@ See `templates/evaluation.md` for the post-hoc protocol and `templates/evaluate.
 │
 ├── 2_ranking/
 │   ├── 00_ranking.md
-│   ├── issue_register.md                 # canonical source of truth for all issues
+│   ├── issue_register.md                 # human-readable merge + panel-row candidates
+│   ├── panel_rows_candidates.json        # canonical handoff to verify → debate → calibrate
 │   ├── triage.md
 │   └── verification.md
 │
@@ -364,10 +367,11 @@ MATCH current state → action:
 │                                     │ Render 2_ranking/verification.md.                   │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
-│ no debate tickets exist             │ Filter to status==debate, sort by rank_score,        │
-│                                     │ take top-N. If zero, skip the debate phase. Each     │
-│                                     │ cohort issue gets one round 1 ticket triple. Write   │
-│                                     │ prompts.                                             │
+│ no debate tickets exist             │ Apply four-way escalation gate (Phase 4) to each    │
+│                                     │ panel-row candidate. For each finding that clears   │
+│                                     │ ALL four conditions, emit round 1 prosecute/defend/  │
+│                                     │ synthesize triple. If zero findings clear the gate,  │
+│                                     │ skip the debate phase. Write prompts.                │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ debate tickets pending/running      │ For Claude-typed debate tickets: execute inline.      │
 │                                     │ For external: $A run-dag --concurrent 2              │
@@ -604,3 +608,47 @@ Every review lives inside a single folder in the Obsidian vault. Curated markdow
 **Key principle**: the JSON in `_artifacts/json/` is the machine format; the markdown in the numbered folders is the human format. Both are preserved. If the two disagree, the JSON wins. The markdown is a projection, not the source of truth.
 
 **Why everything in Obsidian**: a review should be self-contained. Open one folder, see everything. The raw logs are there too (as `.log` attachments that don't pollute Obsidian's search index) so auditability and replay work without chasing files across disks.
+
+## Explicit rules (v6)
+
+Three orchestration decisions were previously left to orchestrator improvisation. They are now specified here to eliminate runtime ambiguity.
+
+### Four-way escalation gate (Phase 4 entry)
+
+A finding enters debate iff ALL four conditions hold, evaluated at the start of Phase 4 over every candidate panel row from merge:
+
+1. **Cross-family disagreement is real.** Operationally: at least one family's discovery ticket flagged the concern with `confidence: high`, AND at least one other family either (a) did not surface the concern at all, or (b) surfaced a variant with `confidence: medium` or `low` whose claim conflicts with the high-confidence version. Encoded in `merge.debate_hint.cross_family_disagreement`: `strong` (condition met), `moderate` (one family flagged high, others silent without conflicting variant — does NOT satisfy the condition by itself), `none` (all families agree or all ignore).
+2. **Evidence exists on both sides.** Operationally: the paper's text supports BOTH the finding's claim AND a plausible counter-claim. Encoded in `merge.debate_hint.evidence_conflict_in_paper`: `yes` if the paper contains passages that could be cited by either side; `no` if the paper's text uniformly supports one side. The evidence compiler's `support_type` tags inform this.
+3. **Severity would change on verdict.** Operationally: if the finding's severity is `nit`, the condition is FALSE regardless. If severity is `local` or `material`, ask whether a `defense_wins` verdict would drop the finding entirely vs narrow it. Drops qualify; narrowings do not (since calibration can narrow without debate). Encoded in `merge.debate_hint.severity_sensitive`.
+4. **Finding would otherwise be user-visible.** Operationally: after calibration, would this finding appear in the panel's `material`, `local`, or `settled` section? If calibration will drop it as `unsupported` anyway, debate is wasted compute. This condition is evaluated AFTER calibration runs on the candidate — which means in practice Phase 4 fires AFTER Phase 5's first pass, not before. See flow below.
+
+**Revised v6 flow**: merge (Phase 3) → calibration first pass on all candidates (Phase 5a) → four-way gate applied to calibration survivors (Phase 4 trigger evaluation) → debate fires on gate-clearers (Phase 4) → calibration second pass on debate survivors to capture `surviving_text` (Phase 5b) → panel render (Phase 6). Templates keep their current names; the phases are conceptually interleaved.
+
+If zero findings clear the gate, debate is skipped. That is the correct outcome on consensus-heavy papers.
+
+### Category fallback
+
+The v6 category vocabulary is fixed:
+`proof | empirics | identification | framing | robustness | interpretation | notation | other`.
+
+Discovery agents assign a category at write time. The evidence compiler rejects candidates with categories outside this set. If an agent cannot place a finding in one of the first seven categories with a concrete justification, it uses `other` and explains in `evidence.why`. Orchestrator behaviour:
+
+- If `other` rate > 10% of a single discovery ticket's output, log a warning in the session log; the category schema may need revision. The run continues with `other`-tagged findings carried through to calibration.
+- Panel-row transformation (merge Step 6) preserves the agent-assigned category unchanged. No post-hoc re-categorisation.
+- Downstream category-level analytics (release-gate metrics, coverage-by-category in evaluation) treat `other` as a separate bucket — never collapsed into one of the first seven.
+
+### Mode propagation
+
+The `--mode` flag (`author` or `referee`) is set at `/disputatio` invocation and flows through the pipeline as a single field in the engine metadata:
+
+- Written to `_artifacts/tickets.json` root: `"engine": {"version": "v6", "mode": "author" | "referee"}`.
+- Passed to every render ticket via prompt substitution `{{mode}}`.
+- Determines priority label vocabulary on every panel row:
+  - `mode: author` → `priority.author` populated with `fix_before_submit | watch_in_review | can_ignore`; `priority.referee` null.
+  - `mode: referee` → `priority.referee` populated with `endorse | verify_before_endorsing | skip`; `priority.author` null.
+- Determines memo file name in Phase 6: `4_panel/author_memo.md` OR `4_panel/referee_memo.md` (mutually exclusive — one run produces one mode's memo).
+- Determines optional auxiliary rendering: `revision_plan.md` (author) OR `referee_letter_draft.md` (referee).
+
+Same engine, same 9 discovery tickets, same calibration. The mode affects only rendering. Switching modes on a finished run is cheap: re-run Phase 6 with the other mode flag; calibration does not need to re-run.
+
+Dual-mode output (both memos from one run) is supported by a `--mode both` flag that fires two Phase 6 render tickets sequentially against the same `panel.json`. Use sparingly; the writer call is cheap but the memos are quite different in voice.
