@@ -134,14 +134,75 @@ Claude-typed tickets are a special case: Claude executes them directly, without 
 
 All three prompt files are written to `prompts/` by substituting `{{paper_path}}` into `templates/orient.md`.
 
-### Wave 2 — Discovery + single-shot baseline (emitted after orientation)
+### Wave 1.5 — Holistic pass (v6, emitted after orientation)
 
-Wave 2 emits **two independent tracks** that run in parallel:
+Each of the three agents runs one holistic conceptual pass on the paper using its own paper map. Per `templates/holistic.md`.
 
-1. **18 discovery tickets** (3 agents × 6 methods) — the main structured-discovery channel.
-2. **1 baseline_review ticket** — a single-shot opus referee review on the paper text alone, independent of orientation (no `depends_on`). Per `templates/baseline.md`. Runs concurrently with discovery, completes in ~5 minutes. Used at merge time to diff against the merged set and catch any finding the baseline surfaced that disputatio's discovery missed.
+```json
+{
+  "holistic_claude": {
+    "id": "holistic_claude", "type": "holistic", "agent": "claude",
+    "model": "opus", "family": "anthropic", "flags": {},
+    "prompt_path": "_artifacts/prompts/holistic_claude.md",
+    "inputs": ["_paper/paper.md", "_artifacts/json/orient_claude.json"],
+    "outputs": ["_artifacts/json/holistic_claude.json"],
+    "depends_on": ["orient_claude"],
+    "status": "pending", "timeout_s": 900
+  },
+  "holistic_codex": { "...same shape, agent: codex, model: gpt-5.4, family: openai, depends_on: [orient_codex]..." },
+  "holistic_gemini": { "...same shape, agent: gemini, model: gemini-3.1-pro-preview, family: google, depends_on: [orient_gemini], output_format: json_stdout..." }
+}
+```
 
-The baseline ticket is:
+After all three holistic tickets complete, the orchestrator builds a **canonical attack-surface index** inline: union of `attack_surfaces[]` across the three agents, deduplicated by `description` semantic match, priorities aggregated. Written to `_artifacts/json/attack_surface_index.json`. Phase 2 discovery tickets receive this as additional input context.
+
+### Wave 2 — Discovery (v6: 9 tickets across 3 tracks)
+
+Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5 18-ticket shape. Every ticket receives `_artifacts/json/attack_surface_index.json` as additional input context so the same index anchors all three tracks.
+
+| Track | Template | Purpose |
+|---|---|---|
+| `holistic_candidates` | `templates/discover_holistic.md` (method-neutral; uses paper spine + attack surfaces + likely referee questions) | conceptual-scope concerns the method tracks under-detect |
+| `broad_critic` | `templates/discover_broad.md` (fuses M0 close-reading + M2 contradictions + M5 self-measured) | scan for contradictions, scope mismatches, commitment violations, framing overclaims, transcription errors |
+| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets |
+
+Sample ticket:
+
+```json
+{
+  "discover_claude_holistic_candidates": {
+    "id": "discover_claude_holistic_candidates", "type": "discover", "agent": "claude",
+    "model": "sonnet", "family": "anthropic", "flags": {},
+    "prompt_path": "_artifacts/prompts/discover_claude_holistic_candidates.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/orient_claude.json",
+      "_artifacts/json/holistic_claude.json",
+      "_artifacts/json/attack_surface_index.json"
+    ],
+    "outputs": ["_artifacts/json/discover_claude_holistic_candidates.json"],
+    "depends_on": ["holistic_claude"],
+    "status": "pending", "timeout_s": 1200
+  }
+}
+```
+
+Nine tickets total:
+- `discover_claude_{holistic_candidates, broad_critic, narrow_evidence}`
+- `discover_codex_{holistic_candidates, broad_critic, narrow_evidence}`
+- `discover_gemini_{holistic_candidates, broad_critic, narrow_evidence}`
+
+All nine run in parallel (depends_on references the per-family holistic ticket, which finished in Wave 1.5).
+
+**Evidence compiler inline.** Every candidate finding produced by any ticket passes through a compiler step BEFORE it is written to the discovery JSON. The compiler extracts the verbatim quote, pins the location, and decides whether support is `direct_quote` or `derived_inference`. Findings that cannot produce either are dropped at write time, not at merge time. This enforces the verbatim-quote discipline pre-emptively.
+
+Each ticket's JSON output is `{"issues": [...]}` where each issue carries `category`, `evidence[]` (each entry with `quote`, `location`, `why`, `support_type`), `falsifier`, and optional `paper_commitment` / `paper_commitment_location` for self-measured critiques.
+
+**Web search**: not triggered. Closed-book discovery.
+
+### Wave 2.5 — Coarse-style baseline (v5, retained as safety net)
+
+The single-shot opus baseline from v5 is **kept** as a safety net for the first v6 releases. Once the holistic pass + 9-ticket discovery has been measured on 3+ papers and shown to match baseline coverage, this ticket can be retired.
 
 ```json
 {
@@ -157,7 +218,11 @@ The baseline ticket is:
 }
 ```
 
-For each of the three agents, emit six discovery tickets (M0, M2-M6):
+Runs in parallel with discovery (no `depends_on`). Per `templates/baseline.md`. Used at merge time in Step 2c of `templates/merge_and_rank.md` to diff against the merged set and force baseline-unique findings into debate as coverage insurance.
+
+### Legacy Wave 2 (v3/v4/v5, 18 tickets — RETIRED in v6)
+
+The following is kept for reference and for runs that resume from pre-v6 workspaces. New runs should use the 9-ticket shape above.
 
 ```json
 {

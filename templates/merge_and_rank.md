@@ -247,3 +247,55 @@ All `status != "drop"` issues — settled and debated alike — appear in the fi
 - **Settled** issues: shipped as referee comments without dialectic. Strong cross-architecture corroboration is itself the warrant.
 - **Debated** issues: shipped with their debate trace. The verdict (prosecution_wins / defense_wins / split) determines whether they appear as material concerns, surviving local concerns, or are dropped post-debate.
 - **Appendix concerns**: low-rank `settled` items the report deprioritises.
+
+### Step 6: Emit v6 panel rows
+
+After ranking, status assignment, and baseline-diff augmentation, transform each surviving merged issue into a **v6 panel row** and write to `_artifacts/json/panel_rows_candidates.json`. This is the canonical structured output going into verify → debate → calibrate → render in v6. The legacy `ranked_issues.json` is preserved as the audit-trail artifact.
+
+For each merged issue with `status != "drop"`, emit a panel row matching the v6 schema (see `docs/v6-upstream-plan.md` and `templates/render_panel.md` for the full spec). Field mapping:
+
+```
+merged issue                                    →  panel row
+-------------------------------------------------------------
+id (merged_NNN)                                 →  finding_id (F001, F002, ...) — zero-padded, re-indexed
+claim                                           →  concern (verbatim)
+(new)                                           →  category (inferred from method + quote context; one of:
+                                                    proof | empirics | identification | framing |
+                                                    robustness | interpretation | notation | other)
+scores.severity → 'material'|'local'|'nit'      →  severity (map: 3→material, 2→material, 1→local, 0→nit)
+scores.cross_agent_support / rank_score context →  confidence.band (high/medium/low derived from
+                                                    rank_score tertile within surviving set)
+(populated downstream)                          →  priority.author / priority.referee
+quote + quote_location + evidence               →  evidence[] (array of one entry with support_type:
+                                                    "direct_quote", plus any additional quotes the
+                                                    evidence compiler captured)
+sources + family list per ticket                →  architecture_support.<family>.{supports, methods, notes}
+(populated by Phase 4 debate, else not_run)     →  debate.{triggered, reason, verdict, what_survived, history}
+(populated by Phase 5 calibration)              →  calibration.{verdict, quote_verified, annotator_notes,
+                                                    narrowing_notes, drop_reason}
+(populated by Phase 6 renderer)                 →  suggested_action.author.fix / referee.how_to_use
+(compute from source ticket IDs + prompts)      →  audit.source_candidate_ids, prompt_trace_ids,
+                                                    status: "survived" (panel rows from here) /
+                                                    "dropped" (added to dropped_findings[] instead)
+```
+
+The transform is a mechanical map — Claude (opus) executes it inline, no additional model call needed. The output `panel_rows_candidates.json` contains two top-level arrays:
+
+```json
+{
+  "survived": [ /* panel row per status != "drop" issue */ ],
+  "dropped_at_merge": [
+    {
+      "finding_id": "F_drop_001",
+      "true_id": "merged_XXX",
+      "drop_source": "triage | atomicity_validator | baseline_diff_no_match",
+      "drop_reason": "one-sentence explanation",
+      "original_claim": "..."
+    }
+  ]
+}
+```
+
+Downstream phases (verify, debate, calibrate, render) operate on the `survived` array. Items in `dropped_at_merge` are preserved in the panel's `dropped_findings[]` at render time so the final output shows restraint transparently.
+
+**Legacy path**: Runs resuming from pre-v6 workspaces may still use `ranked_issues.json` as the primary handoff to verify / debate. The v6 renderer will accept either input and normalise to panel rows at render time; Step 6 just moves the transform earlier so downstream phases can operate on the canonical shape.

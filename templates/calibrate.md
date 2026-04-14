@@ -170,7 +170,7 @@ After all annotations and any rewrites complete:
 
 4. Write `_calibration/00_calibration.md` as a human-readable scorecard: kept/demoted/dropped counts, per-finding table, pre/post overclaim rate, link to `manifest_blind.json` for audit.
 
-5. The final-report ticket reads `final_findings.json` (not `ranked_issues_verified.json`) as its input source of truth.
+5. The panel render stage (Phase 6, `templates/render_panel.md`) reads `final_findings.json` and merges each calibration verdict onto the corresponding panel row in `_artifacts/json/panel_rows_candidates.json` (produced by merge Step 6 per `templates/merge_and_rank.md`). The result is the canonical `panel.json`, which is what the user sees. In v6 the input chain is `panel_rows_candidates.json → calibration → panel.json`, not the v5 chain `ranked_issues_verified.json → final_findings.json → final.json + referee_report.md`. The calibration output schema is unchanged; only the downstream consumer moved.
 
 ## Relation to the post-hoc evaluation
 
