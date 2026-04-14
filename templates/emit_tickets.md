@@ -11,6 +11,8 @@ Disputatio uses a ticket DAG for durable, resumable, auditable orchestration. Cl
 
 The ticket file lives at `<paper-folder>/_artifacts/tickets.json`. It is a dict keyed by ticket ID. All path references in tickets are **relative to the paper folder**, not to the repo or to the Obsidian vault root. Agent-ctl is invoked with `--cwd <paper-folder>` so every relative path resolves correctly.
 
+**Row shape authority**: every wave after Phase 3 operates on panel rows defined in `templates/schemas/panel_row.md`. Waves add fields to each row; they do not reshape the row.
+
 ## Ticket schema
 
 Every ticket has the same shape. Fields marked `(required)` must be present; others are optional.
@@ -525,46 +527,15 @@ After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synt
 | 2 | codex | gemini | claude |
 | 3 | gemini | claude | codex |
 
-### Wave 6.5 — Calibration sub-DAG (v5, emitted after all debate tickets terminal)
+### Wave 6.5 — DEPRECATED (v5-only)
 
-Calibration is a self-contained sub-DAG under `<paper-folder>/_calibration/`, emitted BETWEEN the last debate synthesis and the final_report ticket. It is the v5 quality gate that replaces post-hoc evaluation as the primary calibration loop. See `templates/calibrate.md` for the full spec and disposition rules.
+Do not use the old post-debate calibration sub-DAG or `final_report` handoff described in pre-v6 editions of this file. The authoritative v6 flow is Wave 5a → 5b → 5c → 5d above, then Wave 7 panel compilation/render below. `templates/calibrate.md` now describes the two-pass calibration flow that wraps debate; there is no longer a "calibration-after-debate-only" sub-DAG.
 
-Emission procedure (orchestrator, inline):
+### Wave 7 — Panel compile + render (v6, emitted after calibration final_findings.json exists)
 
-1. Collect every finding that would enter the final report: all `status: settled` issues from `ranked_issues_verified.json` PLUS all debated issues with verdict `prosecution_wins`, `split`, or `escalate` (use their synthesizer `surviving_text` as the annotated claim). Exclude `defense_wins` and triaged.
-2. Shuffle and assign randomised `BF###` IDs.
-3. Write `_calibration/manifest_blind.json` with `[{blind_id, true_id, tier}, ...]`.
-4. Build one self-contained prompt at `_calibration/prompts/<BF###>.md` per `templates/calibrate.md`: rubric + `{blind_id, claim, quote, quote_location, evidence}` (metadata stripped) + full paper text.
-5. Emit calibration tickets:
+**Step 7a — Panel compile (inline orchestrator, no ticket).** Once `_calibration/final_findings.json` exists, Claude wraps it into `_artifacts/json/panel.json` by adding `paper`, `engine` (version + mode + families), `holistic_pass` (union attack-surface index from Phase 1), and `summary` metadata. The `findings[]` and `dropped_findings[]` arrays are copied through unchanged — panel rows follow `templates/schemas/panel_row.md` and are never reshaped at compile time. This is the ONLY step that writes `panel.json`; the renderer cannot produce it.
 
-```json
-{
-  "calibrate_BF001": {
-    "id": "calibrate_BF001", "type": "calibrate",
-    "agent": "codex", "model": "gpt-5.4-mini", "family": "openai", "flags": {},
-    "prompt_path": "_calibration/prompts/BF001.md",
-    "inputs": ["_calibration/prompts/BF001.md"],
-    "outputs": ["_calibration/annotations/BF001.json"],
-    "depends_on": [],
-    "status": "pending", "timeout_s": 900, "max_attempts": 2
-  }
-}
-```
-
-6. Run: `agent-ctl run-dag <paper>/_calibration/tickets.json --cwd <paper> --concurrent 4`.
-
-7. After all calibration annotations complete, the orchestrator applies disposition rules inline:
-   - `quote_verified: no` OR `calibration: unsupported` → drop. Record in `_calibration/dropped.json`.
-   - `quote_verified: partial` OR `calibration: overclaimed` → emit a polish ticket (gemini-3.1-pro-preview) that rewrites the claim using the annotator's notes. Re-annotate the rewrite (second calibration ticket, same BF ID with a `_v2` suffix). If still fails: drop or demote one tier.
-   - `calibration: supported` + `quote_verified: yes` → kept as-is.
-
-8. Write `_calibration/final_findings.json` — the calibrated set, keyed by tier (material / local / settled / appendix). This is the ONLY input to the final_report ticket; `ranked_issues_verified.json` is bypassed after calibration.
-
-9. Write `_calibration/00_calibration.md` scorecard: pre/post overclaim rate, per-finding disposition table.
-
-### Wave 7 — Panel render (v6, emitted after calibration final_findings.json exists)
-
-One ticket, per `templates/render_panel.md`. The panel renderer is a single long-context call that reads the entire calibrated set and produces three output files in uniform voice.
+**Step 7b — Panel render ticket.** One ticket, per `templates/render_panel.md`. The panel renderer is a single long-context call that reads the compiled `panel.json` plus the paper and produces the markdown outputs in uniform voice.
 
 ```json
 {
@@ -573,16 +544,14 @@ One ticket, per `templates/render_panel.md`. The panel renderer is a single long
     "agent": "gemini", "model": "gemini-3.1-pro-preview", "family": "google", "flags": {},
     "prompt_path": "_artifacts/prompts/panel_render.md",
     "inputs": [
-      "_calibration/final_findings.json",
-      "_artifacts/json/panel_rows_candidates.json",
+      "_artifacts/json/panel.json",
       "_paper/paper.md"
     ],
     "outputs": [
-      "_artifacts/json/panel.json",
       "4_panel/panel.md",
       "4_panel/author_memo.md"
     ],
-    "depends_on": [ "calibration aggregator inline step" ],
+    "depends_on": [ "panel compile inline step (7a)" ],
     "status": "pending", "timeout_s": 1200,
     "output_format": "json_stdout"
   }
@@ -593,7 +562,7 @@ Outputs depend on `--mode`:
 - `--mode author` → `4_panel/author_memo.md` + optional `4_panel/revision_plan.md`
 - `--mode referee` → `4_panel/referee_memo.md` + optional `4_panel/referee_letter_draft.md`
 
-Both modes always write `_artifacts/json/panel.json` (canonical structured output) and `4_panel/panel.md` (table view). The writer cannot invent findings, change `calibration.verdict`, or hide dropped rows — the orchestrator re-verifies these constraints post-render and regenerates once on any violation.
+Both modes always produce `4_panel/panel.md` (table view) from the already-compiled `_artifacts/json/panel.json`. The writer cannot invent findings, change `calibration.verdict`, or hide dropped rows — the orchestrator re-verifies these constraints post-render and regenerates once on any violation. Row shape authority: `templates/schemas/panel_row.md`.
 
 Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
 

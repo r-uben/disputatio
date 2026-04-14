@@ -264,7 +264,7 @@ In practice: most findings ship through calibration straight to the panel. The 0
 
 After ranking, status assignment, and baseline-diff augmentation, transform each surviving merged issue into a **v6 panel row** and write to `_artifacts/json/panel_rows_candidates.json`. This is the canonical structured output going into verify → debate → calibrate → render in v6. The legacy `ranked_issues.json` is preserved as the audit-trail artifact.
 
-For each merged issue that survived triage and the atomicity validator, emit a panel row matching the v6 schema (see `docs/v6-upstream-plan.md` and `templates/render_panel.md` for the full spec). Field mapping:
+For each merged issue that survived triage and the atomicity validator, emit a panel row matching the v6 schema. **Single source of truth for the row shape: `templates/schemas/panel_row.md`** — if this file and the schema disagree on a field name or type, the schema wins. Field mapping:
 
 ```
 merged issue                                    →  panel row

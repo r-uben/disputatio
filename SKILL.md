@@ -135,9 +135,11 @@ A finding escalates to debate iff ALL of the following hold:
 1. **Cross-family disagreement is real** — at least one family flagged the concern with high confidence and at least one family was silent or flagged low-confidence variants that conflict with the main claim.
 2. **Evidence exists on both sides** — the evidence compiler found both supporting quotes and countervailing passages; the verdict is not obvious from the evidence object alone.
 3. **Severity would change on verdict** — the outcome determines whether the finding is `material`, `local`, or dropped. A finding whose severity is already `nit` does not escalate regardless of disagreement.
-4. **The finding would otherwise be user-visible** — no point debating concerns that are already below a priority threshold.
+4. **The finding would otherwise be user-visible** — derived rule, not a stored field: `calibration_pass1.verdict in {supported, calibrated_narrowed}` AND `severity in {material, local}`. No point debating concerns Pass 1 already dropped or demoted to `nit`.
 
 All four conditions. If any is absent, the finding skips debate and proceeds to calibration with its evidence object intact. The v5 status-routing rule (`settled` vs `debate`) is subsumed by this four-way gate in v6.
+
+**Canonical row shape**: `templates/schemas/panel_row.md` is the single source of truth for every field referenced above (`debate_hint`, `calibration_pass1`, `severity`, `gate_decision`, etc.).
 
 **Structure when debate does fire.** Prosecute → defend → synthesize, per `templates/prosecute.md` / `defend.md` / `synthesize.md`. Role rotation across rounds:
 
@@ -176,7 +178,7 @@ Default annotator: **codex with `gpt-5.4-mini`**. Fallback: claude-sonnet-4.6 wh
 
 The v6 primary deliverable is a **finding panel**. Prose memos are secondary renderings driven entirely off the panel rows — no prose stage can introduce new content, only summarize what survived calibration.
 
-1. **`_artifacts/json/panel.json`** — the canonical output. Consumes `_calibration/final_findings.json`. Top-level shape:
+1. **`_artifacts/json/panel.json`** — the canonical output. Compiled inline by the orchestrator (Wave 7a, no ticket) by wrapping `_calibration/final_findings.json` with paper/engine/holistic_pass/summary metadata. Rows follow `templates/schemas/panel_row.md` — the row shape is never redefined here. Top-level shape:
    - `paper` — metadata
    - `engine` — version, mode (`author` | `referee`), families list
    - `holistic_pass` — paper spine + main claims + canonical attack-surface index (union of per-family holistic passes)
@@ -620,7 +622,7 @@ A finding enters debate iff ALL four conditions hold, evaluated at the start of 
 1. **Cross-family disagreement is real.** Operationally: at least one family's discovery ticket flagged the concern with `confidence: high`, AND at least one other family either (a) did not surface the concern at all, or (b) surfaced a variant with `confidence: medium` or `low` whose claim conflicts with the high-confidence version. Encoded in `merge.debate_hint.cross_family_disagreement`: `strong` (condition met), `moderate` (one family flagged high, others silent without conflicting variant — does NOT satisfy the condition by itself), `none` (all families agree or all ignore).
 2. **Evidence exists on both sides.** Operationally: the paper's text supports BOTH the finding's claim AND a plausible counter-claim. Encoded in `merge.debate_hint.evidence_conflict_in_paper`: `yes` if the paper contains passages that could be cited by either side; `no` if the paper's text uniformly supports one side. The evidence compiler's `support_type` tags inform this.
 3. **Severity would change on verdict.** Operationally: if the finding's severity is `nit`, the condition is FALSE regardless. If severity is `local` or `material`, ask whether a `defense_wins` verdict would drop the finding entirely vs narrow it. Drops qualify; narrowings do not (since calibration can narrow without debate). Encoded in `merge.debate_hint.severity_sensitive`.
-4. **Finding would otherwise be user-visible.** Operationally: after calibration, would this finding appear in the panel's `material`, `local`, or `settled` section? If calibration will drop it as `unsupported` anyway, debate is wasted compute. This condition is evaluated AFTER calibration runs on the candidate — which means in practice Phase 4 fires AFTER Phase 5's first pass, not before. See flow below.
+4. **Finding would otherwise be user-visible.** Derived rule, not a stored field: `calibration_pass1.verdict in {supported, calibrated_narrowed}` AND `severity in {material, local}`. If calibration Pass 1 dropped the finding as `unsupported` or demoted it to `nit`, debate is wasted compute. Evaluated on the Pass 1 verdict (not on the post-debate `calibration` verdict, which Pass 2 may overwrite) — Phase 4 therefore fires AFTER Phase 5 Pass 1, not before. See flow below.
 
 **Revised v6 flow**: merge (Phase 3) → calibration first pass on all candidates (Phase 5a) → four-way gate applied to calibration survivors (Phase 4 trigger evaluation) → debate fires on gate-clearers (Phase 4) → calibration second pass on debate survivors to capture `surviving_text` (Phase 5b) → panel render (Phase 6). Templates keep their current names; the phases are conceptually interleaved.
 

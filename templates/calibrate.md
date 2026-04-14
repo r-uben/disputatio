@@ -2,6 +2,8 @@
 
 Calibration is a **blinded per-finding quality gate** that wraps debate in v6: Pass 1 runs on every candidate panel row from merge, the four-way escalation gate reads Pass 1 results to decide which findings enter debate, and Pass 2 runs on debate survivors to narrow their `surviving_text` before the panel is rendered. This is the primary quality mechanism in the pipeline. The post-hoc evaluation (`templates/evaluation.md`) is a separate A/B comparison tool, not the calibration loop.
 
+**Row shape authority**: `templates/schemas/panel_row.md`. Calibration adds `calibration`, `calibration_pass1`, and (for debated rows) `calibration_pass2` fields to each row; it never reshapes the row.
+
 ## Why this flow exists
 
 v5 ran calibration after debate on the top-N by rank_score, then shipped a referee letter. Result: 56.2% overclaim rate on report-entering findings in the 2026-04-14 v4 run, and debate budget wasted on claims that a cheap first-pass calibrator would have killed or narrowed immediately. v6 reverses the order: calibrate first (cheap, kills obvious overclaims), then fire the four-way gate, then debate only on gate-clearers, then calibrate again on debate survivors.
@@ -177,7 +179,7 @@ After all annotations and any rewrites complete:
 
 4. Write `_calibration/00_calibration.md` as a human-readable scorecard: kept/demoted/dropped counts, per-finding table, pre/post overclaim rate, link to `manifest_blind.json` for audit.
 
-5. The panel render stage (Phase 6, `templates/render_panel.md`) reads `final_findings.json` and merges each calibration verdict onto the corresponding panel row in `_artifacts/json/panel_rows_candidates.json` (produced by merge Step 6 per `templates/merge_and_rank.md`). The result is the canonical `panel.json`, which is what the user sees. In v6 the input chain is `panel_rows_candidates.json → calibration → panel.json`, not the v5 chain `ranked_issues_verified.json → final_findings.json → final.json + referee_report.md`. The calibration output schema is unchanged; only the downstream consumer moved.
+5. `final_findings.json` already contains the final-state panel rows plus the three `dropped_*` arrays — it is the machine truth. Phase 6 (`templates/emit_tickets.md` Wave 7 panel compilation) wraps it inline with `paper`, `engine`, `holistic_pass`, and `summary` metadata to produce `_artifacts/json/panel.json`. The render ticket reads `panel.json` only. `panel_rows_candidates.json` is upstream-only (merge Step 6's handoff into calibration); it is never read after Pass 1 starts. The input chain is `panel_rows_candidates.json → calibration (Pass 1 → gate → debate → Pass 2) → final_findings.json → panel.json`. Row shape is defined once in `templates/schemas/panel_row.md`; calibration adds fields to each row, it does not reshape the row.
 
 ## Relation to the post-hoc evaluation
 

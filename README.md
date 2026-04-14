@@ -60,7 +60,7 @@ A run on a typical economics or statistics paper takes **~2 hours wall clock** e
 
 ## The finding panel
 
-Every run writes `_artifacts/json/panel.json` as the canonical output. One entry per surviving finding:
+Every run writes `_artifacts/json/panel.json` as the canonical output. Row shape is defined once in [`templates/schemas/panel_row.md`](templates/schemas/panel_row.md); the sketch below is illustrative — the schema file is authoritative. One entry per surviving finding:
 
 ```json
 {
