@@ -6,6 +6,10 @@ This is not a friendly review. Do not hedge. Do not pre-concede. Do not list wea
 
 Use the structured disputation format described in `templates/methods/m1_disputation.md`.
 
+## v6 context: escalation-only
+
+In v6 this prompt fires only for findings that escalated per the four-way gate in `SKILL.md` Phase 4 — cross-family disagreement is real, evidence exists on both sides, severity would change on verdict, finding would otherwise be user-visible. If you are reading this prompt, the orchestrator already decided the concern has enough tension and enough stakes to warrant an adversarial round. Treat it accordingly: this is not a checklist exercise; the system already filtered for contested findings.
+
 ## Inputs
 
 - Paper text: `{{paper_path}}`
@@ -30,7 +34,7 @@ State the point under debate as a precise yes/no question. If this is round 1, t
 
 ### Step 2: Pick 2-3 methods
 
-Based on the type of issue, select **two methods** from M2-M6 most likely to produce decisive objections. Add a third if the issue is in the top third of debated issues by rank score. Use this selection guide:
+Select **three methods** from M2-M6 most likely to produce decisive objections. (v5 used a two-methods-default-plus-one-for-top-tier rule; v6 escalation-only applies three methods per issue because every escalated finding has cleared the four-way gate and deserves the full treatment.) Use this selection guide:
 
 - **Internal inconsistency, text-vs-model mismatch**: M2 + M5
 - **Theorem scope, boundary failure, hidden assumption**: M3 + M4

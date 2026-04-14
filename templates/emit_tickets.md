@@ -445,32 +445,42 @@ Emission procedure (orchestrator, inline):
 
 9. Write `_calibration/00_calibration.md` scorecard: pre/post overclaim rate, per-finding disposition table.
 
-### Final wave — Final report (emitted after calibration final_findings.json exists)
+### Wave 7 — Panel render (v6, emitted after calibration final_findings.json exists)
 
-One ticket:
+One ticket, per `templates/render_panel.md`. The panel renderer is a single long-context call that reads the entire calibrated set and produces three output files in uniform voice.
 
 ```json
 {
-  "final_report": {
-    "id": "final_report", "type": "final_report", "agent": "claude",
-    "prompt_path": "_artifacts/prompts/final_report.md",
+  "panel_render": {
+    "id": "panel_render", "type": "render",
+    "agent": "gemini", "model": "gemini-3.1-pro-preview", "family": "google", "flags": {},
+    "prompt_path": "_artifacts/prompts/panel_render.md",
     "inputs": [
       "_calibration/final_findings.json",
-      "_artifacts/json/ranked_issues_verified.json"
+      "_artifacts/json/panel_rows_candidates.json",
+      "_paper/paper.md"
     ],
     "outputs": [
-      "_artifacts/json/final.json",
-      "4_report/referee_report.md"
+      "_artifacts/json/panel.json",
+      "4_panel/panel.md",
+      "4_panel/author_memo.md"
     ],
     "depends_on": [ "calibration aggregator inline step" ],
-    "status": "pending", "timeout_s": 1200
+    "status": "pending", "timeout_s": 1200,
+    "output_format": "json_stdout"
   }
 }
 ```
 
-v5 addition: after the opus-compiled `final.json` is written, Claude emits one `polish` ticket per report entry to gemini-3.1-pro-preview, rewriting each finding's `surviving_text` into referee-letter prose. Input: the calibrated finding + its paper-text context (± 20 lines). Output: a one-paragraph rewrite that goes into `4_report/referee_report.md`. Polish runs in parallel (concurrent=4), does NOT change any facts, and leaves `final.json` untouched.
+Outputs depend on `--mode`:
+- `--mode author` → `4_panel/author_memo.md` + optional `4_panel/revision_plan.md`
+- `--mode referee` → `4_panel/referee_memo.md` + optional `4_panel/referee_letter_draft.md`
+
+Both modes always write `_artifacts/json/panel.json` (canonical structured output) and `4_panel/panel.md` (table view). The writer cannot invent findings, change `calibration.verdict`, or hide dropped rows — the orchestrator re-verifies these constraints post-render and regenerates once on any violation.
 
 Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
+
+Fallback model: `claude-opus` when the panel has >30 findings or gemini is rate-limited.
 
 ### Wave 7 — A/B evaluation (optional, emitted after `final_report = done`, only on user request)
 

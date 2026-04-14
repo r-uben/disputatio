@@ -1,10 +1,14 @@
-# Editorial polish prompt (Phase 5.5)
+# Polish prompt — calibration rewrite step (v6)
 
-One gemini-3.1-pro-preview call per surviving finding. Rewrites the finding's claim text into referee-letter prose — tighter, more editorial, same facts. This is the last step before the human-facing `4_report/referee_report.md` is rendered. Closes the prose-quality gap vs coarse.ink's single-shot reviews.
+This prompt defines the **rewrite sub-step inside Phase 5 calibration**, not a separate phase. Called from `templates/calibrate.md` disposition rule: when a calibration annotator returns `quote_verified: partial` or `calibration: overclaimed`, the orchestrator fires one polish ticket per flagged finding to produce a narrower claim that preserves the verbatim quote but removes the overreach. The rewrite is then re-annotated once; if still failing, the finding is dropped or demoted.
+
+The v5 "Phase 5.5 editorial polish" role (rewriting surviving_text into referee-letter prose) is **not** handled here in v6 — that is the single-writer render step, specified in `templates/render_panel.md`. Do not use this prompt for prose polishing; use `render_panel.md` instead.
 
 ## Why this step exists
 
-After Phase 4 calibration, each surviving finding has a `surviving_text` (for debated issues) or a raw merge `claim` (for settled issues). These are written by synthesizers and merge agents respectively — accurate but bureaucratic. coarse.ink's advantage over v4 disputatio on prose quality is not the underlying model, it's that coarse uses opus end-to-end to *write referee-letter paragraphs*, while disputatio stitches structured JSON fields into markdown. Phase 5.5 closes that gap by making one gemini call per report entry, whose sole job is to produce one paragraph of referee-letter prose that could be pasted into an editor's decision letter without further editing.
+Calibration annotators flag findings as `overclaimed` or `partial` when the claim stretches beyond what the paper's text supports, or when the quote is paraphrased / truncated in a way that changes meaning. Simply dropping every such finding would over-punish concerns that have a real kernel hidden behind overreaching framing. The polish rewrite step gives each flagged finding exactly one opportunity to produce a narrower, quote-verified version — phrased as strongly as the paper's text supports, no stronger.
+
+Polish fires only when calibration flags a finding. Supported findings do not enter polish. Dropped findings do not enter polish. Only `overclaimed` and `partial` findings get the rewrite attempt, and only one attempt — if the rewrite's re-annotation still fails, the finding is demoted one tier or dropped outright per the calibrate.md disposition table.
 
 ## Scope — what polish can and cannot change
 

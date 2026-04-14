@@ -1,12 +1,17 @@
-# Coarse-style single-shot baseline (Tier 2)
+# Single-shot holistic cross-check (Wave 2.5)
 
-A parallel single-shot Opus review that runs alongside disputatio's discovery pipeline. Exists for one purpose: **force the pipeline to explain any finding the baseline catches that disputatio's structured discovery missed.** Calibrates our coverage against the dominant single-shot competitor (coarse.ink) per run, not per-release.
+A parallel single-shot Opus pass that runs alongside the three-family holistic + 9-ticket discovery. In v6 its purpose is **not** "catch what structured discovery misses" — that is what the Phase 1 holistic pass already does. The single-shot cross-check is a **coverage validator**: if it surfaces a conceptual-scope concern that the three-family holistic pass did not include in the attack-surface index, that is a signal the holistic pass needs strengthening, not a bug to route around.
 
-## Why this runs
+## Why this still runs in v6
 
-The 2026-04-14 v4 run on Galeotti-Golub-Goyal missed the Section 5 "incomplete information" framing critique that coarse.ink's single-shot Opus caught. Post-hoc we discovered discovery *had* surfaced it (claude_m2 flagged it explicitly), but merge_rank over-clustered and lost it. The baseline-diff mechanism exists for two reasons:
-1. **Coverage guarantee vs the benchmark.** If coarse catches it and we don't, we want to know at report time, not when someone runs the comparison page.
-2. **Sanity check on over-aggregation.** A coarse-unique finding that we *did* surface in discovery but lost in merge is a merge_rank bug we want to detect and route around.
+1. **Holistic-pass validation.** The v6 Phase 1 holistic pass is new; we do not yet have enough measurement to trust that it covers the conceptual-scope concerns a single-shot opus reader naturally surfaces. Running a parallel single-shot pass gives a per-run sanity check: if the holistic pass missed something obvious, we see it.
+2. **Merge-over-aggregation detector.** Even with v5's atomicity validator, merge can still cluster two genuinely distinct concerns if their quotes overlap. The baseline-diff step in `templates/merge_and_rank.md` Step 2c catches these by forcing any baseline-unique finding into the debate queue rather than silently absorbing it.
+
+Once the holistic pass has been measured on 3+ papers and shown to match a single-shot pass for conceptual-scope coverage, this wave can be retired. Until then, it costs ~$2 per run and earns its keep.
+
+## Historical context
+
+v5 introduced this pass after the v4 run on Galeotti-Golub-Goyal missed the Section 5 "incomplete information" framing critique that a single-shot opus caught. Post-hoc analysis showed structured discovery had actually surfaced it (claude_m2 flagged it), but merge_rank over-clustered and lost it. The baseline-diff mechanism was designed to prevent this class of error from reaching the report.
 
 ## What it does NOT do
 
