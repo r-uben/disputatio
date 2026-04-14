@@ -34,20 +34,86 @@ Cluster remaining issues by whether they point to the same underlying concern. T
 
 For each cluster, produce a single merged issue that takes the strongest version of the claim and aggregates the evidence from all members.
 
-### Step 2b: Atomicity check (one issue, one location)
+### Step 2b: Atomicity check (one issue, one location) — v5 hardened
 
 Each merged issue must be **atomic**: one claim, one primary quote, one primary location. This is required for the per-finding evaluation protocol (`templates/evaluation.md`) — findings that bundle N sub-issues under "various locations" cannot be annotated triple-by-triple and must be rejected here.
 
-Rules:
-- **One `quote`, one `quote_location`.** The `quote` field must be a verbatim passage from the paper. "Multiple locations" or "Various" is not allowed.
-- **If a cluster contains N related-but-distinct errors** (e.g. "15 notation typos across the appendix"), split it into N separate merged issues, each with its own triple. Ranking can then correctly assign low centrality/severity to each one; they won't dominate the top-N cutoff.
-- **Exception — true aggregate findings**: if the *aggregate pattern itself* is the finding (e.g. "the appendix lacks proofreading rigor" as an editorial judgment), produce one merged issue with:
-  - `aggregated: true`
-  - `sub_findings: [{quote, quote_location, evidence}, ...]` — one entry per sub-item
-  - The top-level `quote` is the most representative sub-item, not a placeholder
-- **Never** emit a merged issue whose `quote` is a summary ("Multiple locations in Appendix A and Online Appendix") or whose `quote_location` says "Various".
+Atomicity is a hard gate. The 2026-04-13 v3 run and the 2026-04-14 v4 run both saw merge_rank over-cluster: distinct concerns landed in the same `merged_NNN` cluster because they touched the same section, then rode each other into the report. v4 example: claude_m2 independently flagged both "Prop 3's certainty-equivalence is LQG relabelled" AND "Section 5 title 'incomplete information' contradicts footnote 23's 'complete information' admission." Merge bundled them into one `merged_012` because both cited Section 5; the Section-5 framing finding then disappeared when `merged_012` got `defense_wins` on the LQG-relabelling half. That is a **routing failure, not a discovery failure** — discovery had both findings, merge lost one.
 
-This atomicity rule keeps evaluation tractable and prevents a single bundled finding from evading per-triple scrutiny.
+### Rules (enforced, not aspirational)
+
+**Verbatim quote rule.** Every merged issue's `quote` field MUST appear as an exact substring of `_paper/paper.md`. No paraphrasing, no one-word edits, no truncation that changes meaning, no appending "…" for omitted middle text. Substrings spanning line breaks are fine if the paper's source wraps the same way. *If no agent surfaced a verbatim quote, the finding is rejected — there is nothing to annotate.*
+
+The orchestrator MUST run a post-merge validator (trivial: `quote in open("_paper/paper.md").read()` after whitespace normalisation) and fail the merge ticket back to the agent for any merged issue whose quote does not substring-match. An "OCR cleanup" exception is allowed only for character-level differences (ligatures, em-dashes, superscript vs LaTeX form); any difference that drops or adds a word is a rewrite and must be caught.
+
+**One-cluster-one-concern rule.** Two source findings belong in the same cluster only if:
+- They cite the same passage **and** make implications that force the same fix, or
+- They are the same claim restated (one paraphrases the other).
+
+Two findings that cite different sentences or propositions, or that would be fixed by different paper edits, go to different clusters. *"Touches the same section"* or *"both are about Section 5"* is NOT a valid clustering criterion. A cluster that contains N distinct fixes is N clusters.
+
+Concrete split triggers during merging — if ANY of these holds, the cluster MUST be split:
+1. Two candidate issues cite non-overlapping quotes.
+2. Two candidate issues propose different minimal edits to the paper.
+3. Two candidate issues could be `defense_wins` and `prosecution_wins` *independently* in debate (i.e. their truth values are independent).
+4. The proposed merged `claim` uses the word "and" to connect two propositions that do not imply each other (e.g. "X contradicts Y **and** also the paper overstates Z" — these are two claims).
+
+**True-aggregate exception.** If the *aggregate pattern itself* is the finding (e.g. "the appendix lacks proofreading rigor — here are 5 representative typos"), produce one merged issue with:
+  - `aggregated: true`
+  - `sub_findings: [{quote, quote_location, evidence}, ...]` — **one entry per sub-item, each with its own verbatim quote**
+  - The top-level `quote` is the most representative sub-item, not a placeholder
+  - **Every sub-finding's quote must pass the verbatim validator too** — no bundling unverifiable sub-claims inside an aggregate wrapper (the v4 `merged_019` pattern: one real typo plus seven unsubstantiated ones under one cluster). The validator rejects the aggregate if any `sub_findings[i].quote` does not substring-match the paper.
+
+**Summary quotes are banned.** A merged issue whose `quote` is `"Multiple locations…"`, `"Various appendix passages…"`, `"See Appendix A and OA3.1…"`, or any other meta-description is rejected. If the finding really is about a pattern, use the `aggregated: true` structure above and cite sub-findings individually.
+
+### Post-merge validator (orchestrator runs this)
+
+After the merge ticket writes `ranked_issues.json`, the orchestrator runs a mechanical check BEFORE emitting Wave 3 (verify) tickets:
+
+```python
+paper = open("_paper/paper.md").read()
+def norm(s): return " ".join(s.split())          # collapse whitespace
+issues = json.load(open("_artifacts/json/ranked_issues.json"))["ranked_issues"]
+for it in issues:
+    if norm(it["quote"]) not in norm(paper):
+        reject(it["id"], "quote not substring of paper.md")
+    if it.get("aggregated"):
+        for sf in it.get("sub_findings", []):
+            if norm(sf["quote"]) not in norm(paper):
+                reject(it["id"], f"sub_finding quote not substring")
+    claim_words = it["claim"].lower()
+    if " and " in claim_words and any(sep in claim_words for sep in [
+        "contradicts", "overstates", "as well as", "plus", "additionally"
+    ]):
+        flag(it["id"], "claim may bundle two independent propositions — check Rule 4")
+```
+
+Rejections force the merge ticket back to `pending` with a failure_reason listing which issues to fix. The merge agent re-runs with the list and either splits the cluster, finds a real verbatim quote, or drops the finding.
+
+This is a hard gate. In v5 no merged issue enters verify, debate, or report without passing the validator. The atomicity discipline is what prevents distinct concerns from being lost inside over-clustered merged IDs — as happened to the Section-5 framing finding in v4.
+
+### Step 2c: Baseline-diff coverage check (v5)
+
+Alongside discovery (Wave 2), the pipeline runs a coarse-style single-shot opus review (`baseline_review` ticket per `templates/baseline.md`) on the paper text alone. After merging is complete but BEFORE ranking and status assignment, diff the baseline's findings against the merged set:
+
+```python
+baseline = json.load(open("_artifacts/json/baseline_review.json"))
+baseline_items = baseline["themes"] + baseline["detailed_comments"]
+
+for b in baseline_items:
+    match = find_matching_merged_issue(b, merged_so_far)
+    # match rules: same quote OR same location anchor + semantic match OR opus yes-match
+    if not match:
+        # The baseline caught something disputatio missed.
+        # Force it in as a debate-status merged issue at moderate rank.
+        merged_so_far.append(baseline_to_merged_issue(b, source="baseline", status="debate"))
+```
+
+Matching uses the rules in `templates/baseline.md`. Baseline items covered by the merged set are *discarded* (we already have the concern). Baseline items *not* covered are appended to the merged set as new issues with `status: debate` (forced adjudication, since cross-agent support is 0) and a conservative default rank_score of 8. This protects against merge-over-aggregation: even if disputatio's discovery surfaced the concern but merge lost it, the baseline recovers it.
+
+Write `_artifacts/json/baseline_diff.json` recording which baseline items matched which merged issues and which went to forced debate. Include a `coverage_rate` = matched / total_baseline_items. A coverage rate below ~70% means discovery or merge is missing too much and the run should be flagged for investigation.
+
+After this step, proceed to Step 3 (ranking) with the possibly-augmented merged set.
 
 ### Step 3: Ranking
 

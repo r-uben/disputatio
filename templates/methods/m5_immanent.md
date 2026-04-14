@@ -37,6 +37,20 @@ For each commitment C, search the entire paper for passages where C is **abandon
 
 - **Standards violation.** The paper claims to provide a microfoundation but the "microfoundation" assumes the thing it was supposed to explain.
 
+### Step 2b: Scope-mismatch checklist (v5, explicit)
+
+The 2026-04-14 v4 run on Galeotti-Golub-Goyal missed a textbook M5 finding: Section 5 is titled *"Incomplete information"* but footnote 23 explicitly states *"the game individuals play is one of complete information."* That is a commitment-violation of the title by a footnote in the same section. coarse.ink's single-shot opus caught it; our M5 didn't elevate it reliably. To close that gap, walk this checklist for every paper:
+
+- **Section title vs section body.** Does each section's title describe what the section actually proves? A section titled "Incomplete information" that proves a complete-information result is a commitment violation.
+- **Abstract promise vs theorem condition.** The abstract typically states the main result without conditions. Does the theorem statement contain conditions the abstract doesn't mention? (e.g., "Property A", "generic b̂", "w > 0".) If yes, the abstract has committed to a broader claim than the theorems establish.
+- **Footnote vs body.** Footnotes often walk back or qualify the body's claims. List every footnote that adds a condition, exclusion, or acknowledgment; then check whether the body (the thing a reader actually reads) honors it.
+- **Introduction narrative vs formal statement.** Intro-section prose frames results informally. Compare each informal framing to the theorem's formal statement — if the intro says "for any network" and the theorem says "for any symmetric network with distinct eigenvalues", the commitment differs.
+- **Generality promise vs extension scope.** If the paper claims a result "extends to general X" and the extension (usually in an online appendix) applies only under additional assumptions, that is a commitment violation unless the additional assumptions are flagged at the generality promise.
+- **Caption vs figure content.** Figure captions sometimes claim the figure illustrates a "general feature" when the figure's specific setup is non-generic.
+- **Assumption labeled "generic" or "technical" vs its actual effect.** Anything labeled merely "for technical convenience" that the proof critically depends on is a commitment violation — the paper understated its role.
+
+Each checklist item is a potential finding. Do NOT invent violations; only report checklist items where you find a concrete text pair (commitment + violating passage) both quotable verbatim.
+
 ### Step 3: Write each violation as an issue
 
 Every issue from this method must contain **two citations**:

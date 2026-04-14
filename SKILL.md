@@ -122,35 +122,48 @@ The prosecutor picks **2-3 methods** from M2-M6 (see `templates/prosecute.md` fo
 - The `converged` verdict was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
 - There is **no tier-based pre-allocation** of rounds. Budget follows tension, not pre-assigned rank tier.
 
-### Phase 4 — Final report
+### Phase 4 — Pre-publication calibration (v5, new)
+
+Before the final report is compiled, every candidate finding that would enter it runs through a **blinded per-finding calibration pass**. This replaces the previous pipeline's post-hoc evaluation as the primary quality loop — post-hoc evaluation survives only as an A/B comparison tool (see Phase 6).
+
+Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on report-entering findings because strong-consensus "settled" findings skipped the debate stage — which had been doing an unacknowledged polish pass by softening overclaimed raw language into narrower synthesizer `refined_claim` text. Phase 4 restores that polish as a cheap single-model pass, without the theatre cost of full dialectic.
+
+**Inputs.** All `status: settled` merged issues, plus debated issues with verdict `prosecution_wins` / `split` / `escalate` (their `surviving_text`). Defense-wins and triaged findings do not enter calibration because they are already dropped.
+
+**Blinding.** Same blinding protocol as the post-hoc evaluation (randomised `BF###` IDs in a shuffled pool, manifest_blind.json private, no metadata leak in the prompt).
+
+**Rubric.** Same two axes (`quote_verified`, `calibration`) as `templates/evaluate.md`.
+
+**Demote-on-doubt disposition.** Overclaimed and partial-quote findings get one rewrite attempt (polish pass via gemini-3.1-pro-preview against the real passage). If re-annotation still fails the rubric: demote one tier (material → local, local → appendix, appendix → drop) or drop outright if unsupported. The bias is toward a tighter report; edge-case hedging in the annotator's notes counts as a demote trigger.
+
+**Outputs.** `_calibration/final_findings.json` — the calibrated set that feeds the final report (not `ranked_issues_verified.json`). Plus `_calibration/00_calibration.md` scorecard with pre/post overclaim rates.
+
+Default annotator: **codex with `gpt-5.4-mini`**. Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
+
+### Phase 5 — Final report
 
 Claude executes the `final_report` ticket inline and writes two outputs:
 
-1. **`_artifacts/json/final.json`** — structured final report:
-   - Surviving material issues with full debate history
-   - Surviving local issues with brief summary
-   - Dropped issues with the reason
-   - Appendix concerns (below-cutoff issues)
+1. **`_artifacts/json/final.json`** — structured final report, consuming `_calibration/final_findings.json` (not the pre-calibration ranked set):
+   - Material issues (calibrated `prosecution_wins`)
+   - Local issues (calibrated `split` verdicts, plus demoted material)
+   - Settled issues (calibrated strong-consensus findings)
+   - Appendix issues (demoted overclaims that survived one rewrite, and low-rank settled items)
+   - Dropped issues with reason: either `defense_wins` at debate or killed by calibration (partial/unsupported)
    - Web-verified external evidence
    - Overall assessment
 
-2. **`4_report/referee_report.md`** — the human-facing deliverable, rendered from the JSON using `templates/obsidian_render.md`.
+2. **`4_report/referee_report.md`** — the human-facing deliverable. For v5, each surviving finding's `surviving_text` is rewritten by **gemini-3.1-pro-preview** (Phase 5.5 editorial polish) into one-paragraph referee-letter prose before rendering. The content is fixed by calibration; gemini only tightens the writing. This closes the prose-quality gap vs coarse.ink single-shot reviews.
 
-Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself — with all its numbered subfolders and the top-level index — IS the final live report.
+Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section. The paper folder itself IS the final live report.
 
-### Phase 5 — Per-finding self-evaluation
+### Phase 6 — Post-hoc evaluation (A/B only)
 
-After the report is written, the orchestrator runs a quality pass on the review itself as a **self-contained sub-DAG under `_evaluation/`** — its own `tickets.json`, `prompts/`, `annotations/`, and results, cleanly separated from the main pipeline's `_artifacts/`.
+Still available, but no longer the pipeline's calibration loop. Use this when you want to compare disputatio v5 against another review (disputatio v3, coarse.ink, Stanford Agentic Reviewer) on the same paper. Same blinded rubric, same `BF###` manifest shape, but now the pool can contain findings from multiple review versions simultaneously.
 
-Findings are blinded with randomised `BF###` IDs (not `merged_NNN`). The orchestrator shuffles every finding being evaluated into one pool, assigns `BF###` in shuffled order, and writes `_evaluation/manifest_blind.json` with the `blind_id → (true_version, true_id)` map. The manifest is the only place this mapping exists; the annotator never sees it. For cross-review evaluation, V2 / V3 / coarse / reference findings all share the same shuffled pool — the annotator cannot tell which review produced which finding, either by ID, by position, or by metadata (stripped from the payload at emit time).
+Typical use: cross-version comparison. Expected result when running post-hoc eval on a v5 report: very low overclaim rate, because Phase 4 already dropped/demoted what post-hoc would have flagged. A large gap between Phase 4 and Phase 6 overclaim rates is a bug in one of them.
 
-Each `evaluate` ticket points at a self-contained prompt at `_evaluation/prompts/<blind_id>.md` that inlines the rubric, the finding JSON, and the full paper text. The ticket's `inputs` list contains only the prompt file — everything the annotator needs is inside it. Default annotator: **codex with `gpt-5.4-mini`** (matches the 2026-04-12 manual baseline).
-
-Each annotator returns a two-axis judgement written to `_evaluation/annotations/<blind_id>.json`: `quote_verified ∈ {yes, partial, no}` and `calibration ∈ {supported, overclaimed, unsupported}`, plus optional notes. The aggregator (Claude inline, no ticket) reads every annotation, joins with the blind manifest, writes `_evaluation/results.json` (flat `rows` + per-version `summary`), and renders `_evaluation/00_evaluation.md` (scorecard markdown) and `_evaluation/annotations_unblinded.csv` (human-readable join).
-
-The evaluation **does not feed back into the review** — it is a separate quality assessment recorded alongside. The `overclaim_rate` is the metric that earns its keep: it discriminates a debate-hardened review (which walks back overconfident claims) from an aggressive single-pass one (which keeps them).
-
-See `templates/evaluation.md` for the protocol and `templates/evaluate.md` for the per-finding prompt body.
+See `templates/evaluation.md` for the post-hoc protocol and `templates/evaluate.md` for the per-finding prompt body (shared with Phase 4 calibration).
 
 ## Workspace structure
 
@@ -196,9 +209,21 @@ See `templates/evaluation.md` for the protocol and `templates/evaluate.md` for t
 │   └── ...
 │
 ├── 4_report/
-│   └── referee_report.md                 # the deliverable
+│   └── referee_report.md                 # the deliverable (gemini-polished v5)
 │
-├── _evaluation/                          # per-finding self-evaluation (sub-DAG)
+├── _calibration/                         # Phase 4 pre-publication calibration (v5)
+│   ├── 00_calibration.md                 # scorecard: pre/post overclaim rate, kept/demoted/dropped
+│   ├── final_findings.json               # calibrated set — the ONLY input to the final report
+│   ├── dropped.json                      # findings killed by calibration (with reasons)
+│   ├── demoted.json                      # findings demoted (old_tier → new_tier)
+│   ├── manifest_blind.json               # blind_id → true_id (private to the orchestrator)
+│   ├── tickets.json                      # calibration sub-DAG
+│   ├── prompts/<blind_id>.md             # self-contained prompt per finding
+│   ├── annotations/<blind_id>.json       # first-pass annotator output
+│   ├── rewrites/<blind_id>.json          # polish-pass output (if the first annotation failed)
+│   └── sessions/<blind_id>.log           # raw session capture
+│
+├── _evaluation/                          # Phase 6 A/B post-hoc evaluation (optional)
 │   ├── 00_evaluation.md                  # aggregate scorecard (markdown)
 │   ├── annotations_unblinded.csv         # human-readable join of rows + manifest
 │   ├── manifest_blind.json               # blind_id → (true_version, true_id)
@@ -316,30 +341,45 @@ MATCH current state → action:
 │                                     │ If converged/none → mark issue terminal.             │
 │                                     │ Render debate markdown in 3_debates/.               │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all debate tickets terminal,        │ Execute final_report inline: read all syntheses +     │
-│ no final_report ticket              │ ranked issues. Write final.json + referee_report.md.  │
-│                                     │ Update review.md to phase: complete.              │
+│ all debate tickets terminal,        │ PHASE 4 CALIBRATION (v5): collect every candidate    │
+│ no _calibration/tickets.json        │ report-entering finding (all settled + debate        │
+│                                     │ survivors with prosecution_wins/split/escalate).     │
+│                                     │ Shuffle, assign BF### IDs, write manifest_blind.json.│
+│                                     │ Build one self-contained prompt per finding at       │
+│                                     │ _calibration/prompts/<blind_id>.md. Emit calibrate   │
+│                                     │ tickets to codex/gpt-5.4-mini (fallback: sonnet).    │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ final_report = done,                │ Collect findings (single or cross-review). Shuffle.  │
-│ no _evaluation/tickets.json exists  │ Assign BF### IDs. Write _evaluation/manifest_blind.  │
-│                                     │ json. Build one self-contained prompt per finding    │
-│                                     │ at _evaluation/prompts/<blind_id>.md (rubric + JSON  │
-│                                     │ + paper inlined). Emit one evaluate ticket per BF### │
-│                                     │ into _evaluation/tickets.json, routed to             │
-│                                     │ codex/gpt-5.4-mini.                                   │
+│ _calibration/tickets.json exists,   │ $A run-dag _calibration/tickets.json --concurrent 4. │
+│ calibrate tickets pending/running   │ Validate each annotation has two-axis verdict.       │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ all calibrate tickets done,         │ Apply demote-on-doubt disposition rules inline. For  │
+│ no _calibration/final_findings.json │ partial or overclaimed findings, emit one polish     │
+│                                     │ ticket to gemini-3.1-pro-preview, re-annotate. If    │
+│                                     │ still fails: drop or demote one tier. Write          │
+│                                     │ _calibration/final_findings.json, dropped.json,      │
+│                                     │ demoted.json, 00_calibration.md scorecard.           │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ _calibration/final_findings.json    │ Execute final_report inline CONSUMING                │
+│ exists, no final_report ticket      │ _calibration/final_findings.json (not                │
+│                                     │ ranked_issues_verified.json). Write final.json +     │
+│                                     │ referee_report.md. Phase 5.5: for each report entry, │
+│                                     │ call gemini-3.1-pro-preview to rewrite                │
+│                                     │ surviving_text into referee-letter prose. Update     │
+│                                     │ review.md to phase: complete.                         │
+├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ final_report = done,                │ PHASE 6 A/B (optional): collect findings from this   │
+│ A/B comparison requested            │ run plus other review versions (v3/coarse/etc),      │
+│ (no _evaluation/tickets.json)       │ shuffle into one pool, same blinding rubric, emit    │
+│                                     │ evaluate tickets. Not auto-run — only when the user  │
+│                                     │ requests cross-version comparison.                   │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
 │ _evaluation/tickets.json exists,    │ $A run-dag _evaluation/tickets.json --concurrent 4.  │
-│ eval tickets pending/running        │ Wait for completion. Validate each annotation JSON   │
-│                                     │ has blind_id + two-axis fields.                       │
+│ eval tickets pending/running        │ Wait for completion. Aggregate → results.json +      │
+│                                     │ 00_evaluation.md (same rubric as Phase 4 calibrate).  │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all evaluate tickets done,          │ Execute aggregator inline: read every                │
-│ no _evaluation/results.json         │ _evaluation/annotations/*.json, join with            │
-│                                     │ manifest_blind.json, write _evaluation/results.json  │
-│                                     │ (flat rows + per-version summary). Render            │
-│                                     │ _evaluation/00_evaluation.md + annotations_unblinded.│
-│                                     │ csv from results.json.                                │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ _evaluation/results.json exists     │ EXIT. Review complete and self-evaluated.            │
+│ _calibration/final_findings exists  │ EXIT. Review complete and calibrated.                │
+│ AND report written (or _evaluation  │                                                      │
+│ /results.json if A/B ran)           │                                                      │
 └─────────────────────────────────────┴──────────────────────────────────────────────────────┘
 ```
 
@@ -399,7 +439,7 @@ Preflight typically takes 30–60 seconds wall-clock (dominated by the two ping 
 
 1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
 2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
-3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_evaluation}`
+3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
 4. If input is `.pdf`: run `socr <input> --save-figures` → copy result to `$PAPER/_paper/paper.md` and the figures tree to `$PAPER/_paper/figures/`. **Do NOT substitute `pdftotext` or any other extractor, ever, even if the PDF looks typeset.** If input is `.md`: copy directly.
 5. Copy the PDF (if available) to `$PAPER/_paper/paper.pdf`
 6. Write `$PAPER/review.md` with frontmatter: `phase: orientation`
@@ -500,14 +540,17 @@ Not every task needs the strongest model. Use cheaper/faster models for mechanic
 | Discovery (M0-M6) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
 | Rendering (JSON→md) | haiku | — | — |
 | Merge & Rank | **opus** | — | — |
+| Coarse-style baseline (Tier 2) | **opus** | — | — |
 | Prosecution (top third) | **opus** | — | — |
 | Prosecution (rest) | sonnet | — | — |
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
 | Synthesis | **opus** | — | — |
 | Verification (web) | — | — | gemini-3.1-pro-preview |
-| Final report | **opus** | — | — |
+| **Phase 4 calibration annotator** | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| **Phase 5.5 editorial polish** | — | — | **gemini-3.1-pro-preview** |
+| Final report compilation | **opus** | — | — |
 
-This cuts Opus usage to ~30% of the pipeline (merge, top prosecutions, synthesis, final report). The remaining 70% runs on Sonnet/Haiku/mini models at a fraction of the cost.
+This cuts Opus usage to ~30% of the pipeline (merge, baseline, top prosecutions, synthesis, final-report compilation). The remaining 70% runs on Sonnet/Haiku/mini models at a fraction of the cost. Gemini owns both the verification web-search role and the editorial polish role (single long-context, fluid-prose model handling all human-facing writing). The Phase 4 calibration annotator defaults to codex/gpt-5.4-mini to match the 2026-04-12 manual baseline; sonnet takes over when codex is rate-limited on long-context papers (haiku cannot — it lacks the long-context beta for >50K token prompts).
 
 For Claude subagents, pass the `model` parameter: `Agent(model="sonnet")` or `Agent(model="haiku")`. For external agents, set the `model` field in the ticket and agent-ctl passes it via `-m`.
 

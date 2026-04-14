@@ -134,7 +134,28 @@ Claude-typed tickets are a special case: Claude executes them directly, without 
 
 All three prompt files are written to `prompts/` by substituting `{{paper_path}}` into `templates/orient.md`.
 
-### Wave 2 — Discovery (emitted after orientation)
+### Wave 2 — Discovery + single-shot baseline (emitted after orientation)
+
+Wave 2 emits **two independent tracks** that run in parallel:
+
+1. **18 discovery tickets** (3 agents × 6 methods) — the main structured-discovery channel.
+2. **1 baseline_review ticket** — a single-shot opus referee review on the paper text alone, independent of orientation (no `depends_on`). Per `templates/baseline.md`. Runs concurrently with discovery, completes in ~5 minutes. Used at merge time to diff against the merged set and catch any finding the baseline surfaced that disputatio's discovery missed.
+
+The baseline ticket is:
+
+```json
+{
+  "baseline_review": {
+    "id": "baseline_review", "type": "baseline",
+    "agent": "claude", "model": "opus", "family": "anthropic", "flags": {},
+    "prompt_path": "_artifacts/prompts/baseline_review.md",
+    "inputs": ["_paper/paper.md"],
+    "outputs": ["_artifacts/json/baseline_review.json"],
+    "depends_on": [],
+    "status": "pending", "timeout_s": 900
+  }
+}
+```
 
 For each of the three agents, emit six discovery tickets (M0, M2-M6):
 
@@ -322,7 +343,44 @@ After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synt
 | 2 | codex | gemini | claude |
 | 3 | gemini | claude | codex |
 
-### Final wave — Final report (emitted after all debate tickets are terminal)
+### Wave 6.5 — Calibration sub-DAG (v5, emitted after all debate tickets terminal)
+
+Calibration is a self-contained sub-DAG under `<paper-folder>/_calibration/`, emitted BETWEEN the last debate synthesis and the final_report ticket. It is the v5 quality gate that replaces post-hoc evaluation as the primary calibration loop. See `templates/calibrate.md` for the full spec and disposition rules.
+
+Emission procedure (orchestrator, inline):
+
+1. Collect every finding that would enter the final report: all `status: settled` issues from `ranked_issues_verified.json` PLUS all debated issues with verdict `prosecution_wins`, `split`, or `escalate` (use their synthesizer `surviving_text` as the annotated claim). Exclude `defense_wins` and triaged.
+2. Shuffle and assign randomised `BF###` IDs.
+3. Write `_calibration/manifest_blind.json` with `[{blind_id, true_id, tier}, ...]`.
+4. Build one self-contained prompt at `_calibration/prompts/<BF###>.md` per `templates/calibrate.md`: rubric + `{blind_id, claim, quote, quote_location, evidence}` (metadata stripped) + full paper text.
+5. Emit calibration tickets:
+
+```json
+{
+  "calibrate_BF001": {
+    "id": "calibrate_BF001", "type": "calibrate",
+    "agent": "codex", "model": "gpt-5.4-mini", "family": "openai", "flags": {},
+    "prompt_path": "_calibration/prompts/BF001.md",
+    "inputs": ["_calibration/prompts/BF001.md"],
+    "outputs": ["_calibration/annotations/BF001.json"],
+    "depends_on": [],
+    "status": "pending", "timeout_s": 900, "max_attempts": 2
+  }
+}
+```
+
+6. Run: `agent-ctl run-dag <paper>/_calibration/tickets.json --cwd <paper> --concurrent 4`.
+
+7. After all calibration annotations complete, the orchestrator applies disposition rules inline:
+   - `quote_verified: no` OR `calibration: unsupported` → drop. Record in `_calibration/dropped.json`.
+   - `quote_verified: partial` OR `calibration: overclaimed` → emit a polish ticket (gemini-3.1-pro-preview) that rewrites the claim using the annotator's notes. Re-annotate the rewrite (second calibration ticket, same BF ID with a `_v2` suffix). If still fails: drop or demote one tier.
+   - `calibration: supported` + `quote_verified: yes` → kept as-is.
+
+8. Write `_calibration/final_findings.json` — the calibrated set, keyed by tier (material / local / settled / appendix). This is the ONLY input to the final_report ticket; `ranked_issues_verified.json` is bypassed after calibration.
+
+9. Write `_calibration/00_calibration.md` scorecard: pre/post overclaim rate, per-finding disposition table.
+
+### Final wave — Final report (emitted after calibration final_findings.json exists)
 
 One ticket:
 
@@ -332,23 +390,24 @@ One ticket:
     "id": "final_report", "type": "final_report", "agent": "claude",
     "prompt_path": "_artifacts/prompts/final_report.md",
     "inputs": [
-      "_artifacts/json/ranked_issues_verified.json",
-      "_artifacts/json/debate_issue_001_r1_synthesize.json",
-      "... and the last synthesis for every debated issue ..."
+      "_calibration/final_findings.json",
+      "_artifacts/json/ranked_issues_verified.json"
     ],
     "outputs": [
       "_artifacts/json/final.json",
       "4_report/referee_report.md"
     ],
-    "depends_on": [ "list of all terminal debate tickets" ],
+    "depends_on": [ "calibration aggregator inline step" ],
     "status": "pending", "timeout_s": 1200
   }
 }
 ```
 
-Note: `final_report` is a claude-typed ticket, executed inline. Claude writes both the structured `_artifacts/json/final.json` and the human-readable `4_report/referee_report.md`. It also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
+v5 addition: after the opus-compiled `final.json` is written, Claude emits one `polish` ticket per report entry to gemini-3.1-pro-preview, rewriting each finding's `surviving_text` into referee-letter prose. Input: the calibrated finding + its paper-text context (± 20 lines). Output: a one-paragraph rewrite that goes into `4_report/referee_report.md`. Polish runs in parallel (concurrent=4), does NOT change any facts, and leaves `final.json` untouched.
 
-### Wave 7 — Per-finding evaluation (emitted after `final_report = done`)
+Claude also updates `review.md` at the top of the paper folder to set `phase: complete` and populate the summary section.
+
+### Wave 7 — A/B evaluation (optional, emitted after `final_report = done`, only on user request)
 
 Evaluation is a **self-contained sub-DAG** under `<paper-folder>/_evaluation/`, with its own `tickets.json`, `prompts/`, `annotations/`, `sessions/`, and results. Findings are blinded with randomised `BF###` IDs (not `merged_NNN`); the `blind_id → true_version/true_id` map lives only in `_evaluation/manifest_blind.json` and is never shown to the annotator. Default annotator: **codex with `gpt-5.4-mini`** (matches the 2026-04-12 manual baseline). See `templates/evaluation.md` for protocol and `templates/evaluate.md` for the prompt body.
 
