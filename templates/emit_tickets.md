@@ -341,7 +341,10 @@ For every row in `_artifacts/json/panel_rows_candidates.json` (produced by merge
 Output: `_calibration/annotations/<BF_id>.json` per row. The aggregator (Claude inline) applies disposition rules:
 
 - `quote_verified: no` OR `calibration: unsupported` → drop immediately; write to `_calibration/dropped_pass1.json` with reason; no debate, no further processing
-- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite ticket (gemini-3.1-pro-preview, per `templates/polish.md`) to narrow the claim; re-annotate once; if still failing → drop or demote one tier; if passing → mark as `calibrated_narrowed` and carry to gate evaluation
+- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite ticket (gemini-3.1-pro-preview, per `templates/polish.md`) to narrow the claim. Re-annotate with the **upgraded re-annotator** (codex `gpt-5.4` full, NOT gpt-5.4-mini — breaks correlated-error blind spots between the two mini reads; full rationale in `templates/calibrate.md` "Upgraded re-annotator"). Disposition:
+  - **Clean pass** (unqualified `supported` + `quote: yes`, no uncertainty triggers) → `calibrated_narrowed`, keep severity, carry to gate
+  - **Uncertain pass** (any of the 4 triggers in `templates/calibrate.md`: qualified verdict, hedging language, indirect support, internal rubric disagreement) → `calibrated_narrowed` AND demote severity one tier, carry to gate
+  - **Still failing** (`overclaimed`, `partial`, `unsupported`, or `quote: no`) → drop, no further rewrites
 - `calibration: supported` → carry to gate evaluation unchanged
 
 Write `_calibration/post_pass1_panel_rows.json` with the surviving set + `calibration_pass1` field populated on each row.

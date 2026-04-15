@@ -168,11 +168,14 @@ Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on r
 
 **Rubric.** Same two axes (`quote_verified`, `calibration`) as `templates/evaluate.md`.
 
-**Demote-on-doubt disposition.** Overclaimed and partial-quote findings get one rewrite attempt (polish pass via gemini-3.1-pro-preview against the real passage). If re-annotation still fails the rubric: demote one tier (material → local, local → appendix, appendix → drop) or drop outright if unsupported. The bias is toward a tighter report; edge-case hedging in the annotator's notes counts as a demote trigger.
+**Demote-on-uncertainty disposition.** Overclaimed and partial-quote findings get one rewrite attempt (polish pass via gemini-3.1-pro-preview against the real passage). The re-annotation uses an **upgraded annotator** (codex `gpt-5.4` full, not mini) to break correlated-error blind spots between two mini reads on the same rubric — the 2026-04-15 A/B found 7 of 28 shipped findings still read as overclaimed to a fresh judge, all from polished rows where mini-then-mini said supported. Three-way disposition:
+- **Clean pass** (unqualified `supported` + `quote: yes`, no uncertainty triggers) → `calibrated_narrowed`, keep severity.
+- **Uncertain pass** (any of four triggers fire: qualified verdict, hedging language like `ambiguous`/`partially`/`inferential`/`not explicit`, indirect support, internal rubric disagreement) → `calibrated_narrowed` AND demote severity one tier (material → local, local → nit).
+- **Still failing** (verdict `overclaimed` / `partial` / `unsupported`, or `quote: no`) → drop. No further rewrites, no second demotion.
 
 **Outputs.** `_calibration/final_findings.json` — the calibrated set that feeds the final report (not `ranked_issues_verified.json`). Plus `_calibration/00_calibration.md` scorecard with pre/post overclaim rates.
 
-Default annotator: **codex with `gpt-5.4-mini`**. Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
+Default first-pass annotator: **codex with `gpt-5.4-mini`** (volume model, ~38 rows/run, rubric-bounded). Re-annotator after polish: **codex with `gpt-5.4`** full (fires on ~8 rows/run, ~$1-2 cost delta). Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
 
 ### Phase 6 — Panel + renderers (v6 replaces v5's "Final report")
 
@@ -393,10 +396,16 @@ MATCH current state → action:
 │ _calibration/tickets.json exists,   │ $A run-dag _calibration/tickets.json --concurrent 4. │
 │ calibrate tickets pending/running   │ Validate each annotation has two-axis verdict.       │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all calibrate tickets done,         │ Apply demote-on-doubt disposition rules inline. For  │
+│ all calibrate tickets done,         │ Apply demote-on-uncertainty disposition inline. For  │
 │ no _calibration/final_findings.json │ partial or overclaimed findings, emit one polish     │
-│                                     │ ticket to gemini-3.1-pro-preview, re-annotate. If    │
-│                                     │ still fails: drop or demote one tier. Write          │
+│                                     │ ticket to gemini-3.1-pro-preview, re-annotate with   │
+│                                     │ UPGRADED annotator (codex gpt-5.4 full, not mini).   │
+│                                     │ Three-way disposition: clean pass → calibrated_      │
+│                                     │ narrowed + keep severity; uncertain pass (any of 4   │
+│                                     │ triggers: qualified verdict, hedging language,       │
+│                                     │ indirect support, rubric internal disagreement) →    │
+│                                     │ calibrated_narrowed + demote one tier (material →    │
+│                                     │ local, local → nit); still failing → drop. Write     │
 │                                     │ _calibration/final_findings.json, dropped.json,      │
 │                                     │ demoted.json, 00_calibration.md scorecard.           │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
@@ -587,7 +596,8 @@ Not every task needs the strongest model. Use cheaper/faster models for mechanic
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
 | Synthesis | **opus** | — | — |
 | Verification (web) | — | — | gemini-3.1-pro-preview |
-| **Phase 4 calibration annotator** | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| **Phase 5 calibration first-pass annotator** (all rows) | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| **Phase 5 calibration re-annotator after polish** (polished rows only, ~8/run) | sonnet (fallback) | **gpt-5.4** (full, not mini) | — |
 | **Phase 5.5 editorial polish** | — | — | **gemini-3.1-pro-preview** |
 | Final report compilation | **opus** | — | — |
 
