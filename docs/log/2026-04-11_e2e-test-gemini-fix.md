@@ -38,7 +38,7 @@ Mapped each ticket type to cheapest viable model. Opus only for merge+rank, top 
 ## Decisions
 
 - **Kept `gemini-3.1-pro-preview` as default** despite 429s. User pointed out it works fine interactively — capacity issues are transient. `gemini-3-flash-preview` is auto-fallback.
-- **socr 2.0.0** with gemini engine for OCR. Clean LaTeX output, quality audit. pdftotext is fallback for digital PDFs when speed matters.
+- **socr 2.0.0** with gemini engine for OCR. Clean LaTeX output, quality audit. Required for every PDF — no pdftotext shortcut (revoked 2026-04-13).
 - **Skipped multi-round debate** in both tests (1 round only). Role rotation untested.
 - **Debate ran as Claude subagents** not cross-model. Loses independence but saves time and complexity.
 

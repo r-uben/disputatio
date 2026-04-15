@@ -1,32 +1,28 @@
 # disputatio
 
-High-precision academic paper review via seven-method dialectic debate, executed by three independent AI agents (Claude, Codex, Gemini) and orchestrated as a durable ticket DAG on disk.
+A cross-architecture paper review panel for the two moments that matter before publication: before an author submits, and before a referee writes the report.
+
+The product is not a polished referee letter. The product is a **finding panel** — each concern carries an exact quote from the paper, support across model architectures, a contested-point debate trail, a calibration verdict, and a priority label tuned to the reader (author or referee). Claims that do not survive verification are shown with their drop reason instead of hidden. The point is knowing which concerns are real, which are stretched, and which are worth acting on before an editor or referee sees the paper.
 
 This is a **Claude Code skill**, not a Python package. Claude Code is the runtime; the skill is a protocol for orchestrating multi-agent paper criticism.
 
 ---
 
-## What it does
+## Who this is for
 
-Given an academic paper, `disputatio` produces a top-journal-quality referee report by:
+**Author mode — pre-submission review.** You are about to submit to a journal and want to know what a serious referee will catch. Run disputatio on your manuscript. For each surfaced concern you get: a verbatim quote, what is wrong, how it was tested, and a priority label — `fix_before_submit`, `watch_in_review`, or `can_ignore`. The optional revision plan maps priority findings to concrete sentence-level edits.
 
-1. Reading the paper from three independent agents, each producing a structural map (no judgments yet).
-2. Running five generative criticism methods × three agents = **fifteen discovery sweeps** in parallel, all closed-book.
-3. Merging, deduplicating, and ranking findings; weighting cross-agent agreement at 2× because agreement across architectures is more meaningful than cross-method agreement within one architecture.
-4. Subjecting the top *N* findings to **structured dialectic debate** with role rotation (Claude prosecutes round 1, Codex defends, Gemini synthesizes; rotates in subsequent rounds).
-5. Writing a single referee report — the human-readable deliverable — plus a structured JSON record of every prompt, output, debate transcript, and decision.
+**Referee mode — review assistance.** You have been asked to referee a paper and are writing your first-round report. Run disputatio on the manuscript. For each candidate concern you get: the quote, cross-architecture support, whether it survived a challenge-response round, and a priority label — `endorse`, `verify_before_endorsing`, or `skip`. The optional referee-letter draft scaffolds prose you edit in your own voice.
 
-The whole pipeline is **resumable, auditable, and replayable** because every agent call is a ticket on disk with its prompt path, inputs, outputs, timing, and session log preserved.
+Both modes share one engine. The difference is the priority label and the rendered summary memo.
 
 ---
 
-## Why it exists
+## What it is not
 
-Single-pass LLM reviews tend to overclaim: they identify real issues but inflate severity, miss hidden assumptions, and pattern-match to plausible-sounding flaws that don't survive scrutiny. The dialectical step exists to make every objection face a defender that must reply *to the specific objection*, with quotes, before a third party synthesizes what survived.
-
-The hypothesis being tested: **debate-hardened reviews overclaim less and support claims more often than aggressive single-pass reviews.**
-
-The current evidence on one paper is consistent with this — see [Evidence](#evidence-on-one-paper) below.
+- Not a replacement for the reviewer's or author's judgment. Every finding is there to be endorsed, narrowed, or rejected — the system shows its work.
+- Not a speed play. A run takes hours, not minutes. You use it when stakes are high enough that "defend this concern in detail" matters more than "give me a plausible letter in thirty seconds."
+- Not a benchmark judge. The calibration loop is internal discipline, not a scoreboard.
 
 ---
 
@@ -35,18 +31,15 @@ The current evidence on one paper is consistent with this — see [Evidence](#ev
 Inside Claude Code:
 
 ```
-/disputatio /path/to/paper.pdf
-```
-
-Optional flags:
-```
-/disputatio paper.pdf --top-n 8 --max-rounds 3 --skip-web
+/disputatio /path/to/paper.pdf --mode author
+/disputatio /path/to/paper.pdf --mode referee
 ```
 
 Defaults:
-- `--top-n 8` — debate the top 8 ranked issues; the rest become "appendix concerns" in the final report.
-- `--max-rounds 3` — at most three dialectic rounds per issue. Aggressive short-circuits (round-1 early-kill, stalled-debate termination, budget tiering) usually end debates earlier.
-- Web verification enabled — Gemini fact-checks any issue flagged `needs_web_verification: true`.
+- `--mode author` — produces `fix_before_submit / watch_in_review / can_ignore` priority labels plus an optional revision plan.
+- `--mode referee` — produces `endorse / verify_before_endorsing / skip` labels plus an optional referee-letter draft.
+- `--max-debate-rounds 2` — escalation-only debate on contested findings; most findings do not trigger debate.
+- Web verification enabled — external claims are fact-checked before calibration.
 
 A run on a typical economics or statistics paper takes **~2 hours wall clock** end-to-end.
 
@@ -61,130 +54,127 @@ A run on a typical economics or statistics paper takes **~2 hours wall clock** e
   cp vendor/agent_ctl.py ~/.claude/skills/agent_ctl.py
   chmod +x ~/.claude/skills/agent_ctl.py
   ```
-  See [`vendor/README.md`](vendor/README.md) for details.
-- An Obsidian vault to host the per-paper review folder. The skill writes everything inside `notes/work/referee-reports/<paper-slug>/`.
+- An Obsidian vault to host the per-paper review folder at `notes/work/referee-reports/<paper-slug>/`.
 
 ---
 
-## What you get
+## The finding panel
+
+Every run writes `_artifacts/json/panel.json` as the canonical output. Row shape is defined once in [`templates/schemas/panel_row.md`](templates/schemas/panel_row.md); the sketch below is illustrative — the schema file is authoritative. One entry per surviving finding:
+
+```json
+{
+  "finding_id": "F003",
+  "concern": "<one-sentence claim>",
+  "category": "proof | empirics | identification | framing | robustness | interpretation | notation | other",
+  "severity": "material | local | nit",
+  "confidence": { "band": "high | medium | low" },
+  "priority": {
+    "author": "fix_before_submit | watch_in_review | can_ignore",
+    "referee": "endorse | verify_before_endorsing | skip"
+  },
+  "evidence": [
+    { "quote": "...", "location": "...", "why": "...", "support_type": "direct_quote | derived_inference" }
+  ],
+  "architecture_support": {
+    "anthropic": { "supports": true, "methods": ["M5"] },
+    "openai":    { "supports": true, "methods": ["M2"] },
+    "google":    { "supports": false }
+  },
+  "debate": {
+    "triggered": true,
+    "verdict": "prosecution_wins | defense_wins | split | not_run",
+    "what_survived": "..."
+  },
+  "calibration": {
+    "verdict": "supported | overclaimed_narrowed | dropped",
+    "quote_verified": "yes | partial | no"
+  },
+  "suggested_action": {
+    "author":  { "fix": "..." },
+    "referee": { "how_to_use": "..." }
+  }
+}
+```
+
+Findings dropped by calibration or by a defender in debate are preserved in the audit trail with drop reasons. The panel renderer (see below) shows them explicitly instead of hiding them.
+
+---
+
+## What you get on disk
 
 A self-contained Obsidian folder per paper:
 
 ```
 notes/work/referee-reports/<paper-slug>/
-├── review.md                   ← top-level index, phase status
-├── _paper/paper.md             ← OCR'd source
-├── 0_orientation/              ← three paper maps (one per agent)
-├── 1_discovery/m{0,2-6}/       ← findings organised by method
-├── 2_ranking/                  ← merged + ranked issue register, triage notes
-├── 3_debates/<NN>_<slug>/      ← one folder per debated issue (prosecute / defend / synthesise per round)
-├── 4_report/referee_report.md  ← THE deliverable
+├── review.md                     ← top-level index, phase status, mode
+├── _paper/paper.md               ← OCR'd source
+├── 0_holistic/                   ← cross-architecture paper map and attack-surface index (NEW in v6)
+├── 1_discovery/                  ← broad critic + narrow evidence-judgment sweeps
+├── 2_ranking/                    ← merged atomic findings with verdict history
+├── 3_debates/                    ← only contested findings that triggered escalation
+├── 4_panel/                      ← panel.json + author memo + referee memo
+├── _calibration/                 ← blinded per-finding annotations + demotion log
 └── _artifacts/
-    ├── tickets.json            ← the DAG (source of truth for orchestration)
-    ├── prompts/                ← every prompt sent
-    ├── json/                   ← raw structured outputs
-    └── sessions/               ← raw agent reasoning traces
+    ├── tickets.json              ← the DAG (source of truth for orchestration)
+    ├── prompts/                  ← every prompt sent
+    ├── json/                     ← raw structured outputs
+    └── sessions/                 ← raw agent reasoning traces
 ```
 
-The referee report is what you'd hand to a journal editor. Everything else is provenance.
-
----
-
-## Evidence (on one paper)
-
-Run on Galeotti, Golub & Goyal (2020), "Targeting interventions in networks" (Econometrica):
-
-| Metric | Disputatio (this skill) | Coarse (single-pass Sonnet 4.6) |
-|---|---:|---:|
-| Judge score, mean of 5 runs | **6.00 / 6** | 5.53 / 6 |
-| Stddev across 5 runs | 0.00 | 0.21 |
-| Panel-mode score (3-persona synthesis) | **5.62** | 5.12 |
-
-Judge: Gemini 2.5 Pro. Reference: Stanford reviewer. Positional-bias mitigation enabled. Adapter-flattened disputatio output (no manual rewriting). See [`docs/evaluation.md`](docs/evaluation.md) for the full methodology and per-finding blinded annotation results.
-
-**Honest caveats** (also in [`docs/evaluation.md`](docs/evaluation.md)):
-- *n* = 1. The win on this paper does not generalise without replication.
-- Same judge family. Cross-judge robustness (Opus, GPT-4) untested.
-- Coarse is one Sonnet pass (~30 s). Disputatio is ~2 h with three agents. They are not effort-matched.
-
-A second-paper run (population-genetics) was attempted but used a stale skill version on the disputatio side — the comparison was withdrawn pending re-run.
+The panel is what a reader looks at first. The memo is a single-writer summary. The debate traces are provenance. Everything is replayable and resumable because every agent call is a ticket on disk.
 
 ---
 
 ## How it works (one paragraph)
 
-Claude Code generates tickets in **waves**. After each wave, `agent-ctl run-dag <tickets.json>` executes everything ready in parallel up to a concurrency cap, blocks until the wave is done, and writes session logs back to disk. Claude Code then inspects outputs, renders curated markdown into the numbered folders, and emits the next wave. Claude-typed tickets (orientation by Claude, merge-and-rank, prosecution by Claude, final report) are executed inline; external tickets (Codex, Gemini) go through `agent-ctl`. Models are routed by task — Opus for merge / synthesis / final, Sonnet and `gpt-5.4-mini` and `gemini-3-flash-preview` for bulk discovery, Opus / `gpt-5.4` / `gemini-3.1-pro-preview` for the debate roles. See [`docs/architecture.md`](docs/architecture.md) for the full picture.
-
----
-
-## The seven methods
-
-| # | Method | Role |
-|---|---|---|
-| 1 | Structured disputation | Shapes every debate round (quaestio → objections → sed contra → respondeo → replies) |
-| 2 | Interrogation by contradiction | Finds pairs of claims that cannot both be true |
-| 3 | Systematic transformation | Eight mechanical transforms per claim (negate / strengthen / weaken / substitute / reverse / consequence / boundary / analogy) |
-| 4 | Counterexample construction | Tries to construct a case satisfying the assumptions but violating the conclusion; exposes hidden lemmas |
-| 5 | Self-measured critique | Finds the paper's own commitments, hunts for passages where the paper violates them. Strongest method |
-| 6 | Causal disentangling | For each causal claim, enumerates co-factors and co-effects the paper has not ruled out |
-| 7 | Iterative refinement | Operates in synthesis: produces the refined claim after each round |
-
-Methods 2–6 are generative (they find issues). Method 1 is structural (it shapes each round). Method 7 is iterative (it refines claims across rounds). Every method has its own template under `templates/methods/` describing the operational procedure — not the philosophical lineage. Agents execute the procedure without needing to know its origin.
-
-See [`docs/methods.md`](docs/methods.md) for a deeper breakdown.
-
----
-
-## Documentation map
-
-- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
-- [`docs/methods.md`](docs/methods.md) — the seven methods, what each detects, when each is most useful, examples from the targeting-interventions run.
-- [`docs/evaluation.md`](docs/evaluation.md) — the judge.py methodology (replicates coarse.ink), per-finding blinded annotation, results on targeting-interventions, what we cannot yet claim.
-- [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending beyond the Claude/Codex/Gemini trio (Kimi, Ollama, OpenCode, etc.); architecture independence, role rotation past N>3, scoring math, agent_ctl refactor sketch.
-- [`docs/roadmap.md`](docs/roadmap.md) — known bugs, planned improvements, what V4 should fix.
-- [`docs/log/`](docs/log/) — dated dev log entries with decisions and trade-offs from each working session.
-- [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
-- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code (working directory conventions, design principles).
+Three model families (Claude, Codex, Gemini) produce a holistic conceptual pass per paper — paper spine, main claims, attack surfaces, likely referee questions. Nine discovery tickets (three holistic + three broad critic + three narrow evidence-judgment, one per family) generate candidate findings against that map, with each concern forced through an evidence compiler that pins a verbatim quote, location, and whether support is direct or inferred. Atomic merge clusters cross-family duplicates without bundling distinct concerns; a programmatic validator rejects any cluster whose quote does not substring-match the paper. Contested findings (cross-family disagreement with severity that would change on verdict) escalate to a structured prosecute-defend-synthesize round; everything else ships to calibration directly. A blinded annotator evaluates every candidate report entry; overclaimed findings are rewritten narrower or demoted one tier; unsupported findings are dropped before the user sees them. A single writer renders the panel into author or referee memo prose. The pipeline is resumable, auditable, and mode-agnostic — the same engine writes both packets.
 
 ---
 
 ## Status
 
-**Working end-to-end on theory papers.** The targeting-interventions run produced a 1,758-word referee report with 2 material findings, 6 local findings, 19 appendix concerns, and 16 triaged false positives, evaluated at 6.00/6 against the Stanford reference.
+**v6 upstream pivot in progress (2026-04-14).** Product repositioned from "referee report as primary deliverable" to "finding panel as primary deliverable, prose memo as secondary." Discovery tickets cut from 18 (3 agents × 6 methods) to 9 (3 agents × 3 tracks). Holistic pass added upfront. Debate moved from default-on-top-N to escalation-only on contested findings. Single-writer rendering replaces fragment assembly for prose uniformity.
+
+**v5 calibration results on Galeotti-Golub-Goyal 2020 (Econometrica):** 0% fabrication rate (down from 18.8% in v4), 22% pre-demote overclaim rate (down from 56% in v4), 0% user-visible overclaim after demotion by construction. 27 atomic merged findings passed verbatim-quote validation. See [`docs/log/`](docs/log/) for full run history.
 
 **Known limitations** (full list in [`docs/roadmap.md`](docs/roadmap.md)):
-- The `agent-ctl` shipped today routes any non-`codex` agent through the Gemini CLI. Claude-typed tickets get misrouted to `gemini -m sonnet` and 404. A local one-line patch in `_ticket_ready` skips Claude tickets so the orchestrator runs them inline. Needs proper upstream fix.
+- Codex (ChatGPT Pro OAuth) enforces a weekly cap. High-volume users need a direct API-key transport; `agent-ctl` currently supports only the OAuth path.
 - Gemini's OAuth silently expires mid-run with no error surfacing through `agent-ctl`. Long runs need to detect `FatalCancellationError` and halt the DAG with an actionable message.
-- Gemini's JSON outputs frequently have runaway LaTeX escapes (`\\\\\\\\\\sum`) that the existing cleaner doesn't handle. A two-pass cleanup (collapse `\\{2,}` → `\\\\` first, then escape-fix) works.
-- `templates/final_report.md` produces two heading formats (`### N. Title` for material, `N. **Title.**` for local). The downstream adapter `docs/archive/compare/adapt.py` only matched the second; one-shot extraction missed all material issues until patched. Fixed in commit `30f2032`.
-- Synthesis prompts use `{{prosecution}}` / `{{defense}}` placeholders that should be just-in-time injected before each synthesis ticket runs. Currently they ship as literal `[[WILL BE INJECTED]]` markers; Gemini compensates by reading the JSON files directly via `--yolo`, but this is fragile.
+- The v6 holistic pass is new and its effect on final finding precision has not yet been measured on a benchmark. Expect early runs to surface more framing/scope concerns than prior versions.
 
 ---
 
-## Provenance and evaluation harness
+## Evaluation
 
-The benchmark harness lives under `docs/archive/compare/`:
+The internal evaluation harness lives under `docs/archive/compare/`:
 
-- `docs/archive/compare/adapt.py` — flattens a disputatio referee report into the format used by [coarse.ink](https://coarse.ink/) for cross-system comparison.
-- `docs/archive/compare/judge.py` — replicates coarse.ink's judging methodology (LLM-as-judge against a reference review with positional-bias mitigation; supports panel mode).
-- `docs/archive/compare/<paper-name>/` — per-paper artifacts (paper.md, paper.pdf, reference reviews, coarse baselines, evaluation outputs).
+- `docs/archive/compare/adapt.py` — flattens panel output into a compatible format for cross-system comparison.
+- `docs/archive/compare/judge.py` — LLM-as-judge methodology with positional-bias mitigation.
+- Per-finding blinded annotation pipeline in `_calibration/` — the primary internal quality gate.
 
-To re-evaluate a finished disputatio run:
+For release gates we run: finding-level support rate, overclaim rate, user-visible overclaim escape rate, quote verification rate, and coverage against reference-reviewed benchmark papers. Slower human-in-the-loop studies (author utility, referee endorsement rate) are run once per major version.
 
-```bash
-cd compare
-uv run python adapt.py --report ../<vault>/<paper-slug>/4_report/referee_report.md \
-    -o <paper-name>/disputatio_review_v4_auto.md
-uv run python judge.py <paper-name> --review disputatio_review_v4_auto.md \
-    --also-coarse --model gemini/gemini-2.5-pro
-```
+Full methodology in [`docs/evaluation.md`](docs/evaluation.md).
 
-For multi-sample averaging, wrap the second command in a loop and aggregate the printed `Overall:` lines.
+---
+
+## Documentation map
+
+- [`docs/v6-upstream-plan.md`](docs/v6-upstream-plan.md) — the v6 pivot: product, pipeline diff, schema, metrics, positioning copy.
+- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
+- [`docs/methods.md`](docs/methods.md) — the discovery methods that survive in v6 (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling plus the new M8 holistic scope-mismatch pass).
+- [`docs/evaluation.md`](docs/evaluation.md) — evaluation methodology, per-finding blinded annotation, release-gate metrics, human-study protocols.
+- [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending the three-family panel to additional architectures.
+- [`docs/roadmap.md`](docs/roadmap.md) — known bugs, planned improvements, open questions.
+- [`docs/log/`](docs/log/) — dated dev log entries.
+- [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
+- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code (working directory conventions, design principles).
 
 ---
 
 ## License & contact
 
-Personal toolkit; not currently licensed for redistribution. Open an issue or reach out if you want to use it.
+Personal toolkit; not currently licensed for redistribution. Open an issue or reach out if you want to pilot it on a real manuscript.
 
 Build log: [`docs/log/`](docs/log/) — each non-trivial change comes with a dated entry recording decisions and rejected alternatives.
