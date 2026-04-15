@@ -166,7 +166,7 @@ Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5
 |---|---|---|
 | `holistic_candidates` | `templates/discover_holistic.md` (method-neutral; uses paper spine + attack surfaces + likely referee questions) | conceptual-scope concerns the method tracks under-detect |
 | `broad_critic` | `templates/discover_broad.md` (fuses M0 close-reading + M2 contradictions + M5 self-measured) | scan for contradictions, scope mismatches, commitment violations, framing overclaims, transcription errors |
-| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets |
+| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling + M8 algebraic derivation trace, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets; M8 mandatory on every theory/proof surface; minimum 6 findings per ticket (orchestrator rejects-and-retries once on underproduction) |
 
 Sample ticket:
 
@@ -197,6 +197,8 @@ Nine tickets total:
 All nine run in parallel (depends_on references the per-family holistic ticket, which finished in Wave 1.5).
 
 **Evidence compiler inline.** Every candidate finding produced by any ticket passes through a compiler step BEFORE it is written to the discovery JSON. The compiler extracts the verbatim quote, pins the location, and decides whether support is `direct_quote` or `derived_inference`. Findings that cannot produce either are dropped at write time, not at merge time. This enforces the verbatim-quote discipline pre-emptively.
+
+**Narrow-evidence yield floor.** After each `discover_*_narrow_evidence` ticket completes, the orchestrator checks `len(issues)`. If fewer than **6 issues**, the ticket is **rejected and re-run once** with the same prompt. Re-runs append `_retry1` to the session log archive name so the failure-then-retry trace is preserved. A second underproduction is logged as a model failure in `_artifacts/sessions/narrow_evidence_underproduction.log` (one line per family) and the run continues with whatever the second attempt returned — no third try. This rule applies only to the `narrow_evidence` track; `broad_critic` and `holistic_candidates` have no minimum-yield requirement. Rationale: the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit 4 findings per family under the prior "3–8" quality bar. Two algebra findings coarse.ink caught lived in surfaces narrow_evidence selected but did not deeply engage. Floor-plus-retry is the cheapest structural fix.
 
 Each ticket's JSON output is `{"issues": [...]}` where each issue carries `category`, `evidence[]` (each entry with `quote`, `location`, `why`, `support_type`), `falsifier`, and optional `paper_commitment` / `paper_commitment_location` for self-measured critiques.
 

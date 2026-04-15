@@ -14,7 +14,9 @@ Runs once per model family in Wave 2. Unlike `discover_broad.md` (wide sweep) an
 
 ## Task
 
-Select **2–4 priority attack surfaces** from the index and apply one or more of M3/M4/M6 to each. Do not try to cover every attack surface; depth beats breadth in this track.
+Select **exactly 5 priority attack surfaces** from the index (or all of them if fewer than 5 are marked `priority: high` AND `requires_deep_engagement: true` — in that case, take everything that qualifies and fall back to `priority: medium` to reach 5). For each surface, apply one or more of M3/M4/M6/M8 — at minimum one M8 attempt on every selected surface whose type is `theory` or `proof`. Depth beats breadth in this track, but the prior shape ("2–4 surfaces") consistently underproduced — the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit only 4 findings per family, leaving real algebra gaps unaddressed.
+
+**Mandatory minimum: 6 findings.** The orchestrator rejects any narrow ticket whose output has fewer than 6 issues and re-runs once. A second underproduction is logged as a model failure, not retried again — but the run continues with whatever the second attempt returned.
 
 ### M3 — Systematic transformation
 
@@ -102,7 +104,7 @@ Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` / `m8_derivati
 
 ## Quality bar
 
-- 3–8 findings total for this track. Depth over count. A single well-constructed counterexample is worth five weak transform observations.
+- **Minimum 6 findings per ticket, target 6–12.** Depth over count — a single well-constructed counterexample is worth five weak transform observations — but the prior "3–8" floor was too low and consistently produced 4. Five attack surfaces × at least one method per surface should comfortably yield 6+ findings. Orchestrator rejects output with fewer than 6 issues and re-runs the ticket once.
 - Every finding must trace to a specific proposition (not a vague "the paper's approach"). The target proposition's label (Theorem 1, Corollary OA3, Proposition 4) appears in the `claim` or `evidence.location`.
 - M3 transform findings should name which transform applies in the `m3_transform` field. "Weaken" findings that just restate the assumption are noise; prefer weakenings that break the proof.
 
