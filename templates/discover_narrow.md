@@ -1,6 +1,6 @@
 # Discovery prompt — narrow evidence-judgment track (v6)
 
-Produce **deep, evidence-heavy findings** targeted at the paper's highest-priority attack surfaces. This track fuses M3 (systematic transformation), M4 (counterexample construction), and M6 (causal disentangling) — the three methods that produce robust, defensible findings when applied to specific propositions rather than swept over the whole paper.
+Produce **deep, evidence-heavy findings** targeted at the paper's highest-priority attack surfaces. This track fuses M3 (systematic transformation), M4 (counterexample construction), M6 (causal disentangling), and M8 (algebraic derivation trace) — the four methods that produce robust, defensible findings when applied to specific propositions rather than swept over the whole paper.
 
 Runs once per model family in Wave 2. Unlike `discover_broad.md` (wide sweep) and `discover_holistic.md` (framing-level), this track spends its budget on a small number of targets with maximum rigour.
 
@@ -51,6 +51,16 @@ For each causal or comparative-static claim, enumerate the co-factors and co-eff
 
 Each M6 finding records the main causal claim + the specific unaddressed co-factor(s) + a verbatim quote of the headline.
 
+### M8 — Algebraic derivation trace
+
+Walk a specific proof end to end, in your own notation, and flag any step where the paper loses a term, inverts a sign, drops a square root, or lands on an impossible value (negative Lagrange multiplier on a binding constraint, probability outside [0,1], etc.). See `templates/methods/m8_derivation.md` for the full procedure.
+
+**Mandatory for every selected attack surface whose `type ∈ {theory, proof}` and whose `paper_location` pins a specific theorem / proposition / corollary / lemma.** At least one M8 attempt per such surface — either a finding, or a session-log note saying the trace is clean. M0 catches typos; M3 attacks the claim from outside; M8 rejects the proof from the inside.
+
+Skip for surfaces typed `framing` / `identification` / `robustness` / `exposition` — M8 needs explicit algebra to trace.
+
+Negative-Lagrange test is mandatory on every optimisation paper: for every stated solution including limits, verify the multiplier on each binding inequality constraint is `≥ 0`.
+
 ## Output
 
 Single JSON file to `{{output_path}}`:
@@ -63,7 +73,7 @@ Single JSON file to `{{output_path}}`:
     {
       "id": "ne_<family>_001",
       "category": "proof | empirics | identification | framing | robustness | interpretation | notation | other",
-      "method": "m3 | m4 | m6",
+      "method": "m3 | m4 | m6 | m8",
       "attack_surface_id": "AS1",
       "claim": "one-sentence falsifiable statement",
       "evidence": [
@@ -77,6 +87,7 @@ Single JSON file to `{{output_path}}`:
       "m3_transform": "negate | strengthen | weaken | substitute | reverse | consequence | boundary | analogy",
       "m4_counterexample": "concrete counterexample OR hidden lemma required — null if method != m4",
       "m6_cofactors": ["list of unaddressed co-factors"],
+      "m8_derivation_trace": "the specific proof step that breaks, written in the paper's notation: paper's step on one line, corrected step on the next. Max ~10 lines. Null if method != m8.",
       "falsifier": "what would withdraw this",
       "impact": "material | local | nit",
       "confidence": "high | medium | low",
@@ -87,7 +98,7 @@ Single JSON file to `{{output_path}}`:
 }
 ```
 
-Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` is populated per finding, per the `method` field.
+Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` / `m8_derivation_trace` is populated per finding, per the `method` field.
 
 ## Quality bar
 

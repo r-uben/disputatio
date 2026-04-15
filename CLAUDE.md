@@ -39,13 +39,13 @@ The templates are the authoritative spec for their respective phases:
 
 ### Three discovery tracks (v6, replacing v5's seven methods)
 
-Methods still exist (M0 close reading, M2 contradictions, M3 transformations, M4 counterexamples, M5 self-measured critique, M6 causal disentangling) but are **folded into three tracks** that each ticket runs:
+Methods still exist (M0 close reading, M2 contradictions, M3 transformations, M4 counterexamples, M5 self-measured critique, M6 causal disentangling, M8 algebraic derivation trace) but are **folded into three tracks** that each ticket runs:
 
 | Track | Templates in scope | Purpose |
 |---|---|---|
 | `holistic_candidates` | `holistic.md` output + attack-surface index | Conceptual-scope concerns the method tracks under-detect |
 | `broad_critic` | M0 + M2 + M5 fused | Contradictions, scope mismatches, commitment violations, transcription errors |
-| `narrow_evidence` | M3 + M4 + M6 fused, targeted at priority attack surfaces | Deep evidence-heavy findings on a small set of targets |
+| `narrow_evidence` | M3 + M4 + M6 + M8 fused, targeted at priority attack surfaces | Deep evidence-heavy findings on a small set of targets; M8 mandatory on every theory/proof surface |
 
 M1 (structured disputation) is reserved for Phase 4 debate rounds. M7 (iterative refinement) is the synthesis step within debate.
 
@@ -87,6 +87,7 @@ disputatio/
         ├── m5_immanent.md           # subsumed into broad_critic
         ├── m6_disentangling.md      # subsumed into narrow_evidence
         ├── m7_refinement.md         # used by synthesize.md
+        ├── m8_derivation.md         # subsumed into narrow_evidence (mandatory on theory/proof surfaces)
         └── m0_close_reading.md      # subsumed into broad_critic
 ```
 

@@ -39,7 +39,7 @@ v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised 
 |---|---|---|
 | **Holistic** (3 tickets, one per family) | Produces a paper spine, main claims, attack surfaces, and likely referee questions. This is where conceptual-scope concerns surface — the kind of concern a single-shot model catches by reading the paper as one object. | `templates/holistic.md` |
 | **Broad critic** (3 tickets, one per family) | Scans for contradictions, scope mismatches, commitment violations, and framing overclaims. This is the workhorse candidate generator. | `templates/methods/m2_contradiction.md`, `m5_immanent.md` |
-| **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction and transformation-based stress tests against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md` |
+| **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction, transformation-based stress tests, and step-by-step algebraic derivation traces against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. M8 (derivation trace) is mandatory on every selected theory/proof surface — it closes the algebra-checking gap surfaced in the 2026-04-15 A/B vs coarse.ink. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md`, `m8_derivation.md` |
 
 Method 0 (mechanical proofreading / close reading), previously a standalone sweep, is now absorbed into the broad critic track. Method 1 (structured disputation) is reserved for escalated debate rounds. Method 7 (iterative refinement) is the synthesis step within debate.
 
@@ -587,7 +587,7 @@ Not every task needs the strongest model. Use cheaper/faster models for mechanic
 | Task | Claude | Codex | Gemini |
 |------|--------|-------|--------|
 | Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Discovery (M0-M6) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery (M0-M6, M8) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
 | Rendering (JSON→md) | haiku | — | — |
 | Merge & Rank | **opus** | — | — |
 | Coarse-style baseline (Tier 2) | **opus** | — | — |
