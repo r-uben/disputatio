@@ -31,7 +31,13 @@
   "debate_hint": {
     "cross_family_disagreement": "strong | moderate | none",
     "evidence_conflict_in_paper": "yes | no | unknown",
-    "severity_sensitive": true
+    "severity_sensitive": true,
+    "high_severity_consensus": false
+  },
+  "claim_under_challenge": {
+    "claim": "one-sentence exact claim all three families agreed on (populated only when debate_hint.high_severity_consensus is true)",
+    "cited_evidence": ["verbatim passage A", "verbatim passage B", "verbatim passage C"],
+    "failure_condition": "one-sentence statement of what part of the paper the three families believe this breaks"
   },
   "calibration": {
     "verdict": "supported | calibrated_narrowed | overclaimed | unsupported | dropped",
@@ -43,12 +49,14 @@
   "calibration_pass1": { "...same shape as calibration..." },
   "gate_decision": {
     "escalated": true,
-    "reason": "all_conditions_met | cross_family_disagreement_not_strong | no_evidence_conflict_in_paper | severity_not_sensitive_to_verdict | calibration_pass1_verdict_not_user_visible:<verdict> | severity_not_user_visible:<severity>"
+    "route": "disagreement | consensus | none",
+    "reason": "all_conditions_met | high_severity_consensus_override | cross_family_disagreement_not_strong | no_evidence_conflict_in_paper | severity_not_sensitive_to_verdict | calibration_pass1_verdict_not_user_visible:<verdict> | severity_not_user_visible:<severity>"
   },
   "debate": {
     "triggered": true,
+    "route": "disagreement | consensus",
     "reason": "gate-clearer reason string",
-    "verdict": "prosecution_wins | defense_wins | split | escalate | not_run",
+    "verdict": "prosecution_wins | defense_wins | split | escalate | consensus_held | consensus_broken | not_run",
     "surviving_text": "synthesizer's report-grade paragraph if verdict != not_run",
     "what_survived": "summary of what the debate settled",
     "history": [
