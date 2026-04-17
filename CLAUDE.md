@@ -56,7 +56,7 @@ disputatio/
 ├── SKILL.md                         # authoritative v6 protocol
 ├── CLAUDE.md                        # this file — pointer to SKILL.md
 ├── docs/
-│   ├── v6-upstream-plan.md          # product + architecture plan
+│   ├── log/2026-04-14_upstream-pivot-plan.md  # product + architecture plan (historical)
 │   ├── log/                         # dated dev log
 │   └── ...
 └── templates/

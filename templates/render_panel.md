@@ -36,6 +36,16 @@ tags: [disputatio, panel, <paper-slug>, <mode>]
 mode: author | referee
 date: YYYY-MM-DD
 ---
+```
+
+**Frontmatter rules (strict):**
+
+- The three fields above (`tags`, `mode`, `date`) are the ONLY fields allowed. Do not add a `version` field, a `n_findings` field, an `engine` field, or any other metadata not listed here.
+- `<paper-slug>` is the directory name under `notes/work/referee-reports/`, with any trailing internal version suffix stripped. Strip any suffix matching `_v\d+` (e.g. `galeotti-golub-goyal-2020_v7` → `galeotti-golub-goyal-2020`). Version suffixes are internal workflow bookkeeping and must not surface in user-facing artifacts.
+- The `tags` list contains exactly four entries: `disputatio`, `panel`, the stripped paper-slug, and the mode. Do not split the slug on underscores or add derived tags.
+- The memo's H1 must read `# Author memo — <paper title>` or `# Referee memo — <paper title>`. Do not include mode annotations like "(v7, author mode)" or any version reference in the heading or the prose. Version history belongs in the repo's CHANGELOG, not in the artifact.
+
+```
 
 # Author memo OR Referee memo — <paper title>
 
@@ -69,7 +79,7 @@ A single paragraph acknowledging the count of findings dropped by defense during
 
 ## Method notes
 
-Two sentences on the pipeline version, modes available, and where to find the canonical panel JSON.
+Two sentences naming the modes available and where to find the canonical panel JSON. Do not mention pipeline version, release number, or internal codename.
 ```
 
 ### 3. `4_panel/revision_plan.md` (author mode) OR `4_panel/referee_letter_draft.md` (referee mode)
@@ -107,6 +117,7 @@ The draft must NOT recommend acceptance or rejection. The renderer does not have
 
 ## Writing rules
 
+- **No version strings in user-facing artifacts.** Every output file (`panel.md`, `author_memo.md`, `referee_memo.md`, `revision_plan.md`, `referee_letter_draft.md`) must omit any reference to internal pipeline versions (v4, v5, v6, v7, etc.), release numbers, or codenames. Strip `_v\d+` suffixes from paper-slugs before rendering. The product is `disputatio`; version history lives in the repo's CHANGELOG, not in the artifact.
 - **Preserve verbatim quotes exactly.** A quote from the panel that reads `"Property A ... facilitates analysis, it is not essential."` must render with the same punctuation and ellipsis in every output.
 - **Preserve the paper's own qualifiers.** If a quote contains "as long as the budget is small", do not strip the qualifier when summarising.
 - **Use the paper's terminology.** Don't introduce synonyms ("principal component" → "eigenvector") unless the panel finding explicitly makes that substitution part of its claim.

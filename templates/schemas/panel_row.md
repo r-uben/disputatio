@@ -113,6 +113,6 @@ Three files hold rows at different stages:
 
 - `_artifacts/json/panel_rows_candidates.json` — rows written by merge Step 6, before calibration or debate. Shape: `{"survived": [row, ...], "dropped_at_merge": [row, ...]}`.
 - `_calibration/final_findings.json` — rows after Pass 1, gate, debate (if any), and Pass 2. Shape: `{"findings": [row, ...], "dropped_pass1": [row, ...], "dropped_by_defense": [row, ...], "dropped_pass2": [row, ...]}`.
-- `_artifacts/json/panel.json` — the orchestrator wraps `final_findings.json` with `paper`, `engine`, `holistic_pass`, and `summary` to produce the canonical panel artifact. Shape: full v6 panel JSON per `docs/v6-upstream-plan.md` with a `findings[]` array pointing at rows matching this schema.
+- `_artifacts/json/panel.json` — the orchestrator wraps `final_findings.json` with `paper`, `engine`, `holistic_pass`, and `summary` to produce the canonical panel artifact. Shape: full panel JSON per `docs/log/2026-04-14_upstream-pivot-plan.md` with a `findings[]` array pointing at rows matching this schema.
 
 The render step reads `panel.json` only. It does NOT read `panel_rows_candidates.json` or `final_findings.json` directly.

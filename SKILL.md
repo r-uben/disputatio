@@ -33,7 +33,7 @@ Same engine, same panel, only the rendering differs between modes.
 
 ## Three discovery tracks (v6)
 
-v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised as three tracks, one family per track, per spec in `docs/v6-upstream-plan.md`. A track is chosen for the candidate signal it produces, not for philosophical lineage.
+v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised as three tracks, one family per track, per spec in `docs/log/2026-04-14_upstream-pivot-plan.md`. A track is chosen for the candidate signal it produces, not for philosophical lineage.
 
 | Track | What it does | Templates used |
 |---|---|---|
