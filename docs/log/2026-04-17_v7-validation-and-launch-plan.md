@@ -285,3 +285,132 @@ Fresh session should open with:
 4. My top recommendation: **cross-judge stress test first**. Nothing else
    should ship to a public surface until we have a defensible cross-judge
    number to anchor the headline.
+
+---
+
+## Update — 2026-04-17 (later same day): stress test completed
+
+### Consolidation pass first
+
+Before running the stress test, scrubbed internal pipeline version strings
+(v4/v5/v6/v7) from all user-facing surfaces and consolidated history into
+`CHANGELOG.md`. Three surfaces cleaned: website (`index.html` line 3769),
+repo README, and the panel renderer template (frontmatter was stamping
+`version: v7` and splitting `_v7` suffixes out of paper-slugs as separate
+tags). Product is now consistently named **disputatio** across all
+user-visible output. Commit `3921a22`. Full scope in the commit message.
+
+### Judge consultation
+
+Consulted codex (`gpt-5.4`) and gemini (`3.1-pro-preview`) in parallel on
+judge selection. Strong convergence — both independently picked
+`gemini-3.1-pro-preview` as the single best addition to the existing
+`gpt-5.4-mini` anchor. Both rejected:
+
+- Kimi / Ollama — capability-insufficient for 30-page paper + verbatim
+  quote verification. Produces noise, not signal.
+- Gemini flash — adds noise, not insight.
+- GPT-4.1 as second judge — same-family correlation risk; "degraded
+  performance with correlated OpenAI biases" doesn't give independent
+  signal.
+
+### Stress test run
+
+Pool: **49 findings** (27 disputatio + 22 coarse). V6's 28 internal-ablation
+findings dropped per the consolidation principle — public comparison is
+current disputatio vs current coarse, no ablation noise.
+
+Judges: `gpt-5.4-mini` (anchor, existing) + `gemini-3.1-pro-preview` (new).
+Same prompts, same rubric, same seed, identical blinded manifest.
+
+Runtime: 49 gemini-pro tickets at 4-way concurrency, ~12 min, 0 failures.
+Artifacts at `galeotti-golub-goyal-2020_v7/_evaluation_crossjudge/` —
+annotations, tickets, manifest, `results_crossjudge.json`,
+`00_crossjudge_evaluation.md`.
+
+### Results
+
+| source | judge | supported | overclaim | unsupported | quote yes |
+|---|---|---:|---:|---:|---:|
+| disputatio | gpt-5.4-mini | 100.0% (27/27) | 0.0% | 0.0% | 88.9% |
+| disputatio | gemini-3.1-pro | **85.2%** (23/27) | 0.0% | 14.8% | 81.5% |
+| coarse | gpt-5.4-mini | 36.4% (8/22) | 27.3% | 36.4% | 63.6% |
+| coarse | gemini-3.1-pro | 36.4% (8/22) | 9.1% | 54.5% | 63.6% |
+
+Inter-judge agreement on calibration verdict:
+
+- disputatio: 23/27 findings got the same verdict from both judges (**85.2%**)
+- coarse: 16/22 got the same verdict (**72.7%**)
+
+### Reading the numbers
+
+Good: the story holds honestly. **Disputatio: 85–100% supported, 0%
+overclaimed** across both judges on 27 findings. **Coarse: 36.4%
+supported, 9–27% overclaimed** across both judges on 22 findings. The
+stronger grader (gemini) brought disputatio down 14.8pp on support but
+did NOT bring disputatio near coarse's level — the gap is ~50pp either
+way. The zero-overclaim claim is robust under both judges, which is
+the single most defensible number we have.
+
+Coarse's support rate is *identical* under both judges (36.4%). Both
+graders converge that coarse is weaker. No "grader preference" excuse
+for the gap.
+
+### The 14.8pp delta traces to a real failure mode
+
+Inspected the 4 findings where gpt-mini said supported and gemini said
+unsupported. **All 4 share the same pattern: disputatio flags a concern
+the paper itself already acknowledges elsewhere.**
+
+| finding | failure |
+|---|---|
+| F035 | paper states "as long as the budget is small"; finding flags as hidden limitation |
+| F020 | paper acknowledges p18 Assumption 5 "ensures our results are driven by the benefits side"; finding flags as hidden flaw |
+| F022 | paper states "Property A facilitates analysis, it is not essential"; finding flags missing abstract signaling |
+| F017 | paper has marginal "Corollary 1" / "Theorem 1" references; finding says "not cross-referenced" |
+
+M5 "self-measured critique" evaluates findings against the pinned quote's
+immediate context; the author's own acknowledgment elsewhere in the paper
+slips through. gpt-mini misses this too as a judge because it evaluates
+against the pinned quote, not the full text. Gemini catches it because
+it reads integratively.
+
+Rate: 4/27 = 14.8%. Localized to one failure mode, not a diffuse quality
+gap. Fixable.
+
+### GH issues filed
+
+- **#13** — agent-ctl: add claude (sonnet/opus/haiku) as a launchable
+  agent. Deferred infrastructure work that enables a 3-judge panel in
+  the future.
+- **#14** — calibration: detect self-acknowledged limitations before
+  shipping a finding. Direct fix for the 14.8% failure mode. v7.1 scope.
+
+### What the launch copy must say
+
+Swap 100%/0% headline for: **"85–100% supported across two judge
+families, 0% overclaimed (n=27). Where the judges disagreed, 4
+findings traced to one specific failure mode — critiquing limitations
+the paper already acknowledges. Failure mode published openly (GH #14),
+fix in v7.1 scope."**
+
+Comparison framing becomes: **"On this paper, disputatio support rate
+was 49–64pp higher than coarse and overclaim rate 9–27pp lower, under
+both judges."** Still flagged as n=1 paper, coarse at default
+sonnet-4.6 (not its top tier), prose-vs-panel form difference. The real
+axis is complementary deliverables (coarse writes a letter in minutes
+for $2; disputatio writes an evidence panel in hours for $10–30), not
+competitor displacement.
+
+### Still pending before soft-launch
+
+1. Update website copy (`index.html` validation scorecard + headline
+   stats + `compare.html` scorecard) with the range, the failure-mode
+   disclosure, and the two-judge context.
+2. Merge PR #12 once website copy is aligned.
+3. Rerun coarse at its top-tier model (Opus 4.6) for a fair comparison
+   before the /compare page goes public beyond the private URL — codex
+   and gemini both flagged this as a credibility requirement.
+4. Reach out to coarse maintainer with the draft comparison before
+   pushing publicly; invite correction. Integration question surfaces
+   from that conversation, not from us.
