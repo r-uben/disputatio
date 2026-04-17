@@ -1,6 +1,6 @@
 # Discovery prompt — narrow evidence-judgment track (v6)
 
-Produce **deep, evidence-heavy findings** targeted at the paper's highest-priority attack surfaces. This track fuses M3 (systematic transformation), M4 (counterexample construction), and M6 (causal disentangling) — the three methods that produce robust, defensible findings when applied to specific propositions rather than swept over the whole paper.
+Produce **deep, evidence-heavy findings** targeted at the paper's highest-priority attack surfaces. This track fuses M3 (systematic transformation), M4 (counterexample construction), M6 (causal disentangling), and M8 (algebraic derivation trace) — the four methods that produce robust, defensible findings when applied to specific propositions rather than swept over the whole paper.
 
 Runs once per model family in Wave 2. Unlike `discover_broad.md` (wide sweep) and `discover_holistic.md` (framing-level), this track spends its budget on a small number of targets with maximum rigour.
 
@@ -14,7 +14,9 @@ Runs once per model family in Wave 2. Unlike `discover_broad.md` (wide sweep) an
 
 ## Task
 
-Select **2–4 priority attack surfaces** from the index and apply one or more of M3/M4/M6 to each. Do not try to cover every attack surface; depth beats breadth in this track.
+Select **exactly 5 priority attack surfaces** from the index (or all of them if fewer than 5 are marked `priority: high` AND `requires_deep_engagement: true` — in that case, take everything that qualifies and fall back to `priority: medium` to reach 5). For each surface, apply one or more of M3/M4/M6/M8 — at minimum one M8 attempt on every selected surface whose type is `theory` or `proof`. Depth beats breadth in this track, but the prior shape ("2–4 surfaces") consistently underproduced — the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit only 4 findings per family, leaving real algebra gaps unaddressed.
+
+**Mandatory minimum: 6 findings.** The orchestrator rejects any narrow ticket whose output has fewer than 6 issues and re-runs once. A second underproduction is logged as a model failure, not retried again — but the run continues with whatever the second attempt returned.
 
 ### M3 — Systematic transformation
 
@@ -51,6 +53,16 @@ For each causal or comparative-static claim, enumerate the co-factors and co-eff
 
 Each M6 finding records the main causal claim + the specific unaddressed co-factor(s) + a verbatim quote of the headline.
 
+### M8 — Algebraic derivation trace
+
+Walk a specific proof end to end, in your own notation, and flag any step where the paper loses a term, inverts a sign, drops a square root, or lands on an impossible value (negative Lagrange multiplier on a binding constraint, probability outside [0,1], etc.). See `templates/methods/m8_derivation.md` for the full procedure.
+
+**Mandatory for every selected attack surface whose `type ∈ {theory, proof}` and whose `paper_location` pins a specific theorem / proposition / corollary / lemma.** At least one M8 attempt per such surface — either a finding, or a session-log note saying the trace is clean. M0 catches typos; M3 attacks the claim from outside; M8 rejects the proof from the inside.
+
+Skip for surfaces typed `framing` / `identification` / `robustness` / `exposition` — M8 needs explicit algebra to trace.
+
+Negative-Lagrange test is mandatory on every optimisation paper: for every stated solution including limits, verify the multiplier on each binding inequality constraint is `≥ 0`.
+
 ## Output
 
 Single JSON file to `{{output_path}}`:
@@ -63,7 +75,7 @@ Single JSON file to `{{output_path}}`:
     {
       "id": "ne_<family>_001",
       "category": "proof | empirics | identification | framing | robustness | interpretation | notation | other",
-      "method": "m3 | m4 | m6",
+      "method": "m3 | m4 | m6 | m8",
       "attack_surface_id": "AS1",
       "claim": "one-sentence falsifiable statement",
       "evidence": [
@@ -77,6 +89,7 @@ Single JSON file to `{{output_path}}`:
       "m3_transform": "negate | strengthen | weaken | substitute | reverse | consequence | boundary | analogy",
       "m4_counterexample": "concrete counterexample OR hidden lemma required — null if method != m4",
       "m6_cofactors": ["list of unaddressed co-factors"],
+      "m8_derivation_trace": "the specific proof step that breaks, written in the paper's notation: paper's step on one line, corrected step on the next. Max ~10 lines. Null if method != m8.",
       "falsifier": "what would withdraw this",
       "impact": "material | local | nit",
       "confidence": "high | medium | low",
@@ -87,11 +100,11 @@ Single JSON file to `{{output_path}}`:
 }
 ```
 
-Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` is populated per finding, per the `method` field.
+Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` / `m8_derivation_trace` is populated per finding, per the `method` field.
 
 ## Quality bar
 
-- 3–8 findings total for this track. Depth over count. A single well-constructed counterexample is worth five weak transform observations.
+- **Minimum 6 findings per ticket, target 6–12.** Depth over count — a single well-constructed counterexample is worth five weak transform observations — but the prior "3–8" floor was too low and consistently produced 4. Five attack surfaces × at least one method per surface should comfortably yield 6+ findings. Orchestrator rejects output with fewer than 6 issues and re-runs the ticket once.
 - Every finding must trace to a specific proposition (not a vague "the paper's approach"). The target proposition's label (Theorem 1, Corollary OA3, Proposition 4) appears in the `claim` or `evidence.location`.
 - M3 transform findings should name which transform applies in the `m3_transform` field. "Weaken" findings that just restate the assumption are noise; prefer weakenings that break the proof.
 

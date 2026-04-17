@@ -166,7 +166,7 @@ Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5
 |---|---|---|
 | `holistic_candidates` | `templates/discover_holistic.md` (method-neutral; uses paper spine + attack surfaces + likely referee questions) | conceptual-scope concerns the method tracks under-detect |
 | `broad_critic` | `templates/discover_broad.md` (fuses M0 close-reading + M2 contradictions + M5 self-measured) | scan for contradictions, scope mismatches, commitment violations, framing overclaims, transcription errors |
-| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets |
+| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling + M8 algebraic derivation trace, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets; M8 mandatory on every theory/proof surface; minimum 6 findings per ticket (orchestrator rejects-and-retries once on underproduction) |
 
 Sample ticket:
 
@@ -197,6 +197,8 @@ Nine tickets total:
 All nine run in parallel (depends_on references the per-family holistic ticket, which finished in Wave 1.5).
 
 **Evidence compiler inline.** Every candidate finding produced by any ticket passes through a compiler step BEFORE it is written to the discovery JSON. The compiler extracts the verbatim quote, pins the location, and decides whether support is `direct_quote` or `derived_inference`. Findings that cannot produce either are dropped at write time, not at merge time. This enforces the verbatim-quote discipline pre-emptively.
+
+**Narrow-evidence yield floor.** After each `discover_*_narrow_evidence` ticket completes, the orchestrator checks `len(issues)`. If fewer than **6 issues**, the ticket is **rejected and re-run once** with the same prompt. Re-runs append `_retry1` to the session log archive name so the failure-then-retry trace is preserved. A second underproduction is logged as a model failure in `_artifacts/sessions/narrow_evidence_underproduction.log` (one line per family) and the run continues with whatever the second attempt returned — no third try. This rule applies only to the `narrow_evidence` track; `broad_critic` and `holistic_candidates` have no minimum-yield requirement. Rationale: the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit 4 findings per family under the prior "3–8" quality bar. Two algebra findings coarse.ink caught lived in surfaces narrow_evidence selected but did not deeply engage. Floor-plus-retry is the cheapest structural fix.
 
 Each ticket's JSON output is `{"issues": [...]}` where each issue carries `category`, `evidence[]` (each entry with `quote`, `location`, `why`, `support_type`), `falsifier`, and optional `paper_commitment` / `paper_commitment_location` for self-measured critiques.
 
@@ -341,32 +343,77 @@ For every row in `_artifacts/json/panel_rows_candidates.json` (produced by merge
 Output: `_calibration/annotations/<BF_id>.json` per row. The aggregator (Claude inline) applies disposition rules:
 
 - `quote_verified: no` OR `calibration: unsupported` → drop immediately; write to `_calibration/dropped_pass1.json` with reason; no debate, no further processing
-- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite ticket (gemini-3.1-pro-preview, per `templates/polish.md`) to narrow the claim; re-annotate once; if still failing → drop or demote one tier; if passing → mark as `calibrated_narrowed` and carry to gate evaluation
+- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite ticket (gemini-3.1-pro-preview, per `templates/polish.md`) to narrow the claim. Re-annotate with the **upgraded re-annotator** (codex `gpt-5.4` full, NOT gpt-5.4-mini — breaks correlated-error blind spots between the two mini reads; full rationale in `templates/calibrate.md` "Upgraded re-annotator"). Disposition:
+  - **Clean pass** (unqualified `supported` + `quote: yes`, no uncertainty triggers) → `calibrated_narrowed`, keep severity, carry to gate
+  - **Uncertain pass** (any of the 4 triggers in `templates/calibrate.md`: qualified verdict, hedging language, indirect support, internal rubric disagreement) → `calibrated_narrowed` AND demote severity one tier, carry to gate
+  - **Still failing** (`overclaimed`, `partial`, `unsupported`, or `quote: no`) → drop, no further rewrites
 - `calibration: supported` → carry to gate evaluation unchanged
 
 Write `_calibration/post_pass1_panel_rows.json` with the surviving set + `calibration_pass1` field populated on each row.
 
-#### Wave 5b — Four-way gate evaluation (inline, no tickets)
+#### Wave 5b — Two-route gate evaluation (inline, no tickets)
 
-The orchestrator applies the four-way escalation gate (spec in `SKILL.md` → Explicit rules) to every row in `_calibration/post_pass1_panel_rows.json`. Pseudocode:
+The orchestrator applies the two-route escalation gate (spec in `SKILL.md` → Explicit rules) to every row in `_calibration/post_pass1_panel_rows.json`. Pseudocode:
 
 ```python
+REQUIRED_SEVERITIES = {"material", "local"}
+REQUIRED_CAL_VERDICTS = {"supported", "calibrated_narrowed"}
+
+
+def user_visible(row):
+    cal1 = row.get("calibration_pass1", {})
+    if cal1.get("verdict") not in REQUIRED_CAL_VERDICTS:
+        return False, f"calibration_pass1_verdict_not_user_visible:{cal1.get('verdict')}"
+    if row.get("severity") not in REQUIRED_SEVERITIES:
+        return False, f"severity_not_user_visible:{row.get('severity')}"
+    return True, None
+
+
 def should_escalate(row):
-    hint = row["debate_hint"]
-    cal1 = row["calibration_pass1"]
-    return (
-        hint["cross_family_disagreement"] == "strong"
-        and hint["evidence_conflict_in_paper"] == "yes"
-        and hint["severity_sensitive"] is True
-        and cal1["verdict"] in ("supported", "calibrated_narrowed")
-        and row["severity"] in ("material", "local")
-    )
+    """Return (escalate, route, reason). Route A takes precedence if both match."""
+    hint = row.get("debate_hint", {})
+
+    # Route A — disagreement
+    if hint.get("cross_family_disagreement") != "strong":
+        route_a_failure = "cross_family_disagreement_not_strong"
+    elif hint.get("evidence_conflict_in_paper") != "yes":
+        route_a_failure = "no_evidence_conflict_in_paper"
+    elif not hint.get("severity_sensitive"):
+        route_a_failure = "severity_not_sensitive_to_verdict"
+    else:
+        ok4, why4 = user_visible(row)
+        route_a_failure = None if ok4 else why4
+
+    if route_a_failure is None:
+        return True, "disagreement", "all_conditions_met"
+
+    # Route B — consensus override
+    if hint.get("high_severity_consensus") is True:
+        ok4, why4 = user_visible(row)
+        if ok4:
+            return True, "consensus", "high_severity_consensus_override"
+        return False, "none", why4
+
+    return False, "none", route_a_failure
+
 
 rows = json.load(open("_calibration/post_pass1_panel_rows.json"))
-to_debate = [r for r in rows if should_escalate(r)]
-to_panel  = [r for r in rows if not should_escalate(r)]
+to_debate, to_panel = [], []
+for r in rows:
+    ok, route, reason = should_escalate(r)
+    r["gate_decision"] = {"escalated": ok, "route": route, "reason": reason}
+    (to_debate if ok else to_panel).append(r)
 
-json.dump({"debate": to_debate, "direct_to_panel": to_panel},
+summary = {
+    "n_in": len(rows),
+    "n_debate": len(to_debate),
+    "n_panel": len(to_panel),
+    "by_route": {
+        "disagreement": sum(1 for r in to_debate if r["gate_decision"]["route"] == "disagreement"),
+        "consensus":    sum(1 for r in to_debate if r["gate_decision"]["route"] == "consensus"),
+    },
+}
+json.dump({"debate": to_debate, "direct_to_panel": to_panel, "summary": summary},
           open("_artifacts/json/gate_decision.json", "w"))
 ```
 
@@ -374,9 +421,21 @@ If `len(to_debate) == 0`, Wave 5c is skipped entirely. Rows in `to_panel` procee
 
 #### Wave 5c — Debate round 1 on gate-clearers (only)
 
-For each row in `gate_decision.json#debate`, emit the three-ticket prosecute/defend/synthesize triple. Role rotation for Round 1: claude prosecutes, codex defends, gemini synthesizes. Ticket shape unchanged from v5 (see example below). Rounds 2+ emitted post-synthesis if the verdict is `split` or `escalate` AND `N < --max-debate-rounds`; default cap is 2 rounds.
+Ticket structure **differs by route**:
 
-After every synthesis, the finding's row is updated with the `debate` field (triggered, reason, verdict, what_survived, history). Rows with `verdict: defense_wins` are appended to `_calibration/dropped_by_defense.json` with the defender's counter-evidence; they do NOT re-enter calibration. Rows with `verdict: prosecution_wins` or `split` or `escalate` flow into Wave 5d.
+- **Route A (disagreement)** rows: emit the standard three-ticket triple `prosecute → defend → synthesize`. Role rotation for Round 1: claude prosecutes, codex defends, gemini synthesizes. Defender runs its normal "senior author" posture. Synthesizer uses Route A verdicts: `prosecution_wins | defense_wins | split | escalate`.
+
+- **Route B (consensus)** rows: emit TWO tickets only — `defend → synthesize`. No prosecute. The finding's `claim_under_challenge` block (emitted by merge) is the pinned target the defender reads. Defender runs consensus red-team mode (see `templates/defend.md`). Synthesizer uses Route B verdicts: `consensus_held | consensus_broken`. Role assignment for Route B: codex defends (red-team), gemini synthesizes.
+
+Rounds 2+ emitted post-synthesis if the Route A verdict is `split` or `escalate` AND `N < --max-debate-rounds`; default cap is 2 rounds. Route B has **no round 2** — the red-team challenge is terminal by construction. Either the consensus held or it broke; there is no partial state to iterate.
+
+After every synthesis, the finding's row is updated with the `debate` field (triggered, route, reason, verdict, what_survived, history).
+
+Row disposition by verdict:
+- Route A `prosecution_wins`, `split`, `escalate` → flow into Wave 5d (Pass 2 on `surviving_text`)
+- Route A `defense_wins` → appended to `_calibration/dropped_by_defense.json` with defender's counter-evidence as drop reason; does NOT re-enter calibration
+- Route B `consensus_held` → flow into Wave 5d (the consensus held up under challenge; re-annotate its `surviving_text` if the synthesizer produced one, otherwise keep the original row)
+- Route B `consensus_broken` → appended to `_calibration/dropped_by_red_team.json` with defender's shared-hallucination analysis as drop reason; does NOT re-enter calibration
 
 #### Wave 5d — Calibration pass 2 (debate survivors)
 
@@ -443,77 +502,27 @@ For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
 
 Within a single issue's debate, the tickets are strictly sequential. Across issues, they are parallel (bounded by agent-ctl's `--concurrent` cap).
 
-### Four-way gate helper (machine-checkable)
+### Gate helper canonical location
 
-Executable form of the gate for orchestrator use. Save as a scratch script or embed in the orchestrator's Wave 5b step:
-
-```python
-import json, sys
-from pathlib import Path
-
-REQUIRED_SEVERITIES = {"material", "local"}
-REQUIRED_CAL_VERDICTS = {"supported", "calibrated_narrowed"}
-
-def should_escalate(row: dict) -> tuple[bool, str]:
-    """Return (escalate?, reason). reason names the first failing condition or 'all_conditions_met'."""
-    hint = row.get("debate_hint", {})
-    cal1 = row.get("calibration_pass1", {})
-    severity = row.get("severity")
-
-    # Condition 1 — cross-family disagreement real
-    if hint.get("cross_family_disagreement") != "strong":
-        return False, "cross_family_disagreement_not_strong"
-
-    # Condition 2 — evidence conflict in paper
-    if hint.get("evidence_conflict_in_paper") != "yes":
-        return False, "no_evidence_conflict_in_paper"
-
-    # Condition 3 — severity sensitive
-    if not hint.get("severity_sensitive"):
-        return False, "severity_not_sensitive_to_verdict"
-
-    # Condition 4 — finding would otherwise be user-visible
-    # (operationalised as: calibration didn't drop it AND severity is material/local)
-    if cal1.get("verdict") not in REQUIRED_CAL_VERDICTS:
-        return False, f"calibration_pass1_verdict_not_user_visible:{cal1.get('verdict')}"
-    if severity not in REQUIRED_SEVERITIES:
-        return False, f"severity_not_user_visible:{severity}"
-
-    return True, "all_conditions_met"
-
-
-def decide(post_pass1_path: Path, out_path: Path) -> dict:
-    rows = json.loads(post_pass1_path.read_text())
-    to_debate, to_panel = [], []
-    for r in rows:
-        ok, reason = should_escalate(r)
-        r["gate_decision"] = {"escalated": ok, "reason": reason}
-        (to_debate if ok else to_panel).append(r)
-
-    decision = {"debate": to_debate, "direct_to_panel": to_panel,
-                "summary": {"n_in": len(rows), "n_debate": len(to_debate), "n_panel": len(to_panel)}}
-    out_path.write_text(json.dumps(decision, indent=2))
-    return decision
-
-
-if __name__ == "__main__":
-    paper_dir = Path(sys.argv[1])
-    decide(
-        paper_dir / "_calibration/post_pass1_panel_rows.json",
-        paper_dir / "_artifacts/json/gate_decision.json",
-    )
-```
-
-Orchestrator runs this as the Wave 5b step and reads `gate_decision.json` to emit Wave 5c debate tickets (or skip to Wave 6 if `n_debate == 0`). The helper is deterministic — every reason is logged per row so the gate's behaviour is auditable.
+The single source of truth for the gate helper is the pseudocode in the **Wave 5b** section above (`should_escalate(row) -> (escalate, route, reason)` with Route A and Route B, and the `decide()` wrapper writing `gate_decision.json` with per-row `gate_decision` + a `by_route` summary). Previous editions of this file carried a duplicate four-way-only helper here; it has been removed to avoid schema split. If you need a standalone script, copy the Wave 5b snippet into a scratch file — do not maintain a second copy.
 
 ### Wave 6+ — Subsequent rounds (emitted after each synthesize completes)
 
 After a `debate_<issue>_r<N>_synthesize` ticket completes, Claude reads the synthesis output. The `verdict` field decides whether round N+1 is funded:
 
-- `verdict: "prosecution_wins"` → **terminal**. No round N+1. Issue ships to the report as a material concern with the synthesizer's `surviving_text`.
-- `verdict: "defense_wins"` → **terminal**. No round N+1. Issue is dropped from the report (recorded in the debate trace, not in the referee letter).
-- `verdict: "split"` and `N < max_rounds` → emit round N+1 tickets for the issue, prosecuting the **surviving** (narrower) claim from `surviving_text`, not the original. Roles rotate per the table below.
+**Route A verdicts:**
+
+- `verdict: "prosecution_wins"` → **terminal**. No round N+1. Issue ships to the panel with the synthesizer's `surviving_text`.
+- `verdict: "defense_wins"` → **terminal**. No round N+1. Issue dropped (recorded in debate trace + `dropped_by_defense.json`).
+- `verdict: "split"` and `N < max_rounds` → emit round N+1 tickets, prosecuting the **surviving** (narrower) claim from `surviving_text`, not the original. Roles rotate.
 - `verdict: "escalate"` and `N < max_rounds` → emit round N+1 tickets focused on the verifiable point named in `next_round_focus`. Roles rotate. Also flag for human review (record in `_artifacts/json/escalations.json`).
+
+**Route B verdicts (terminal in one round by construction):**
+
+- `verdict: "consensus_held"` → **terminal**. Issue ships to the panel with a "consensus survived red-team" badge. Synthesizer's `surviving_text`, if present, overrides the original claim text; otherwise keep the original `claim_under_challenge.claim`.
+- `verdict: "consensus_broken"` → **terminal**. Issue dropped (recorded in debate trace + `dropped_by_red_team.json` with the defender's shared-hallucination analysis as drop reason).
+
+Route B does not iterate. The red-team challenge is one-shot by design — the defender either finds evidence of shared misreading in round 1 or does not. A "split" outcome on Route B is not meaningful (who would split *against* three-family consensus plus evidence?). If the synthesizer cannot decide, it emits `consensus_held` conservatively — the onus is on the red-team to prove shared hallucination, not on the synthesizer to prove genuine flaw.
 
 **There is no `converged` verdict.** It was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
 

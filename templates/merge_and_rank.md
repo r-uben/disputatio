@@ -177,25 +177,44 @@ Maximum score: 3 + 6 + 3 + 3 = 15.
 
 ### Step 3b: Debate-eligibility flag (v6 — replaces v5 status routing)
 
-In v5 every surviving merged issue got a `status ∈ {settled, debate}` that determined whether it entered Phase 4. v6 **removes that status field** and replaces it with the four-way escalation gate in `SKILL.md` Phase 4, which is computed separately over the full panel-row set (including baseline-unique findings from Step 2c).
+In v5 every surviving merged issue got a `status ∈ {settled, debate}` that determined whether it entered Phase 4. v6 **removes that status field** and replaces it with a two-route escalation gate in `SKILL.md` Phase 4 (Route A: disagreement; Route B: consensus override), computed separately over the full panel-row set (including baseline-unique findings from Step 2c).
 
-Merge output therefore does NOT assign settled/debate. Instead it produces a `debate_hint` field on each merged issue summarising whether it is an escalation *candidate* by the three gate conditions merge can evaluate at this stage:
+Merge output therefore does NOT assign settled/debate. Instead it produces a `debate_hint` field on each merged issue summarising whether it is an escalation *candidate*:
 
 ```json
 "debate_hint": {
   "cross_family_disagreement": "strong | moderate | none",  // Derived from sources: conflicting/missing flags
   "evidence_conflict_in_paper": "yes | no | unknown",        // Does the paper's own text cut both ways?
-  "severity_sensitive": true | false                          // Would severity change if the claim survives scrutiny?
+  "severity_sensitive": true | false,                         // Would severity change if the claim survives scrutiny?
+  "high_severity_consensus": true | false                     // Material severity AND all three families flagged it
 }
 ```
+
+**`high_severity_consensus` trigger** (explicit family-set check, NOT dependent on the `cross_agent_support` rank-score field): `severity == "material"` AND the set of distinct families across `sources[]` equals `{"anthropic", "openai", "google"}`. The trigger fires on raw family membership, not on a saturation heuristic, so it can't mis-fire when one family contributes from two tracks and another family is missing.
+
+**Claim-under-challenge artifact.** Whenever `high_severity_consensus == true`, merge ALSO emits a `claim_under_challenge` block on the same row — this is the pinned target the defender will red-team on Route B. Without it, the defender can win by attacking a distorted or narrower version of the consensus:
+
+```json
+"claim_under_challenge": {
+  "claim": "one-sentence exact statement all three families agreed on (take the narrowest wording that still captures the shared concern — do NOT summarise loosely)",
+  "cited_evidence": [
+    "verbatim passage from family A's evidence[]",
+    "verbatim passage from family B's evidence[]",
+    "verbatim passage from family C's evidence[]"
+  ],
+  "failure_condition": "one-sentence statement of what part of the paper the three families believe this breaks — be concrete (e.g. 'the stated hypotheses of Theorem 1 are insufficient for the proof')"
+}
+```
+
+Rows where `high_severity_consensus == false` omit `claim_under_challenge` entirely.
 
 The fourth gate condition (finding would otherwise be user-visible) is evaluated in Phase 4 after calibration and so is not in merge's purview.
 
 Phase 4 reads `debate_hint` plus fresh calibration verdicts and decides which findings escalate. Debate selection is **not** merge's decision; merge only surfaces the evidence for the decision.
 
-**Why this changed.** v5's two-tier routing (settled → report unchallenged, debate → dialectic) was semantically clean but created exactly the schema-split problem v6 is trying to eliminate. Two routing theories (status-based vs four-way-gate) in adjacent files produced silent wrong execution risks. v6 makes the four-way gate the single authority for debate routing and treats merge's output as neutral.
+**Why this changed.** v5's two-tier routing (settled → report unchallenged, debate → dialectic) was semantically clean but created exactly the schema-split problem v6 is trying to eliminate. Two routing theories (status-based vs two-route gate) in adjacent files produced silent wrong execution risks. v6 makes the two-route gate the single authority for debate routing and treats merge's output as neutral.
 
-If the paper produces zero findings that trigger the four-way gate in Phase 4, debate is skipped entirely. That is the correct outcome on consensus-heavy papers.
+If the paper produces zero findings that trigger either route in Phase 4, debate is skipped entirely. That is the correct outcome on consensus-heavy papers — but note that Route B specifically catches the sub-case where three families agree on a material concern AND the concern could be a shared hallucination; those rows DO debate even though `cross_family_disagreement` is `none`.
 
 ### Step 4: Produce the ranked list
 
@@ -221,8 +240,10 @@ Output a single file `_artifacts/json/ranked_issues.json` containing all merged 
       "debate_hint": {
         "cross_family_disagreement": "strong | moderate | none",
         "evidence_conflict_in_paper": "yes | no | unknown",
-        "severity_sensitive": true
+        "severity_sensitive": true,
+        "high_severity_consensus": false
       },
+      "claim_under_challenge": null,
       "sources": [
         {"agent": "claude", "method": "m5", "issue_id": "m5_issue_002"},
         {"agent": "codex", "method": "m3", "issue_id": "m3_issue_001"}

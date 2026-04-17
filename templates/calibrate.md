@@ -21,7 +21,11 @@ v5 ran calibration after debate on the top-N by rank_score, then shipped a refer
 Disposition after Pass 1:
 
 - `quote_verified: no` OR `calibration: unsupported` → drop. Written to `_calibration/dropped_pass1.json` with reason. Does NOT enter the four-way gate or debate.
-- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite via `templates/polish.md`; re-annotate once; if still failing → drop or demote one tier; if passing → mark `calibration_pass1.verdict: calibrated_narrowed`.
+- `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite via `templates/polish.md`; re-annotate once **with an upgraded annotator** (codex gpt-5.4 non-mini, fallback sonnet) — NOT the same gpt-5.4-mini that ran Pass 1, to break correlated-error blind spots between the two mini reads. Then:
+  - **Clean pass** (upgraded re-annotator returns unqualified `supported` + `quote: yes`, no hedging triggers — see below) → mark `calibration_pass1.verdict: calibrated_narrowed`, keep severity.
+  - **Uncertain pass** (any one of the four triggers below fires) → mark `calibrated_narrowed` AND demote severity one tier (material → local, local → nit). Demote is the conservative fallback when the stronger re-annotator can't cleanly vouch for the narrowed claim.
+  - **Still failing** (verdict `overclaimed`, `partial`, or `unsupported`; or `quote: no`) → drop. No further rewrites.
+  - **Uncertainty triggers** (any one → demote, don't keep): (i) re-annotator does NOT return unqualified `supported`; (ii) justification contains hedging language (`ambiguous`, `unclear`, `partially`, `depends`, `borderline`, `missing`, `inferential`, `not explicit`); (iii) cited support is indirect rather than sentence-level/text-grounded; (iv) structured rubric fields disagree internally (e.g., weak quote evidence but verdict `supported`).
 - `calibration: supported` + `quote_verified: yes` → mark `calibration_pass1.verdict: supported`.
 
 Pass 1 survivors (supported or calibrated_narrowed) flow into Wave 5b gate evaluation.
@@ -82,10 +86,25 @@ After each annotation is written, the orchestrator disposes of the finding accor
 | Annotator output | Action on the finding |
 |---|---|
 | `quote_verified: no` + `calibration: unsupported` | **Drop** from report. Record in `_calibration/dropped.json` with annotator notes. |
-| `quote_verified: partial` | **Attempt one rewrite** with the polish pass (see below) against the real passage the annotator names. Re-annotate the rewrite once. If second annotation still partial or worse, drop. |
+| `quote_verified: partial` | **Attempt one rewrite** with the polish pass (see below) against the real passage the annotator names. Re-annotate the rewrite with an **upgraded annotator** (see "Upgraded re-annotator" below). If clean pass → mark `calibrated_narrowed`, keep severity. If uncertain pass (any of the four triggers below) → `calibrated_narrowed` AND demote one tier (material → local, local → nit). If still partial or worse → **drop**. |
 | `calibration: unsupported` (with verified quote) | **Drop**. The claim doesn't follow from the quote, and no polish rewrite can fix that. |
-| `calibration: overclaimed` | **Attempt one rewrite** that narrows the claim per the annotator's `notes`. Re-annotate the rewrite once. If still overclaimed → **demote one tier** (material → local, local → appendix, appendix → drop). No more rewrites. |
+| `calibration: overclaimed` | **Attempt one rewrite** that narrows the claim per the annotator's `notes`. Re-annotate with the **upgraded annotator**. If clean pass → `calibrated_narrowed`, keep severity. If uncertain pass → `calibrated_narrowed` AND demote one tier (material → local, local → nit). If still overclaimed → **drop** (no further rewrites, no second demotion). |
 | `calibration: supported` + `quote_verified: yes` | Pass through unchanged. |
+
+### Upgraded re-annotator (added 2026-04-15 after A/B evidence of correlated-error)
+
+The first-pass annotator is gpt-5.4-mini (volume model, ~38 rows per run, cheap, rubric-bounded). The polish rewrite fires on a small subset (~8 rows per run). On those ~8 rows ONLY, the re-annotator upgrades to **codex `gpt-5.4`** (full, not mini; fallback sonnet). Cost delta ~$1-2 per run — trivial. Rationale: two gpt-5.4-mini calls on the same rubric share blind spots; the A/B against coarse.ink found 7 of 28 shipped findings still read as overclaimed to a fresh judge, all of them rows where mini-then-mini re-annotation said supported. A stronger model on the re-annotation attacks the correlated-error root cause instead of papering over it with automatic demotion.
+
+### Uncertainty triggers — hard spec, not vibes
+
+Even a stronger re-annotator can return a technically-passing verdict that's actually hedged. Fall back to demote (not drop, not keep-original-tier) when ANY of these hold:
+
+1. The upgraded re-annotator does not return an **unqualified** `supported` + `quote: yes`. A verdict like `supported` with `quote: partial`, or `supported` attached to a two-sentence "this is mostly right but..." note, counts as qualified.
+2. The `notes` field contains hedging language: `ambiguous`, `unclear`, `partially`, `depends`, `borderline`, `missing`, `inferential`, `not explicit`. String match is sufficient — we don't parse meaning.
+3. The cited support is indirect rather than sentence-level/text-grounded — i.e., the annotator points at "the overall framing of Section 3" rather than a specific passage.
+4. Structured rubric fields disagree internally — e.g., `quote_verified: partial` with `calibration: supported`, or `quote_verified: yes` but the `notes` describe the quote as truncated.
+
+Any one trigger fires the demote fallback. All four must be absent for the row to keep its original tier.
 
 *Demote-on-doubt* applies to edge cases — if the annotator's notes contain hedging language ("arguably", "could be read as", "depends on interpretation") on an `overclaimed` judgement, the orchestrator treats it as overclaimed anyway and runs the rewrite. The bias is toward a tighter report with fewer concerns.
 
@@ -165,8 +184,8 @@ After all annotations and any rewrites complete:
 
 ```json
 {
-  "kept": [{"true_id": "merged_002", "tier": "settled", "claim": "...", "quote": "...", ...}],
-  "demoted": [{"true_id": "merged_027", "old_tier": "material", "new_tier": "local", "reason": "calibration overclaimed, rewrite retained overclaim on re-annotation"}],
+  "kept": [{"true_id": "merged_002", "severity": "material", "calibration_verdict": "supported", "claim": "...", "quote": "...", ...}],
+  "demoted": [{"true_id": "merged_027", "old_severity": "material", "new_severity": "local", "reason": "overclaimed → polish → re-annotation passed but uncertainty trigger (hedging language 'partially' in notes); auto-demoted one tier"}],
   "dropped": [{"true_id": "merged_019", "reason": "aggregated sub_findings failed verbatim check"}],
   "summary": {
     "entered_calibration": 16,

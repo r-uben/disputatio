@@ -39,7 +39,7 @@ v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised 
 |---|---|---|
 | **Holistic** (3 tickets, one per family) | Produces a paper spine, main claims, attack surfaces, and likely referee questions. This is where conceptual-scope concerns surface — the kind of concern a single-shot model catches by reading the paper as one object. | `templates/holistic.md` |
 | **Broad critic** (3 tickets, one per family) | Scans for contradictions, scope mismatches, commitment violations, and framing overclaims. This is the workhorse candidate generator. | `templates/methods/m2_contradiction.md`, `m5_immanent.md` |
-| **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction and transformation-based stress tests against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md` |
+| **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction, transformation-based stress tests, and step-by-step algebraic derivation traces against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. M8 (derivation trace) is mandatory on every selected theory/proof surface — it closes the algebra-checking gap surfaced in the 2026-04-15 A/B vs coarse.ink. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md`, `m8_derivation.md` |
 
 Method 0 (mechanical proofreading / close reading), previously a standalone sweep, is now absorbed into the broad critic track. Method 1 (structured disputation) is reserved for escalated debate rounds. Method 7 (iterative refinement) is the synthesis step within debate.
 
@@ -130,18 +130,31 @@ After discovery, Claude executes the merge and rank procedure described in `temp
 
 Debate is NOT the default path in v6. Most findings ship directly to calibration (Phase 5) and then into the panel without ever triggering a prosecution round. Debate fires only when **contested-finding escalation** is warranted.
 
-A finding escalates to debate iff ALL of the following hold:
+A finding escalates to debate via one of two routes.
+
+**Route A — Disagreement.** Escalate iff ALL four conditions hold:
 
 1. **Cross-family disagreement is real** — at least one family flagged the concern with high confidence and at least one family was silent or flagged low-confidence variants that conflict with the main claim.
 2. **Evidence exists on both sides** — the evidence compiler found both supporting quotes and countervailing passages; the verdict is not obvious from the evidence object alone.
 3. **Severity would change on verdict** — the outcome determines whether the finding is `material`, `local`, or dropped. A finding whose severity is already `nit` does not escalate regardless of disagreement.
-4. **The finding would otherwise be user-visible** — derived rule, not a stored field: `calibration_pass1.verdict in {supported, calibrated_narrowed}` AND `severity in {material, local}`. No point debating concerns Pass 1 already dropped or demoted to `nit`.
+4. **The finding would otherwise be user-visible** — derived rule, not a stored field: `calibration_pass1.verdict in {supported, calibrated_narrowed}` AND `severity in {material, local}`.
 
-All four conditions. If any is absent, the finding skips debate and proceeds to calibration with its evidence object intact. The v5 status-routing rule (`settled` vs `debate`) is subsumed by this four-way gate in v6.
+Route A fires the standard prosecute → defend → synthesize debate structure.
 
-**Canonical row shape**: `templates/schemas/panel_row.md` is the single source of truth for every field referenced above (`debate_hint`, `calibration_pass1`, `severity`, `gate_decision`, etc.).
+**Route B — Consensus override (added 2026-04-16).** Escalate iff `debate_hint.high_severity_consensus == true` AND Condition 4 above holds. Trigger: `severity == "material"` AND all three families (anthropic, openai, google) independently flagged the concern. This route catches the failure mode where three independent LLMs share the same misreading of a paper and the resulting agreement is mistaken for ground truth. Route B runs a **red-team challenge**, not a full debate:
 
-**Structure when debate does fire.** Prosecute → defend → synthesize, per `templates/prosecute.md` / `defend.md` / `synthesize.md`. Role rotation across rounds:
+- **Skipped**: prosecute step. The merged finding with its three-family `evidence[]` IS the prosecution; a separate prosecutor ticket would just paraphrase it.
+- **Fired**: defend (consensus red-team mode) + synthesize (consensus mode).
+- **Defender's target**: the `claim_under_challenge` block emitted by merge (`{claim, cited_evidence, failure_condition}`) pins the exact claim; the defender attacks that claim, not a paraphrase.
+- **Synthesizer's verdicts**: explicit Route B labels `consensus_held` / `consensus_broken`, NOT the Route A labels `prosecution_wins` / `defense_wins`. Polarity is different on Route B and reusing Route A labels regresses on every synthesizer call.
+
+A finding that matches both routes (rare — disagreement typically implies not-consensus) takes Route A.
+
+Whichever route fires, if zero rows clear either, debate is skipped entirely. That is the correct outcome on consensus-heavy papers *without* any three-family material concerns.
+
+**Canonical row shape**: `templates/schemas/panel_row.md` is the single source of truth for every field referenced above (`debate_hint`, `claim_under_challenge`, `calibration_pass1`, `severity`, `gate_decision`, `debate.verdict`, etc.).
+
+**Structure when Route A debate fires.** Prosecute → defend → synthesize, per `templates/prosecute.md` / `defend.md` / `synthesize.md`. Role rotation across rounds:
 
 | Round | Prosecutor | Defender | Synthesizer |
 |-------|-----------|----------|-------------|
@@ -168,11 +181,14 @@ Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on r
 
 **Rubric.** Same two axes (`quote_verified`, `calibration`) as `templates/evaluate.md`.
 
-**Demote-on-doubt disposition.** Overclaimed and partial-quote findings get one rewrite attempt (polish pass via gemini-3.1-pro-preview against the real passage). If re-annotation still fails the rubric: demote one tier (material → local, local → appendix, appendix → drop) or drop outright if unsupported. The bias is toward a tighter report; edge-case hedging in the annotator's notes counts as a demote trigger.
+**Demote-on-uncertainty disposition.** Overclaimed and partial-quote findings get one rewrite attempt (polish pass via gemini-3.1-pro-preview against the real passage). The re-annotation uses an **upgraded annotator** (codex `gpt-5.4` full, not mini) to break correlated-error blind spots between two mini reads on the same rubric — the 2026-04-15 A/B found 7 of 28 shipped findings still read as overclaimed to a fresh judge, all from polished rows where mini-then-mini said supported. Three-way disposition:
+- **Clean pass** (unqualified `supported` + `quote: yes`, no uncertainty triggers) → `calibrated_narrowed`, keep severity.
+- **Uncertain pass** (any of four triggers fire: qualified verdict, hedging language like `ambiguous`/`partially`/`inferential`/`not explicit`, indirect support, internal rubric disagreement) → `calibrated_narrowed` AND demote severity one tier (material → local, local → nit).
+- **Still failing** (verdict `overclaimed` / `partial` / `unsupported`, or `quote: no`) → drop. No further rewrites, no second demotion.
 
 **Outputs.** `_calibration/final_findings.json` — the calibrated set that feeds the final report (not `ranked_issues_verified.json`). Plus `_calibration/00_calibration.md` scorecard with pre/post overclaim rates.
 
-Default annotator: **codex with `gpt-5.4-mini`**. Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
+Default first-pass annotator: **codex with `gpt-5.4-mini`** (volume model, ~38 rows/run, rubric-bounded). Re-annotator after polish: **codex with `gpt-5.4`** full (fires on ~8 rows/run, ~$1-2 cost delta). Fallback: claude-sonnet-4.6 when codex is rate-limited and the paper exceeds haiku's context window. Full spec in `templates/calibrate.md`.
 
 ### Phase 6 — Panel + renderers (v6 replaces v5's "Final report")
 
@@ -393,10 +409,16 @@ MATCH current state → action:
 │ _calibration/tickets.json exists,   │ $A run-dag _calibration/tickets.json --concurrent 4. │
 │ calibrate tickets pending/running   │ Validate each annotation has two-axis verdict.       │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all calibrate tickets done,         │ Apply demote-on-doubt disposition rules inline. For  │
+│ all calibrate tickets done,         │ Apply demote-on-uncertainty disposition inline. For  │
 │ no _calibration/final_findings.json │ partial or overclaimed findings, emit one polish     │
-│                                     │ ticket to gemini-3.1-pro-preview, re-annotate. If    │
-│                                     │ still fails: drop or demote one tier. Write          │
+│                                     │ ticket to gemini-3.1-pro-preview, re-annotate with   │
+│                                     │ UPGRADED annotator (codex gpt-5.4 full, not mini).   │
+│                                     │ Three-way disposition: clean pass → calibrated_      │
+│                                     │ narrowed + keep severity; uncertain pass (any of 4   │
+│                                     │ triggers: qualified verdict, hedging language,       │
+│                                     │ indirect support, rubric internal disagreement) →    │
+│                                     │ calibrated_narrowed + demote one tier (material →    │
+│                                     │ local, local → nit); still failing → drop. Write     │
 │                                     │ _calibration/final_findings.json, dropped.json,      │
 │                                     │ demoted.json, 00_calibration.md scorecard.           │
 ├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
@@ -578,7 +600,7 @@ Not every task needs the strongest model. Use cheaper/faster models for mechanic
 | Task | Claude | Codex | Gemini |
 |------|--------|-------|--------|
 | Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Discovery (M0-M6) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery (M0-M6, M8) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
 | Rendering (JSON→md) | haiku | — | — |
 | Merge & Rank | **opus** | — | — |
 | Coarse-style baseline (Tier 2) | **opus** | — | — |
@@ -587,7 +609,8 @@ Not every task needs the strongest model. Use cheaper/faster models for mechanic
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
 | Synthesis | **opus** | — | — |
 | Verification (web) | — | — | gemini-3.1-pro-preview |
-| **Phase 4 calibration annotator** | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| **Phase 5 calibration first-pass annotator** (all rows) | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| **Phase 5 calibration re-annotator after polish** (polished rows only, ~8/run) | sonnet (fallback) | **gpt-5.4** (full, not mini) | — |
 | **Phase 5.5 editorial polish** | — | — | **gemini-3.1-pro-preview** |
 | Final report compilation | **opus** | — | — |
 
@@ -615,18 +638,40 @@ Every review lives inside a single folder in the Obsidian vault. Curated markdow
 
 Three orchestration decisions were previously left to orchestrator improvisation. They are now specified here to eliminate runtime ambiguity.
 
-### Four-way escalation gate (Phase 4 entry)
+### Two-route escalation gate (Phase 4 entry)
 
-A finding enters debate iff ALL four conditions hold, evaluated at the start of Phase 4 over every candidate panel row from merge:
+A finding enters debate via one of two routes. Both evaluate at the start of Phase 4 over every candidate panel row from merge.
+
+#### Route A — Disagreement
+
+Escalate iff ALL four conditions hold:
 
 1. **Cross-family disagreement is real.** Operationally: at least one family's discovery ticket flagged the concern with `confidence: high`, AND at least one other family either (a) did not surface the concern at all, or (b) surfaced a variant with `confidence: medium` or `low` whose claim conflicts with the high-confidence version. Encoded in `merge.debate_hint.cross_family_disagreement`: `strong` (condition met), `moderate` (one family flagged high, others silent without conflicting variant — does NOT satisfy the condition by itself), `none` (all families agree or all ignore).
 2. **Evidence exists on both sides.** Operationally: the paper's text supports BOTH the finding's claim AND a plausible counter-claim. Encoded in `merge.debate_hint.evidence_conflict_in_paper`: `yes` if the paper contains passages that could be cited by either side; `no` if the paper's text uniformly supports one side. The evidence compiler's `support_type` tags inform this.
 3. **Severity would change on verdict.** Operationally: if the finding's severity is `nit`, the condition is FALSE regardless. If severity is `local` or `material`, ask whether a `defense_wins` verdict would drop the finding entirely vs narrow it. Drops qualify; narrowings do not (since calibration can narrow without debate). Encoded in `merge.debate_hint.severity_sensitive`.
 4. **Finding would otherwise be user-visible.** Derived rule, not a stored field: `calibration_pass1.verdict in {supported, calibrated_narrowed}` AND `severity in {material, local}`. If calibration Pass 1 dropped the finding as `unsupported` or demoted it to `nit`, debate is wasted compute. Evaluated on the Pass 1 verdict (not on the post-debate `calibration` verdict, which Pass 2 may overwrite) — Phase 4 therefore fires AFTER Phase 5 Pass 1, not before. See flow below.
 
-**Revised v6 flow**: merge (Phase 3) → calibration first pass on all candidates (Phase 5a) → four-way gate applied to calibration survivors (Phase 4 trigger evaluation) → debate fires on gate-clearers (Phase 4) → calibration second pass on debate survivors to capture `surviving_text` (Phase 5b) → panel render (Phase 6). Templates keep their current names; the phases are conceptually interleaved.
+Route A structure: **prosecute → defend → synthesize**. Verdicts: `prosecution_wins | defense_wins | split | escalate`. Polarity: `prosecution_wins` ships the concern to the panel; `defense_wins` drops the concern.
 
-If zero findings clear the gate, debate is skipped. That is the correct outcome on consensus-heavy papers.
+#### Route B — Consensus override
+
+Escalate iff BOTH hold:
+
+- **`debate_hint.high_severity_consensus == true`** — set by merge when `severity == "material"` AND the distinct-families set across `sources[]` equals `{"anthropic", "openai", "google"}` (explicit family-set check; NOT a threshold on the `cross_agent_support` rank-score field, which can saturate spuriously).
+- **Condition 4 above holds** (calibration Pass 1 verdict user-visible AND severity material/local).
+
+Route B exists because three independent LLMs agreeing on a material concern produces `cross_family_disagreement == "none"` and closes Route A — but that agreement is also exactly the regime where a shared hallucination can ship as ground truth.
+
+Route B structure: **defend + synthesize only**. No prosecute. The three-family `evidence[]` plus the `claim_under_challenge` block emitted by merge is the prosecution; a separate prosecutor call would just paraphrase it.
+
+- **Defender reads `claim_under_challenge`**, not a prosecutor output. The block pins the exact claim, the three cited evidence passages, and the failure condition. Defender plays red-team: prove the three families share a misreading.
+- **Synthesizer verdicts on Route B**: `consensus_held` (defender failed to break the consensus — ship the finding with a "consensus survived red-team" badge) or `consensus_broken` (defender proved shared misreading — drop the finding with the defender's counter-evidence as drop reason). Route A labels are NOT valid on Route B. Reusing `prosecution_wins` / `defense_wins` on Route B regresses the synthesizer because training priors treat `defense_wins` as "paper wins, ship concern" — the opposite of Route B's polarity.
+
+A finding matching both routes takes Route A. If it matches neither, it does not escalate.
+
+**Revised v6 flow**: merge (Phase 3) → calibration first pass on all candidates (Phase 5a) → two-route gate applied to calibration survivors (Phase 4 trigger evaluation) → debate fires on gate-clearers (Phase 4, Route A or Route B structure) → calibration second pass on debate survivors to capture `surviving_text` (Phase 5b) → panel render (Phase 6). Templates keep their current names; the phases are conceptually interleaved.
+
+If zero findings clear either route, debate is skipped. That is the correct outcome on consensus-heavy papers *without* three-family material concerns — the mere absence of disagreement no longer closes debate if Route B conditions hold.
 
 ### Category fallback
 
