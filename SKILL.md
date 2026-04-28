@@ -37,7 +37,7 @@ v6 cuts the v4/v5 method-heavy shape (18 tickets) to **nine tickets** organised 
 
 | Track | What it does | Templates used |
 |---|---|---|
-| **Holistic** (3 tickets, one per family) | Produces a paper spine, main claims, attack surfaces, and likely referee questions. This is where conceptual-scope concerns surface — the kind of concern a single-shot model catches by reading the paper as one object. | `templates/holistic.md` |
+| **Conceptual candidates** (3 tickets, one per family) — on-disk track key `holistic_candidates` | Generates candidate findings *from* each family's holistic pass (Phase 1). Surfaces conceptual-scope concerns — the kind of concern a single-shot model catches by reading the paper as one object. Note: this is the discovery *track*, not the Phase 1 holistic *pass*; the pass produces the paper spine, the track produces candidate findings against it. | `templates/discover_holistic.md` |
 | **Broad critic** (3 tickets, one per family) | Scans for contradictions, scope mismatches, commitment violations, and framing overclaims. This is the workhorse candidate generator. | `templates/methods/m2_contradiction.md`, `m5_immanent.md` |
 | **Narrow evidence-judgment** (3 tickets, one per family) | Runs counterexample construction, transformation-based stress tests, and step-by-step algebraic derivation traces against specific propositions in the paper spine. Produces deep, evidence-heavy findings on a small number of targets. M8 (derivation trace) is mandatory on every selected theory/proof surface — it closes the algebra-checking gap surfaced in the 2026-04-15 A/B vs coarse.ink. | `templates/methods/m3_transformation.md`, `m4_counterexample.md`, `m6_disentangling.md`, `m8_derivation.md` |
 
@@ -52,7 +52,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 **Execution model**:
 - Claude generates tickets in **waves**. Each wave depends on the outputs of the previous wave.
 - `agent-ctl run-dag <paper-folder>/_artifacts/tickets.json --concurrent 3` executes all ready tickets in parallel up to the concurrency cap, then exits when no more ready tickets remain.
-- Claude-typed tickets (`orient_claude`, `merge_rank`, `final_report`, wave-emission logic) are executed by Claude directly, not by agent-ctl.
+- Claude-typed tickets (`orient_claude`, `holistic_claude`, `discover_claude_*`, `baseline_review`, `merge_rank`, and wave-emission logic) are executed by Claude directly, not by agent-ctl.
 - After `run-dag` exits, Claude inspects the outputs, renders them as curated markdown into the numbered folders, generates the next wave of tickets, and calls `run-dag` again.
 
 **Automatic session archiving**: `agent-ctl run-dag` copies the session log (raw agent reasoning trace) into `<tickets_parent>/sessions/<ticket_id>.log` when a ticket finishes — both on success and on failure. The archive location is derived from the tickets.json parent directory, so for disputatio it lands in `<paper-folder>/_artifacts/sessions/`. Nothing is deleted; every reasoning trace is preserved forever.
@@ -65,7 +65,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 
 ## Protocol
 
-The review proceeds in seven phases (v6 adds a holistic pass up front and re-scopes debate to escalation-only). Each phase corresponds to one or more waves of tickets; see `templates/emit_tickets.md` for the ticket definitions.
+The review proceeds in **eight phases (Phase 0 through Phase 7)**. Phase 7 is optional (post-hoc A/B evaluation); the default run executes Phases 0–6. v6 adds a holistic pass up front (Phase 1) and re-scopes debate (Phase 4) to escalation-only. Each phase corresponds to one or more waves of tickets; see `templates/emit_tickets.md` for the ticket definitions.
 
 ### Phase 0 — Orientation (parallel, all agents)
 
@@ -93,11 +93,15 @@ Full spec in `templates/holistic.md`.
 
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
-Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time: `claim_scope_mismatch`, `proof_derivation_flaw`, `identification_empirical_design`, `robustness_missing_check`, `framing_literature_overreach`, or `notation_presentation_local`.
+Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):
+
+`proof | empirics | identification | framing | robustness | interpretation | notation | other`
+
+See **Category fallback** below for the `other` rule. Earlier draft labels (`claim_scope_mismatch`, `proof_derivation_flaw`, etc.) are deprecated — discovery agents must emit one of the eight canonical labels.
 
 | Track | Tickets | Input | Purpose |
 |---|---|---|---|
-| Holistic candidate generation | 3 (one per family) | paper map + own holistic pass + canonical attack-surface index | surface conceptual-scope concerns the method tracks under-detect |
+| Conceptual candidates (track key `holistic_candidates`) | 3 (one per family) | paper map + own holistic pass + canonical attack-surface index | surface conceptual-scope concerns the method tracks under-detect |
 | Broad critic | 3 (one per family) | paper map + attack-surface index | scan for contradictions, scope mismatches, commitment violations, framing overclaims; absorbs former M0 close-reading |
 | Narrow evidence-judgment | 3 (one per family) | paper map + attack-surface index + priority attack surfaces | counterexample construction, transformation stress tests, causal disentangling — deep, evidence-heavy findings on a small set of targets |
 
@@ -121,8 +125,8 @@ After discovery, Claude executes the merge and rank procedure described in `temp
    - **Evidence specificity** (0-3): quote + falsifier + reproduction steps
    - **Severity** (0-3): what happens if the finding is correct
    - **Score = centrality + 2·cross_agent_support + evidence_specificity + severity** (max 15)
-4. **Web verification**: Gemini fetches external evidence for issues marked `needs_web_verification: true`. Confirmed issues get +2 score; refuted issues get -3 and may be filtered out. See `templates/verify.md`.
-5. **Budget cut**: only the top N issues (default 8) enter the debate phase. Below-cutoff issues are preserved in the final report as "appendix concerns."
+4. **Panel-row emission**: every surviving merged issue becomes a panel-row candidate written to `panel_rows_candidates.json`. There is no top-N cut at merge — the rank score is metadata used by calibration ordering and (for `cross_agent_support`) by the consensus-route gate. Whether a finding ships, drops, or escalates to debate is decided downstream by calibration Pass 1 and the two-route gate, not by a budget cut here.
+5. **Web verification (Wave 4)**: Gemini fetches external evidence for rows whose row-level `needs_web_verification: true`. Verify writes `web_verification = {status: confirmed | refuted | inconclusive, impact_on_row: strengthen | weaken | unchanged, ...}` onto the row and emits `panel_rows_candidates_verified.json`. Verify does NOT alter `rank_score` and does NOT drop rows in v6 — it produces evidence that calibration Pass 1 reads (a `refuted` row biases the annotator toward `unsupported`, but the verdict is the annotator's). The v5 +2/−3 score-modification + budget-cut logic has been removed. See `templates/verify.md`.
 
 **Ranking priority**: cross-agent support is weighted double because it is the strongest signal. Five methods on one model are correlated; agreement across different architectures is much more meaningful.
 
@@ -173,7 +177,7 @@ Two rounds maximum by default (`--max-debate-rounds 2`); round 2 fires only if r
 
 Before the final report is compiled, every candidate finding that would enter it runs through a **blinded per-finding calibration pass**. This replaces the previous pipeline's post-hoc evaluation as the primary quality loop — post-hoc evaluation survives only as an A/B comparison tool (see Phase 6).
 
-Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on report-entering findings because strong-consensus "settled" findings skipped the debate stage — which had been doing an unacknowledged polish pass by softening overclaimed raw language into narrower synthesizer `refined_claim` text. Phase 4 restores that polish as a cheap single-model pass, without the theatre cost of full dialectic.
+Why this phase exists: the 2026-04-14 v4 run shipped a 56.2% overclaim rate on report-entering findings because strong-consensus "settled" findings skipped the debate stage — which had been doing an unacknowledged polish pass by softening overclaimed raw language into narrower synthesizer `surviving_text`. Phase 5 restores that polish as a cheap single-model pass, without the theatre cost of full dialectic.
 
 **Inputs.** All panel-row candidates from merge (Step 6 of `templates/merge_and_rank.md`), plus any updates to debated rows from Phase 4 (verdict, `surviving_text`). Findings killed by defense during Phase 4 do not enter calibration — they are written directly to `dropped_findings[]` with the defender's counter-evidence as the drop reason.
 
@@ -222,417 +226,277 @@ See `templates/evaluation.md` for the post-hoc protocol and `templates/evaluate.
 
 ## Workspace structure
 
-**The Obsidian folder IS the workspace.** There is no separate scratch area. Every review is a self-contained folder inside the Obsidian vault. Curated markdown (the human-facing review) lives in numbered top-level folders; raw machine artifacts (tickets, JSON outputs, prompts, session logs) live inside `_artifacts/`.
+**The Obsidian folder IS the workspace.** There is no separate scratch area. Every review is a self-contained folder inside the Obsidian vault. Curated markdown lives in top-level numbered folders; raw machine artifacts live in `_artifacts/`, `_calibration/`, and `_evaluation/`.
 
 ```
 ~/.../notes/work/referee-reports/<paper-slug>/
 │
 ├── review.md                          # top-level index: metadata, status, TOC
-│
 ├── _paper/
-│   └── paper.md                          # source paper
-│
-├── 0_orientation/                       # 3 paper maps as markdown
+│   ├── paper.md                       # source paper
+│   └── paper.pdf                      # optional original PDF
+├── 0_orientation/                     # independent paper maps
 │   ├── 00_orientation.md
 │   ├── claude.md
 │   ├── codex.md
 │   └── gemini.md
-│
-├── 1_discovery/                         # organized BY METHOD
+├── 0_holistic/                        # per-family holistic passes + attack-surface index
+│   ├── 00_holistic.md
+│   ├── claude.md
+│   ├── codex.md
+│   ├── gemini.md
+│   └── attack_surface_index.md
+├── 1_discovery/
 │   ├── 00_discovery.md
-│   ├── m2_contradictions/
-│   │   ├── 00_m2.md
-│   │   ├── claude.md
-│   │   ├── codex.md
-│   │   └── gemini.md
-│   └── m3_transformations/ ... m6_disentangling/
-│
+│   ├── holistic_candidates/{claude,codex,gemini}.md
+│   ├── broad_critic/{claude,codex,gemini}.md
+│   └── narrow_evidence/{claude,codex,gemini}.md
 ├── 2_ranking/
 │   ├── 00_ranking.md
-│   ├── issue_register.md                 # human-readable merge + panel-row candidates
-│   ├── panel_rows_candidates.json        # canonical handoff to verify → debate → calibrate
+│   ├── issue_register.md
 │   ├── triage.md
 │   └── verification.md
-│
-├── 3_debates/                           # one folder per debated issue
+├── 3_debates/
 │   ├── 00_debates.md
 │   ├── 01_<slug>/
 │   │   ├── 00_issue.md
-│   │   ├── r1_prosecute.md               # prompt + output + metadata + link to session
+│   │   ├── r1_prosecute.md
 │   │   ├── r1_defend.md
 │   │   ├── r1_synthesize.md
 │   │   └── 99_summary.md
 │   └── ...
-│
-├── 4_report/
-│   └── referee_report.md                 # the deliverable (gemini-polished v5)
-│
-├── _calibration/                         # Phase 4 pre-publication calibration (v5)
-│   ├── 00_calibration.md                 # scorecard: pre/post overclaim rate, kept/demoted/dropped
-│   ├── final_findings.json               # calibrated set — the ONLY input to the final report
-│   ├── dropped.json                      # findings killed by calibration (with reasons)
-│   ├── demoted.json                      # findings demoted (old_tier → new_tier)
-│   ├── manifest_blind.json               # blind_id → true_id (private to the orchestrator)
-│   ├── tickets.json                      # calibration sub-DAG
-│   ├── prompts/<blind_id>.md             # self-contained prompt per finding
-│   ├── annotations/<blind_id>.json       # first-pass annotator output
-│   ├── rewrites/<blind_id>.json          # polish-pass output (if the first annotation failed)
-│   └── sessions/<blind_id>.log           # raw session capture
-│
-├── _evaluation/                          # Phase 6 A/B post-hoc evaluation (optional)
-│   ├── 00_evaluation.md                  # aggregate scorecard (markdown)
-│   ├── annotations_unblinded.csv         # human-readable join of rows + manifest
-│   ├── manifest_blind.json               # blind_id → (true_version, true_id)
-│   ├── tickets.json                      # eval sub-DAG
-│   ├── results.json                      # machine truth: flat rows + per-version summary
-│   ├── prompts/<blind_id>.md             # self-contained prompt per finding
-│   ├── annotations/<blind_id>.json       # per-finding two-axis output
-│   ├── sessions/<blind_id>.log           # raw annotator session capture
-│   └── disagreements.md                  # only when ≥2 annotators ran (deferred)
-│
-└── _artifacts/                           # main-pipeline machine artifacts
-    ├── manifest.md                       # human-readable index
-    ├── tickets.json                      # the main DAG
-    ├── prompts/                          # one .md per main-pipeline ticket
-    ├── sessions/                         # raw agent reasoning traces (.log, never wiped)
-    └── json/                             # raw structured outputs (.json)
+├── 4_panel/
+│   ├── panel.md
+│   ├── author_memo.md OR referee_memo.md
+│   └── revision_plan.md OR referee_letter_draft.md
+├── _calibration/
+│   ├── 00_calibration.md
+│   ├── final_findings.json
+│   ├── dropped.json
+│   ├── demoted.json
+│   ├── manifest_blind.json
+│   ├── tickets.json
+│   ├── prompts/<blind_id>.md
+│   ├── annotations/<blind_id>.json
+│   ├── rewrites/<blind_id>.json
+│   └── sessions/<blind_id>.log
+├── _evaluation/
+│   ├── 00_evaluation.md
+│   ├── annotations_unblinded.csv
+│   ├── manifest_blind.json
+│   ├── tickets.json
+│   ├── results.json
+│   ├── prompts/<blind_id>.md
+│   ├── annotations/<blind_id>.json
+│   └── sessions/<blind_id>.log
+└── _artifacts/
+    ├── tickets.json
+    ├── prompts/
+    ├── sessions/
+    └── json/
 ```
 
-See `templates/obsidian_structure.md` for the complete specification.
-
-See `templates/obsidian_render.md` for how Claude transforms each JSON artifact into curated markdown.
+See `templates/obsidian_structure.md` for the complete specification and `templates/obsidian_render.md` for the markdown projection rules.
 
 ## Agent routing
 
-| Agent | CLI | Model | Special role |
-|-------|-----|-------|--------------|
-| Claude | Claude Code (you) | opus/sonnet | Orchestrator + runs discovery + role-rotates in debate |
-| Codex | `/codex` via agent-ctl | GPT-5.4 | Independent reader + runs discovery + role-rotates in debate |
-| Gemini | `/gemini` via agent-ctl | Gemini 3.1 Pro Preview | Independent reader + runs discovery + **external-evidence specialist (web search)** + role-rotates in debate |
+| Agent | Executor | Default role |
+|-------|----------|--------------|
+| Claude | Claude Code (inline) | Orchestrator, Claude-owned discovery/merge tickets, rotated debate role |
+| Codex | `agent-ctl` | Independent reader, calibration annotator, rotated debate role |
+| Gemini | `agent-ctl` | Independent reader, web verification, panel writer, rotated debate role |
 
-Gemini's unique web search capability means it owns the verification step in Phase 2 — even for findings originally produced by other agents. This concentrates web search usage into a single agent that is specialized for it, rather than spreading it thin.
+Gemini owns the verification step because web search is concentrated there by design. Claude owns orchestration and inline tickets. Codex is the default calibrator because the calibration loop is rubric-bounded and benefits from a different architecture than Claude.
 
 ## Agent communication
 
-Use `agent-ctl` to manage sessions. The DAG runner is the primary interface:
+Use `agent-ctl run-dag` as the primary interface:
 
 ```bash
-A="python3 ~/.claude/skills/agent_ctl.py"
-
-# Run the DAG — executes all ready tickets, blocks until none remain
-$A run-dag <paper-folder>/_artifacts/tickets.json --cwd <paper-folder> --concurrent 3
-
-# Check progress without blocking
-$A dag-status <paper-folder>/_artifacts/tickets.json
+agent-ctl run-dag <paper-folder>/_artifacts/tickets.json --cwd <paper-folder> --concurrent 3
+agent-ctl dag-status <paper-folder>/_artifacts/tickets.json
 ```
 
-The lower-level commands are still available for ad-hoc agent calls (deprecated for the disputatio pipeline — use tickets instead):
+Claude-owned tickets do **not** go through `agent-ctl`. Claude executes them inline, writes the declared outputs, and marks them `done` in `tickets.json`.
 
-```bash
-$A start codex "$(cat /tmp/prompt.md)" --cwd <workspace> --timeout 900
-$A wait 01 02 03
-$A result 01
-```
-
-**Prompt files**: for long prompts (with paper map content, prior round history, etc.), write the prompt to a temp file and pass `$(cat /tmp/prompt-file.md)` to agent-ctl. Inline prompts larger than a few KB will break shell escaping.
-
-**Context injection**: always paste paper excerpts, issue state, and prior round content **inline** in the prompt. Do not rely on agents being able to read workspace files — some CLIs (Gemini) cannot write files even when given paths, and some cannot reliably read gitignored directories.
-
-**Output verification**: after each agent call, verify the output file exists before proceeding. If missing, parse the agent's stdout via `$A result <id>` and write the file manually. Both Codex and Gemini sometimes hallucinate file writes.
-
-**Retry logic**: if an agent fails (timeout, rate limit, hallucinated success), retry once with a simplified prompt. If it fails again, default to KEEP (preserve the issue as-is, note the failure in the checkpoint, continue).
+Long prompts live on disk under `_artifacts/prompts/`. Tickets point at prompt files; do not rely on shell-inline mega-prompts.
 
 ## Execution
 
-When `/disputatio <path>` is invoked, Claude runs a decision loop. Each iteration: read state from disk, match the current phase, do ONE thing, write results to disk. No multi-step sequential protocol — just a lookup table.
+When `/disputatio <path>` is invoked, Claude runs a state-driven loop. Read disk, do one thing, write disk, repeat.
 
-**State**: `$PAPER/_artifacts/tickets.json` (the DAG) + `$PAPER/review.md` frontmatter (human-readable phase).
+**State sources**:
+- `$PAPER/_artifacts/tickets.json` — machine source of truth
+- `$PAPER/review.md` frontmatter — human-readable phase summary
 
-**Loop**: repeat until `final_report` ticket status is `done`:
+**Current flow**:
 
-```
-READ tickets.json
-MATCH current state → action:
+1. **Init + preflight** — create the paper folder only after auth, vault-write, and template sanity checks pass.
+2. **Wave 1: orientation** — 3 independent paper maps.
+3. **Wave 1.5: holistic** — 3 holistic passes plus inline `attack_surface_index.json`.
+4. **Wave 2: discovery** — 9 tickets (3 tracks × 3 families) plus optional baseline sentinel.
+5. **Phase 3: merge + verify** — merge atomic findings, produce panel-row candidates, optionally run web verification.
+6. **Phase 5a: calibration pass 1** — blind-annotate all candidate panel rows before any debate decision.
+7. **Phase 4: escalation gate** — apply Route A / Route B to calibration survivors only; emit debate tickets only for gate-clearers.
+8. **Phase 5b: finalize calibrated set** — polish/re-annotate where required, then write `_calibration/final_findings.json`.
+9. **Phase 6: panel compile + render** — compile `_artifacts/json/panel.json`, then run one render ticket producing `4_panel/panel.md` plus the mode-specific memo and optional auxiliary file.
+10. **Phase 7: optional A/B evaluation** — only on request, under `_evaluation/`.
 
-┌─────────────────────────────────────┬──────────────────────────────────────────────────────┐
-│ State                               │ Action                                               │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ no tickets.json exists              │ INIT: create workspace, copy paper, emit wave 1,     │
-│                                     │ write tickets.json                                   │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ orient_claude = pending             │ Execute orient_claude inline: read paper, produce     │
-│                                     │ paper map JSON, mark done                            │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ orient_codex or orient_gemini       │ Run: $A run-dag tickets.json --concurrent 3          │
-│ = pending                           │ Wait for completion. Validate outputs.               │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all orient = done,                  │ RENDER orientation (JSON → markdown in 20_orient/).  │
-│ no discover tickets exist           │ Emit wave 2 (18 discovery tickets). Write prompts.   │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ discover_claude_* = pending         │ Execute Claude discovery tickets inline (6 methods).  │
-│                                     │ Write JSON outputs. Mark each done.                  │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ discover_codex_* or                 │ Run: $A run-dag tickets.json --concurrent 3          │
-│ discover_gemini_* = pending         │ Wait for completion. Validate outputs.               │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all discover = done,                │ RENDER discovery (JSON → markdown in 1_discovery/). │
-│ no merge_rank ticket exists         │ Execute merge_rank inline: read 18 JSONs, triage,    │
-│                                     │ dedupe, rank, write ranked_issues.json + triage.json.│
-│                                     │ Render 2_ranking/ markdown. Emit verify ticket.     │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ verify = pending                    │ Run: $A run-dag tickets.json --concurrent 1          │
-│                                     │ (Gemini web verification). Validate output.          │
-│                                     │ Render 2_ranking/verification.md.                   │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ verify = done,                      │ Emit debate round 1 tickets for top N issues.        │
-│ no debate tickets exist             │ Apply four-way escalation gate (Phase 4) to each    │
-│                                     │ panel-row candidate. For each finding that clears   │
-│                                     │ ALL four conditions, emit round 1 prosecute/defend/  │
-│                                     │ synthesize triple. If zero findings clear the gate,  │
-│                                     │ skip the debate phase. Write prompts.                │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ debate tickets pending/running      │ For Claude-typed debate tickets: execute inline.      │
-│                                     │ For external: $A run-dag --concurrent 2              │
-│                                     │ After each synthesis: read output, check status.     │
-│                                     │ If continue + budget remains → emit next round.      │
-│                                     │ If converged/none → mark issue terminal.             │
-│                                     │ Render debate markdown in 3_debates/.               │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all debate tickets terminal,        │ PHASE 4 CALIBRATION (v5): collect every candidate    │
-│ no _calibration/tickets.json        │ report-entering finding (all settled + debate        │
-│                                     │ survivors with prosecution_wins/split/escalate).     │
-│                                     │ Shuffle, assign BF### IDs, write manifest_blind.json.│
-│                                     │ Build one self-contained prompt per finding at       │
-│                                     │ _calibration/prompts/<blind_id>.md. Emit calibrate   │
-│                                     │ tickets to codex/gpt-5.4-mini (fallback: sonnet).    │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ _calibration/tickets.json exists,   │ $A run-dag _calibration/tickets.json --concurrent 4. │
-│ calibrate tickets pending/running   │ Validate each annotation has two-axis verdict.       │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ all calibrate tickets done,         │ Apply demote-on-uncertainty disposition inline. For  │
-│ no _calibration/final_findings.json │ partial or overclaimed findings, emit one polish     │
-│                                     │ ticket to gemini-3.1-pro-preview, re-annotate with   │
-│                                     │ UPGRADED annotator (codex gpt-5.4 full, not mini).   │
-│                                     │ Three-way disposition: clean pass → calibrated_      │
-│                                     │ narrowed + keep severity; uncertain pass (any of 4   │
-│                                     │ triggers: qualified verdict, hedging language,       │
-│                                     │ indirect support, rubric internal disagreement) →    │
-│                                     │ calibrated_narrowed + demote one tier (material →    │
-│                                     │ local, local → nit); still failing → drop. Write     │
-│                                     │ _calibration/final_findings.json, dropped.json,      │
-│                                     │ demoted.json, 00_calibration.md scorecard.           │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ _calibration/final_findings.json    │ Execute final_report inline CONSUMING                │
-│ exists, no final_report ticket      │ _calibration/final_findings.json (not                │
-│                                     │ ranked_issues_verified.json). Write final.json +     │
-│                                     │ referee_report.md. Phase 5.5: for each report entry, │
-│                                     │ call gemini-3.1-pro-preview to rewrite                │
-│                                     │ surviving_text into referee-letter prose. Update     │
-│                                     │ review.md to phase: complete.                         │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ final_report = done,                │ PHASE 6 A/B (optional): collect findings from this   │
-│ A/B comparison requested            │ run plus other review versions (v3/coarse/etc),      │
-│ (no _evaluation/tickets.json)       │ shuffle into one pool, same blinding rubric, emit    │
-│                                     │ evaluate tickets. Not auto-run — only when the user  │
-│                                     │ requests cross-version comparison.                   │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ _evaluation/tickets.json exists,    │ $A run-dag _evaluation/tickets.json --concurrent 4.  │
-│ eval tickets pending/running        │ Wait for completion. Aggregate → results.json +      │
-│                                     │ 00_evaluation.md (same rubric as Phase 4 calibrate).  │
-├─────────────────────────────────────┼──────────────────────────────────────────────────────┤
-│ _calibration/final_findings exists  │ EXIT. Review complete and calibrated.                │
-│ AND report written (or _evaluation  │                                                      │
-│ /results.json if A/B ran)           │                                                      │
-└─────────────────────────────────────┴──────────────────────────────────────────────────────┘
-```
+The run is complete when `panel.json` exists, the Phase 6 render outputs exist, and `review.md` is marked `phase: complete`.
 
-### INIT procedure
+### Init procedure
 
-When no `tickets.json` exists, the orchestrator runs **preflight first**, then workspace creation, then ticket emission. Failing fast at preflight time avoids burning 60–90 minutes on avoidable setup failures (expired OAuth, missing CLI, broken template) discovered only at phase N.
+When no `tickets.json` exists:
 
-#### Step 0 — Preflight (fail-fast checks before any work)
-
-Before creating the workspace or calling any agent, verify the environment is ready. Run every check; if any fails, **abort with a clear message stating what failed and how to fix it**. Do NOT create the paper folder until preflight passes — a failed preflight should leave zero new artifacts on disk.
-
-Checks, in order:
-
-1. **Agent authentication.** For every transport that will be used in Wave 1 (by default: `codex`, `gemini`; `claude` is inline and needs no check), launch a minimal ping session through `agent-ctl`:
-
-   ```
-   agent-ctl start codex  "Reply with the single word: pong" --timeout 60
-   agent-ctl start gemini "Reply with the single word: pong" --timeout 60
-   agent-ctl wait <codex-sid> <gemini-sid>
-   agent-ctl result <codex-sid>  # must contain 'pong'
-   agent-ctl result <gemini-sid> # must contain 'pong'
-   ```
-
-   Any non-zero exit, timeout, or missing `pong` → auth is broken. Typical fixes: `codex logout && codex login` for Codex; re-run `gemini` interactively once for Gemini OAuth. After the user re-authenticates, re-invoke `/disputatio` from scratch.
-
-   If the planned team includes non-default transports (opencode, ollama), add their ping to this list. Ollama: use one of the pulled models from `ollama list` and a short prompt.
-
-2. **Template placeholder sanity.** Every template that will be substituted at emit time must have all its `{{placeholder}}` tokens enumerated in the "Prompt generation" section below. Quick scan:
-
-   ```
-   grep -l '{{' templates/*.md templates/methods/*.md templates/agents/*.md templates/conventions/*.md
-   ```
-
-   For each file that contains `{{...}}` tokens, confirm every token appears in the "Prompt generation" substitution table. An unknown token means the template was edited without updating the generator — abort with the file path and the offending token.
-
-3. **Vault write probe.** Before creating `$PAPER/`, verify the Obsidian vault root is writable:
-
-   ```
-   touch ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/.disputatio-preflight && rm ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/.disputatio-preflight
-   ```
-
-   A permission error or a stale iCloud lock surfaces here instead of at ticket-launch time. If it fails, tell the user to open Obsidian once (to sync) or check iCloud Drive status.
-
-4. **OCR backend probe** (only when input is `.pdf`). Verify `socr` is available:
-
-   ```
-   which socr && socr --version
-   ```
-
-   If missing, tell the user to install smart-ocr before restarting. Skipping the OCR check for `.md` inputs is fine — the copy is straightforward.
-
-5. **Agent-ctl state-file lock probe.** The launcher's state file (`~/.claude/agent-sessions.json`) uses `fcntl` locking; a stale lock from a crashed prior invocation can block launches. The ping checks above implicitly exercise this, so no extra step is needed — but if every ping times out at exactly 60 s, suspect a stale lock and suggest `agent-ctl cleanup`.
-
-Preflight typically takes 30–60 seconds wall-clock (dominated by the two ping calls). If all checks pass, proceed to Step 1.
-
-#### Step 1..8 — Workspace creation and wave-1 emission
-
-1. Determine `<paper-slug>` from the input filename (lowercase, hyphens, no extension)
-2. Set `$PAPER = ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/`
-3. Create directory structure: `mkdir -p $PAPER/{_paper,0_orientation,1_discovery/{m0_close_reading,m2_contradictions,m3_transformations,m4_counterexample,m5_immanent,m6_disentangling},2_ranking,3_debates,4_report,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
-4. If input is `.pdf`: run `socr <input> --save-figures` → copy result to `$PAPER/_paper/paper.md` and the figures tree to `$PAPER/_paper/figures/`. **Do NOT substitute `pdftotext` or any other extractor, ever, even if the PDF looks typeset.** If input is `.md`: copy directly.
-5. Copy the PDF (if available) to `$PAPER/_paper/paper.pdf`
-6. Write `$PAPER/review.md` with frontmatter: `phase: orientation`
-7. Generate 3 orientation prompts (see "Prompt generation" below)
-8. Write `$PAPER/_artifacts/tickets.json` with 3 orient tickets
+1. Run preflight:
+   - agent auth pings for the transports you will actually use
+   - vault write probe
+   - template placeholder sanity
+   - OCR backend probe when the input is a PDF
+2. Determine `<paper-slug>` from the input filename.
+3. Create the current directory layout:
+   `mkdir -p $PAPER/{_paper,0_orientation,0_holistic/{},1_discovery/{holistic_candidates,broad_critic,narrow_evidence},2_ranking,3_debates,4_panel,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
+4. Copy or OCR the paper into `_paper/paper.md`; copy the PDF to `_paper/paper.pdf` when available.
+5. Write `review.md`.
+6. Emit Wave 1 tickets into `_artifacts/tickets.json`.
 
 ### Prompt generation
 
 To generate a prompt for a ticket:
 
-1. Read the relevant template from `templates/` (e.g., `orient.md`, `discover.md`)
-2. For discovery: also read the method template from `templates/methods/<method>.md`
-3. Substitute placeholders:
-   - `{{paper_text}}` → contents of `_paper/paper.md` (used in orient prompts only)
-   - `{{paper_path}}` → `_paper/paper.md` (relative path for agents to read)
-   - `{{paper_map_path}}` → `_artifacts/json/orient_<agent>.json`
-   - `{{output_path}}` → `_artifacts/json/<ticket_id>.json`
-   - `{{method_content}}` → full text of the method template
-   - `{{issue_state}}`, `{{prosecution}}`, `{{defense}}`, `{{history}}` → debate context
-   - `{{config.*}}` → configuration values
-4. Write the result to `$PAPER/_artifacts/prompts/<ticket_id>.md`
+1. Read the relevant template from `templates/`.
+2. Inline or reference only the inputs the phase actually needs.
+3. Substitute placeholders. The full set in current use across the template tree:
 
-### Inline execution (Claude-typed tickets)
+   General (most prompts):
+   - `{{paper_path}}`, `{{paper_text}}` — path or inlined text of the source paper
+   - `{{output_path}}` — where to write the JSON output
+   - `{{paper_map_path}}` — agent's own orientation JSON
+   - `{{holistic_pass_path}}` — agent's own holistic-pass JSON
+   - `{{attack_surface_index_path}}` — canonical attack-surface index
+   - `{{config.*}}` — configuration values
+
+   Reserved (declared in this contract but not yet substituted by any current template — the renderer reads `engine.mode` from `panel.json` directly):
+   - `{{mode}}` — `author` | `referee`. If a future render template starts substituting this token, it does not need to be re-added here.
+
+   Discovery-only:
+   - `{{method_content}}` — full text of the method template inlined into the discovery prompt
+
+   Debate-only (Route A and Route B):
+   - `{{prosecution}}` — Route A defend/synthesize input; Route B does not use this
+   - `{{defense}}` — defend output, used by synthesize on both routes
+   - `{{history}}` — prior-round synthesis output for rounds 2+
+   - `{{issue_state}}` — the panel-row payload for the issue under debate
+   - `{{route}}` — `disagreement` | `consensus`, mandatory on every Phase 4 debate ticket
+   - `{{claim_under_challenge}}` — Route B defend/synthesize only (the merge-emitted block pinning the consensus target)
+   - `{{three_family_signals}}` — Route B defend/synthesize only (per-family confidence + candidate IDs)
+
+   Preflight aborts on any unsubstituted `{{...}}` token in a written prompt. When a placeholder is not relevant to a given template, the orchestrator must omit the line entirely rather than leave the token in place. The list above is the closed set; adding a new placeholder requires updating this list and the preflight checker simultaneously.
+4. Write the result to `_artifacts/prompts/<ticket_id>.md` (or the matching `_calibration/` / `_evaluation/` prompt folder for those sub-DAGs).
+
+### Inline execution
 
 When Claude executes a ticket inline:
 
-1. Read the prompt at `_artifacts/prompts/<ticket_id>.md`
-2. Read all input files listed in the ticket
-3. Follow the prompt instructions (produce paper map / run method / merge issues / write report)
-4. Write the JSON output to `_artifacts/json/<ticket_id>.json`
-5. Write a reasoning summary to `_artifacts/sessions/<ticket_id>.log` (what was done, key decisions, issues found)
-6. Apply the rendering spec from `templates/obsidian_render.md` to write curated markdown
-7. Update `tickets.json`: set status to `done`, set `finished_at`
+1. Read the prompt and declared input files.
+2. Produce the declared output files.
+3. Render curated markdown where the phase requires it.
+4. Mark the ticket `done` in `tickets.json`.
 
-### Rendering
+### Validation rules
 
-After each wave, render JSON outputs to Obsidian markdown per `templates/obsidian_render.md`. The JSON is the source of truth; the markdown is a human-readable projection. Both are preserved.
+Before moving forward:
 
-### Output validation (verification gates)
-
-Before proceeding to the next phase, validate outputs:
-
-- **Orientation**: each JSON must have `main_claims` with >=5 entries. If fewer, retry once.
-- **Discovery**: each JSON must have `issues` array with >=1 entry. Empty outputs get one retry.
-- **Merge_rank**: `ranked_issues.json` must have >=3 merged issues. Fewer triggers a warning (not a retry — paper may genuinely have few issues).
-- **Debate synthesis**: JSON must have `refined_claim`, `impact`, and `status` fields. Malformed → retry.
+- **Orientation**: every `orient_*.json` must parse and contain a usable paper map.
+- **Holistic**: every `holistic_*.json` must parse and expose attack surfaces plus main claims.
+- **Discovery**: every discovery output must parse; `narrow_evidence` is subject to the engagement audit on `surface_attempts[]` (see `templates/emit_tickets.md` → "Narrow-evidence engagement audit") and gets one retry on a structural failure.
+- **Merge**: `panel_rows_candidates.json` must exist and parse.
+- **Calibration**: every annotation must return both rubric axes (`quote_verified`, `calibration`).
+- **Synthesis**: every `debate_*_synthesize.json` must include a `route` field matching the debate ticket's route, a `verdict` from the route-correct vocabulary (Route A: `prosecution_wins | defense_wins | split | escalate`; Route B: `consensus_held | consensus_broken`), and a non-empty `surviving_text` whenever the verdict is not a drop. Mismatched-route verdicts (e.g. `prosecution_wins` on a Route B ticket) are rejected and the row's debate field is set to `not_run`.
+- **Render**: `panel.md` plus the mode-specific memo must exist; dropped findings must be visible (including `dropped_by_red_team` on Route B).
 
 ### Logging contract
 
-Every action writes to disk. Nothing lives only in Claude's context.
+Every action writes to disk. Nothing lives only in Claude context.
 
 | What | Where | When |
 |------|-------|------|
 | Prompts sent to agents | `_artifacts/prompts/<ticket_id>.md` | Before launching ticket |
-| Raw JSON output | `_artifacts/json/<ticket_id>.json` | After ticket completes |
-| Agent session logs | `_artifacts/sessions/<ticket_id>.log` | Auto-archived by agent-ctl; written by Claude for inline tickets |
-| Curated markdown | Numbered folders (0_orientation/, etc.) | After each wave |
-| DAG state | `_artifacts/tickets.json` | After every action |
-| Phase status | `review.md` frontmatter | At each major transition |
+| Raw JSON outputs | `_artifacts/json/<ticket_id>.json` | After ticket completes |
+| Agent session logs | `_artifacts/sessions/<ticket_id>.log` | Auto-archived by `agent-ctl`; written inline by Claude for Claude-owned tickets |
+| Curated markdown | numbered folders | After each completed phase |
+| Calibration artifacts | `_calibration/` | During Phase 5 |
+| Evaluation artifacts | `_evaluation/` | During optional Phase 7 |
+| DAG state | `_artifacts/tickets.json` | After every state transition |
 
 ### Resumability
 
-On re-invocation with an existing paper folder:
+Re-invoking `/disputatio` on an existing paper folder resumes from disk:
 
-1. Read `$PAPER/_artifacts/tickets.json`
-2. Skip all `done` tickets
-3. Match current state in the decision table above
-4. Resume from the first non-terminal state
-
-This works because every action writes to disk before proceeding. If Claude crashes mid-wave, the completed tickets are marked `done` and the uncompleted ones are still `pending`.
+1. Read `_artifacts/tickets.json`.
+2. Skip all `done` tickets.
+3. Run any ready non-Claude tickets via `agent-ctl run-dag`.
+4. Resume Claude-owned inline work from the first ready Claude ticket or inline orchestration step.
 
 ## Configuration
 
-All tunables are CLI parameters with sensible defaults. Templates reference these via `{{config.*}}` placeholders — no thresholds are hardcoded in prompts.
+User-facing knobs:
 
 | Parameter | CLI flag | Default | Notes |
 |-----------|----------|---------|-------|
-| Top-N for debate | `--top-n` | 8 | Issues above this enter debate; rest go to appendix |
-| Max rounds per issue | `--max-rounds` | 3 | Short-circuit rules can end earlier |
-| Verification score delta (confirmed) | `--verify-boost` | +2 | Added to rank score when web evidence confirms |
-| Verification score delta (refuted) | `--verify-penalty` | -3 | Subtracted from rank score when web evidence refutes |
-| Web search budget | `--web-budget` | 5 | Max searches per issue during verification |
-| Orientation timeout | `--orient-timeout` | 1200s | Per agent — must accommodate web cross-referencing |
-| Discovery timeout | `--discover-timeout` | 1200s | Per agent, per method |
-| Debate round timeout | `--debate-timeout` | 900s | Per agent, per role |
+| Render mode | `--mode` | `author` | `author` or `referee` |
+| Debate cap | `--max-debate-rounds` | `2` | Hard cap per escalated finding |
+| Web verification | `--skip-web` | off | Skip only when the user explicitly disables it |
 
-**Budget tiering — removed in v2.** Pre-tiered round allocation by rank position was found (in the 2026-04-13 v3 run) to spend rounds on issues already destined to converge, while denying rounds to issues that genuinely needed them. Replaced with verdict-driven escalation: every issue gets round 1; rounds 2-3 are funded only when the synthesizer's verdict is `split` or `escalate`. The `--max-rounds` flag remains as a hard cap.
+Runtime defaults:
 
-**Timeout guidance**: Codex with `--full-auto` can perform web searches mid-session. When it does, it often cross-references the published version of the paper to verify OCR content. This is valuable but takes time. A 10-minute budget is too tight; 20 minutes is the minimum for orientation. Short timeouts kill the agent mid-file-write, losing all work.
+| Setting | Default |
+|---------|---------|
+| Main DAG concurrency | `3` |
+| Calibration concurrency | `4` |
+| Evaluation concurrency | `4` |
+
+### Runtime envelope (typical economics paper, ~30–60 pages)
+
+Reference figures from the Galeotti, Golub & Goyal 2020 benchmark and steady-state runs on similar-shape papers. Treat as order-of-magnitude, not contractual.
+
+| Quantity | Typical value |
+|---|---|
+| Wall clock end-to-end | **~2 hours** (parallelism-limited by the slowest family per wave) |
+| Total agent calls per run | **~80–130** (3 orient + 3 holistic + 9 discovery + ~5–10 merge/verify + ~30–50 calibration + 0–15 debate + 1–2 render) |
+| Calibration row count | ~30–50 candidate rows annotated; ~5–10 trigger polish + re-annotate |
+| Debate triggers | **0–5 findings** escalate; typical paper sees 1–3 Route-A or Route-B fires |
+| Findings shipped to panel | ~20–30 after merge → calibration → debate (110 raw → 27 shipped on Galeotti) |
+| Marginal cost per run | **$0** on default routing — Claude Pro / ChatGPT Pro / Gemini OAuth subscriptions cover all calls. The only real cost is wall clock + per-subscription rate caps (Codex OAuth has a weekly cap that ~1 full run can hit on heavy use; see Known limitations in README). |
+| API-equivalent cost (reference only) | ~$5–$15 if the same calls were billed at provider list prices. Not what you pay; included so the compute envelope is comparable to API-only systems. |
+
+Length scales the envelope roughly linearly above 60 pages — orientation, holistic, and discovery are all full-paper context calls. A 100-page paper is ~1.6×; a 200-page handbook chapter is closer to 3×. The wall-clock and rate-cap costs scale with it; the dollar marginal cost stays at zero.
 
 ### Model routing
 
-Not every task needs the strongest model. Use cheaper/faster models for mechanical work, reserve expensive models for judgment calls. When emitting tickets, set the `model` field per this table:
+When emitting tickets, route models per the current pipeline:
 
 | Task | Claude | Codex | Gemini |
 |------|--------|-------|--------|
 | Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Discovery (M0-M6, M8) | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Rendering (JSON→md) | haiku | — | — |
-| Merge & Rank | **opus** | — | — |
-| Coarse-style baseline (Tier 2) | **opus** | — | — |
-| Prosecution (top third) | **opus** | — | — |
-| Prosecution (rest) | sonnet | — | — |
+| Holistic pass | opus/sonnet | gpt-5.4 | gemini-3.1-pro-preview |
+| Discovery | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Merge & rank | **opus** | — | — |
+| Baseline sentinel | **opus** | — | — |
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
 | Synthesis | **opus** | — | — |
 | Verification (web) | — | — | gemini-3.1-pro-preview |
-| **Phase 5 calibration first-pass annotator** (all rows) | sonnet (fallback only) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
-| **Phase 5 calibration re-annotator after polish** (polished rows only, ~8/run) | sonnet (fallback) | **gpt-5.4** (full, not mini) | — |
-| **Phase 5.5 editorial polish** | — | — | **gemini-3.1-pro-preview** |
-| Final report compilation | **opus** | — | — |
-
-This cuts Opus usage to ~30% of the pipeline (merge, baseline, top prosecutions, synthesis, final-report compilation). The remaining 70% runs on Sonnet/Haiku/mini models at a fraction of the cost. Gemini owns both the verification web-search role and the editorial polish role (single long-context, fluid-prose model handling all human-facing writing). The Phase 4 calibration annotator defaults to codex/gpt-5.4-mini to match the 2026-04-12 manual baseline; sonnet takes over when codex is rate-limited on long-context papers (haiku cannot — it lacks the long-context beta for >50K token prompts).
-
-For Claude subagents, pass the `model` parameter: `Agent(model="sonnet")` or `Agent(model="haiku")`. For external agents, set the `model` field in the ticket and agent-ctl passes it via `-m`.
+| Calibration pass 1 | sonnet (fallback) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| Calibration re-annotator | sonnet (fallback) | **gpt-5.4** | — |
+| Panel render | claude-opus (fallback) | — | **gemini-3.1-pro-preview** |
 
 ## Review criteria
 
-The methods determine what counts as an issue. No external criteria file is needed — each method's template defines what it flags.
+The methods and the panel-row schema determine what counts as a valid finding. No separate criteria file overrides them.
 
 ## Obsidian is the workspace
 
-Every review lives inside a single folder in the Obsidian vault. Curated markdown (what you'd read as a human) lives in numbered folders at the top level; raw machine artifacts (tickets, prompts, JSON outputs, session logs) live inside `_artifacts/`. Nothing is ever deleted — session logs are automatically archived by `agent-ctl run-dag` so that every reasoning trace is preserved forever.
-
-**Templates**:
-- `templates/obsidian_structure.md` — the complete folder spec and design principles
-- `templates/obsidian_render.md` — how Claude transforms each JSON artifact into curated markdown
-
-**Key principle**: the JSON in `_artifacts/json/` is the machine format; the markdown in the numbered folders is the human format. Both are preserved. If the two disagree, the JSON wins. The markdown is a projection, not the source of truth.
-
-**Why everything in Obsidian**: a review should be self-contained. Open one folder, see everything. The raw logs are there too (as `.log` attachments that don't pollute Obsidian's search index) so auditability and replay work without chasing files across disks.
+Every review lives inside one folder in the Obsidian vault. Curated markdown is the human projection. JSON is the machine source of truth. Session logs are preserved so the run remains auditable and replayable.
 
 ## Explicit rules (v6)
 

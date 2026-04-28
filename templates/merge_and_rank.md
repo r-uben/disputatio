@@ -122,7 +122,7 @@ for b in baseline_items:
         merged_so_far.append(baseline_to_merged_issue(b, source="baseline"))
 ```
 
-Matching uses the rules in `templates/baseline.md`. Baseline items covered by the merged set are *discarded* (we already have the concern). Baseline items *not* covered are appended to the merged set as new issues with `source: baseline` and a conservative default rank_score of 8; Phase 4's four-way escalation gate then decides independently whether any of them enters debate. In v6 the baseline is a **coverage sentinel, not a router** — if the baseline catches something the holistic pass should have caught, that is a signal to strengthen the holistic pass, not an automatic debate admission.
+Matching uses the rules in `templates/baseline.md`. Baseline items covered by the merged set are *discarded* (we already have the concern). Baseline items *not* covered are appended to the merged set as new issues with `source: baseline` and a conservative default rank_score of 8; Phase 4's two-route escalation gate then decides independently whether any of them enters debate. In v6 the baseline is a **coverage sentinel, not a router** — if the baseline catches something the holistic pass should have caught, that is a signal to strengthen the holistic pass, not an automatic debate admission.
 
 Write `_artifacts/json/baseline_diff.json` recording which baseline items matched which merged issues and which went to forced debate. Include a `coverage_rate` = matched / total_baseline_items. A coverage rate below ~70% means discovery or merge is missing too much and the run should be flagged for investigation.
 
@@ -273,13 +273,13 @@ For aggregated findings (rare — only when the *pattern* is itself the finding)
 }
 ```
 
-### Step 5: Debate selection (v6 — delegated to Phase 4's four-way gate)
+### Step 5: Debate selection (v6 — delegated to Phase 4's two-route gate)
 
-Merge does NOT pre-select the debate cohort. The full merged set flows into Phase 4, which applies the four-way escalation gate (cross-family disagreement real, evidence on both sides, severity would change on verdict, finding would be user-visible) to each finding independently.
+Merge does NOT pre-select the debate cohort. The full merged set flows into Phase 4, which applies the two-route escalation gate (cross-family disagreement real, evidence on both sides, severity would change on verdict, finding would be user-visible) to each finding independently.
 
-`rank_score` remains the canonical importance ordering for the final panel table, but it does not gate debate eligibility in v6. An issue can have a very high rank_score and still skip debate if the four-way gate is not satisfied (e.g. all three families agreed, evidence is one-sided, and the panel would show the same result either way).
+`rank_score` remains the canonical importance ordering for the final panel table, but it does not gate debate eligibility in v6. An issue can have a very high rank_score and still skip debate if the two-route gate is not satisfied (e.g. all three families agreed, evidence is one-sided, and the panel would show the same result either way).
 
-In practice: most findings ship through calibration straight to the panel. The 0–5 findings that clear the four-way gate get the adversarial round. This is a deliberate compute reallocation away from v5's "debate the top-N by rank" and toward "debate only what is actually contested and stakes-worthy."
+In practice: most findings ship through calibration straight to the panel. The 0–5 findings that clear the two-route gate get the adversarial round. This is a deliberate compute reallocation away from v5's "debate the top-N by rank" and toward "debate only what is actually contested and stakes-worthy."
 
 ### Step 6: Emit v6 panel rows
 
@@ -301,6 +301,14 @@ scores.severity → 'material'|'local'|'nit'      →  severity (map: 3→materi
 quote + quote_location + evidence[]             →  evidence[] (preserve every entry with its
                                                     support_type; evidence compiler has already
                                                     validated every quote)
+needs_web_verification (issue-level, from       →  needs_web_verification (row-level — preserve
+ discovery output)                                  unchanged; Wave 4 verify reads from here)
+verification_query (issue-level, from           →  verification_query (row-level — preserve
+ discovery output)                                  unchanged)
+(no merge-side population)                      →  web_verification (initialised
+                                                    {status: "not_attempted", summary: null, sources: [],
+                                                    impact_on_row: null}; Wave 4 verify overwrites
+                                                    on rows where needs_web_verification is true)
 sources + family list per ticket                →  architecture_support.<family>.{supports, methods, notes}
 debate_hint (Step 3b output)                    →  debate_hint (preserved unchanged; Phase 4 gate reads it)
 (populated by Phase 4 debate, else not_run)     →  debate.{triggered, reason, verdict, what_survived, history}

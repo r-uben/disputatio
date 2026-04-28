@@ -1,6 +1,6 @@
 # Attack-surface index builder (v6)
 
-After all three Phase 1 holistic-pass tickets complete, the orchestrator builds a **canonical attack-surface index** by unioning the three per-family `attack_surfaces[]` arrays into a single deduplicated list. This index is inputs to every Phase 2 discovery ticket and to the four-way escalation gate in Phase 4.
+After all three Phase 1 holistic-pass tickets complete, the orchestrator builds a **canonical attack-surface index** by unioning the three per-family `attack_surfaces[]` arrays into a single deduplicated list. This index is inputs to every Phase 2 discovery ticket and to the two-route escalation gate in Phase 4.
 
 This is NOT a model call. It is a deterministic orchestrator-side step — Python inline in Claude Code between Wave 1.5 and Wave 2.
 
@@ -85,7 +85,7 @@ When Rules 1 or 2 match, produce a merged `description` by concatenating the dis
 
 ## Per-family supporting flag
 
-Every unified surface carries `supporting_families: []` — the list of families whose holistic pass contributed to it. This is the corroboration signal consumed by the Phase 4 four-way escalation gate's "cross-family disagreement" condition.
+Every unified surface carries `supporting_families: []` — the list of families whose holistic pass contributed to it. This is the corroboration signal consumed by the Phase 4 two-route escalation gate's "cross-family disagreement" condition.
 
 ## Novel surface allowance
 

@@ -81,9 +81,10 @@ Examples:
 orient_claude
 orient_codex
 orient_gemini
-discover_claude_m2
-discover_codex_m5
-discover_gemini_m4
+holistic_claude
+discover_claude_holistic_candidates
+discover_codex_broad_critic
+discover_gemini_narrow_evidence
 merge_rank
 verify_<issue_id>
 debate_<issue_id>_r1_prosecute
@@ -91,7 +92,7 @@ debate_<issue_id>_r1_defend
 debate_<issue_id>_r1_synthesize
 debate_<issue_id>_r2_prosecute
 ...
-final_report
+panel_render
 ```
 
 Issue IDs are assigned during merge (e.g., `merged_001`, `merged_002`).
@@ -103,13 +104,14 @@ All paths below are relative to the paper folder (`<paper-folder>` root). Raw JS
 | Type | Raw output (JSON) | Consumes | Agent |
 |------|-------------------|----------|-------|
 | `orient` | `_artifacts/json/orient_<agent>.json` | `_paper/paper.md` | any |
-| `discover` | `_artifacts/json/discover_<agent>_m<N>.json` | `_paper/paper.md`, `_artifacts/json/orient_<agent>.json` | any |
-| `merge_rank` | `_artifacts/json/ranked_issues.json`, `_artifacts/json/triage.json` | all `_artifacts/json/discover_*.json` | claude |
-| `verify` | `_artifacts/json/ranked_issues.json` (updated) | `_artifacts/json/ranked_issues.json` | gemini |
-| `prosecute` | `_artifacts/json/debate_<issue>_r<N>_prosecute.json` | `_artifacts/json/ranked_issues.json` or prior synthesis | rotating |
-| `defend` | `_artifacts/json/debate_<issue>_r<N>_defend.json` | prosecute output, `_paper/paper.md` | rotating |
-| `synthesize` | `_artifacts/json/debate_<issue>_r<N>_synthesize.json` | prosecute + defend outputs | rotating |
-| `final_report` | `_artifacts/json/final.json`, `4_report/referee_report.md` | all debate synthesis outputs | claude |
+| `holistic` | `_artifacts/json/holistic_<agent>.json` | `_paper/paper.md`, `_artifacts/json/orient_<agent>.json` | any |
+| `discover` | `_artifacts/json/discover_<agent>_<track>.json` | paper map + holistic pass + attack-surface index | any |
+| `merge_rank` | `_artifacts/json/panel_rows_candidates.json`, `_artifacts/json/ranked_issues.json` (audit), `_artifacts/json/triage.json` | all nine `_artifacts/json/discover_<agent>_<track>.json` files + `baseline_review.json` | claude |
+| `verify` | `_artifacts/json/panel_rows_candidates_verified.json` | `_artifacts/json/panel_rows_candidates.json` | gemini |
+| `prosecute` (Route A only) | `_artifacts/json/debate_<issue>_r<N>_prosecute.json` | `_calibration/post_pass1_panel_rows.json` (Round 1) or prior synthesis (Rounds 2+) | rotating |
+| `defend` | `_artifacts/json/debate_<issue>_r<N>_defend.json` | Route A: prosecute output + `_paper/paper.md`. Route B: `_calibration/post_pass1_panel_rows.json` (`claim_under_challenge` block) + `_paper/paper.md` | rotating |
+| `synthesize` | `_artifacts/json/debate_<issue>_r<N>_synthesize.json` | Route A: prosecute + defend outputs. Route B: defend output only | rotating |
+| `render` | `4_panel/panel.md` + mode-specific memo | `_artifacts/json/panel.json`, `_paper/paper.md` | gemini |
 | `evaluate` | `_evaluation/annotations/<blind_id>.json` | `_evaluation/prompts/<blind_id>.md` (self-contained) | external (default codex/`gpt-5.4-mini`) |
 
 ## Wave protocol
@@ -166,7 +168,7 @@ Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5
 |---|---|---|
 | `holistic_candidates` | `templates/discover_holistic.md` (method-neutral; uses paper spine + attack surfaces + likely referee questions) | conceptual-scope concerns the method tracks under-detect |
 | `broad_critic` | `templates/discover_broad.md` (fuses M0 close-reading + M2 contradictions + M5 self-measured) | scan for contradictions, scope mismatches, commitment violations, framing overclaims, transcription errors |
-| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling + M8 algebraic derivation trace, targeted at priority attack surfaces) | deep evidence-heavy findings on a small set of targets; M8 mandatory on every theory/proof surface; minimum 6 findings per ticket (orchestrator rejects-and-retries once on underproduction) |
+| `narrow_evidence` | `templates/discover_narrow.md` (fuses M3 transformations + M4 counterexamples + M6 causal disentangling + M8 algebraic derivation trace, targeted at priority attack surfaces) | deep evidence-heavy findings on the priority attack-surface set the agent selects; M8 mandatory on every theory/proof surface; orchestrator audits `surface_attempts[]` for coverage + M8 + engagement and rejects-and-retries once on a structural failure (see "Narrow-evidence yield retry") |
 
 Sample ticket:
 
@@ -198,7 +200,15 @@ All nine run in parallel (depends_on references the per-family holistic ticket, 
 
 **Evidence compiler inline.** Every candidate finding produced by any ticket passes through a compiler step BEFORE it is written to the discovery JSON. The compiler extracts the verbatim quote, pins the location, and decides whether support is `direct_quote` or `derived_inference`. Findings that cannot produce either are dropped at write time, not at merge time. This enforces the verbatim-quote discipline pre-emptively.
 
-**Narrow-evidence yield floor.** After each `discover_*_narrow_evidence` ticket completes, the orchestrator checks `len(issues)`. If fewer than **6 issues**, the ticket is **rejected and re-run once** with the same prompt. Re-runs append `_retry1` to the session log archive name so the failure-then-retry trace is preserved. A second underproduction is logged as a model failure in `_artifacts/sessions/narrow_evidence_underproduction.log` (one line per family) and the run continues with whatever the second attempt returned — no third try. This rule applies only to the `narrow_evidence` track; `broad_critic` and `holistic_candidates` have no minimum-yield requirement. Rationale: the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit 4 findings per family under the prior "3–8" quality bar. Two algebra findings coarse.ink caught lived in surfaces narrow_evidence selected but did not deeply engage. Floor-plus-retry is the cheapest structural fix.
+**Narrow-evidence engagement audit.** After each `discover_*_narrow_evidence` ticket completes, the orchestrator audits `surface_attempts[]` and `issues[]` against three structural checks (NOT against a hardcoded issue count — the agent picks the surface set, so a fixed count would either pad easy papers or reject hard ones):
+
+1. **Surface coverage.** Every attack surface in the index marked `priority: high` AND `requires_deep_engagement: true` must appear in `surface_attempts[]`. Missing high-priority surfaces fail the check.
+2. **M8 audit.** Every `surface_attempts[]` entry whose `type ∈ {theory, proof}` must have `m8_required: true` AND `m8_outcome ∈ {finding_emitted, clean_trace}`. `m8_outcome: "not_applicable"` on a theory/proof surface fails the check.
+3. **Engagement.** Every entry must populate `methods_attempted[]` with at least one method AND `engagement_outcome ∈ {finding_emitted, engaged_no_finding}`. An honest run that engages every selected surface and finds nothing passes the audit (`engagement_outcome: engaged_no_finding` on every entry); the failure is "skipped surfaces", not "low yield". `engagement_outcome: "finding_emitted"` is verified mechanically: `len(issues_emitted) > 0` AND every id in `issues_emitted` resolves to an entry in `issues[]`. A row claiming `finding_emitted` with empty `issues_emitted`, or naming an issue id absent from `issues[]`, fails the check.
+
+If any check fails, the ticket is **rejected and re-run once** with the same prompt and an inline reviewer note naming the specific failure (e.g. "M8 missing on AS3 (theory)"). Re-runs append `_retry1` to the session log archive name. A second failure is logged as a model failure in `_artifacts/sessions/narrow_evidence_underproduction.log` (one line per family with the failing check); the run continues with whatever the second attempt returned, but the failure surfaces in the panel-render summary so the human reviewer sees the gap rather than discovering it via missing findings.
+
+This rule applies only to the `narrow_evidence` track; `broad_critic` and `holistic_candidates` have no engagement audit. Rationale: the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit 4 findings per family under the prior "3–8" quality bar; two algebra findings coarse.ink caught lived in surfaces narrow_evidence selected but did not deeply engage. The earlier "minimum 6 issues" framing was a hardcoded threshold against the project rule and was not a real floor either (second-retry shipped whatever it got). Auditing engagement structurally is the actual fix.
 
 Each ticket's JSON output is `{"issues": [...]}` where each issue carries `category`, `evidence[]` (each entry with `quote`, `location`, `why`, `support_type`), `falsifier`, and optional `paper_commitment` / `paper_commitment_location` for self-measured critiques.
 
@@ -278,7 +288,7 @@ The prompt tells the agent to run **only that one method** on the paper, using i
 
 ### Wave 3 — Merge and rank (emitted after all discovery tickets complete)
 
-One ticket:
+One ticket. Inputs are the **nine v6 discovery files** (3 families × 3 tracks), not the retired 18-method shape. Output includes the canonical v6 panel-row candidates alongside the legacy ranked-issues audit artifact.
 
 ```json
 {
@@ -286,41 +296,46 @@ One ticket:
     "id": "merge_rank", "type": "merge_rank", "agent": "claude",
     "prompt_path": "_artifacts/prompts/merge_rank.md",
     "inputs": [
-      "_artifacts/json/discover_claude_m0.json",
-      "_artifacts/json/discover_claude_m2.json",
-      "_artifacts/json/discover_claude_m3.json",
-      "... and 15 more discovery JSON files (18 total) ..."
+      "_artifacts/json/discover_claude_holistic_candidates.json",
+      "_artifacts/json/discover_claude_broad_critic.json",
+      "_artifacts/json/discover_claude_narrow_evidence.json",
+      "_artifacts/json/discover_codex_holistic_candidates.json",
+      "_artifacts/json/discover_codex_broad_critic.json",
+      "_artifacts/json/discover_codex_narrow_evidence.json",
+      "_artifacts/json/discover_gemini_holistic_candidates.json",
+      "_artifacts/json/discover_gemini_broad_critic.json",
+      "_artifacts/json/discover_gemini_narrow_evidence.json",
+      "_artifacts/json/baseline_review.json"
     ],
     "outputs": [
+      "_artifacts/json/panel_rows_candidates.json",
       "_artifacts/json/ranked_issues.json",
       "_artifacts/json/triage.json"
     ],
     "depends_on": [
-      "discover_claude_m0", "discover_claude_m2", "discover_claude_m3",
-      "discover_claude_m4", "discover_claude_m5", "discover_claude_m6",
-      "discover_codex_m0", "discover_codex_m2", "discover_codex_m3",
-      "discover_codex_m4", "discover_codex_m5", "discover_codex_m6",
-      "discover_gemini_m0", "discover_gemini_m2", "discover_gemini_m3",
-      "discover_gemini_m5", "discover_gemini_m6"
+      "discover_claude_holistic_candidates", "discover_claude_broad_critic", "discover_claude_narrow_evidence",
+      "discover_codex_holistic_candidates",  "discover_codex_broad_critic",  "discover_codex_narrow_evidence",
+      "discover_gemini_holistic_candidates", "discover_gemini_broad_critic", "discover_gemini_narrow_evidence",
+      "baseline_review"
     ],
     "status": "pending", "timeout_s": 1200
   }
 }
 ```
 
-Note: `merge_rank` is a claude-typed ticket, so Claude executes it inline (reading all 15 discover JSON files, merging them, scoring, and writing the two outputs). After writing the JSON outputs, Claude also writes the human-readable `2_ranking/00_ranking.md`, `2_ranking/issue_register.md`, and `2_ranking/triage.md` as curated markdown.
+`merge_rank` is a claude-typed ticket, so Claude executes it inline. After writing the JSON outputs, Claude also writes the human-readable `2_ranking/00_ranking.md`, `2_ranking/issue_register.md`, and `2_ranking/triage.md` as curated markdown. `panel_rows_candidates.json` is the canonical structured output that flows into Wave 5 (calibration Pass 1); `ranked_issues.json` is preserved purely as the audit-trail artifact for inspection.
 
 ### Wave 4 — Verification (emitted after merge_rank)
 
-One ticket, Gemini only (because it owns web search):
+One ticket, Gemini only (because it owns web search). Verify reads the panel-row candidates and writes a verified copy used by Wave 5 calibration.
 
 ```json
 {
   "verify": {
     "id": "verify", "type": "verify", "agent": "gemini",
     "prompt_path": "_artifacts/prompts/verify.md",
-    "inputs": ["_artifacts/json/ranked_issues.json"],
-    "outputs": ["_artifacts/json/ranked_issues_verified.json"],
+    "inputs": ["_artifacts/json/panel_rows_candidates.json"],
+    "outputs": ["_artifacts/json/panel_rows_candidates_verified.json"],
     "depends_on": ["merge_rank"],
     "status": "pending", "timeout_s": 1800,
     "output_format": "json_stdout"
@@ -328,17 +343,17 @@ One ticket, Gemini only (because it owns web search):
 }
 ```
 
-Note: verify writes a new file `ranked_issues_verified.json` instead of overwriting `ranked_issues.json`. This makes the run-dag output check straightforward. After verification, Claude updates the human-readable `2_ranking/verification.md` from the new file.
+Note: verify writes a new file `panel_rows_candidates_verified.json` instead of overwriting `panel_rows_candidates.json`. This makes the run-dag output check straightforward. After verification, Claude updates the human-readable `2_ranking/verification.md` from the new file.
 
 ### Wave 5 — Calibration-wraps-debate (v6)
 
-v6 replaces v5's "debate-then-calibrate-top-N" with **calibration wrapping debate**: a first calibration pass runs on every panel-row candidate from merge, the four-way gate is evaluated over calibrated survivors, debate fires only on gate-clearers, and a second calibration pass narrows debate `surviving_text` before it enters the panel.
+v6 replaces v5's "debate-then-calibrate-top-N" with **calibration wrapping debate**: a first calibration pass runs on every panel-row candidate from merge, the two-route gate (Route A disagreement / Route B consensus override) is evaluated over calibrated survivors, debate fires only on gate-clearers, and a second calibration pass narrows debate `surviving_text` before it enters the panel.
 
 Concretely Wave 5 decomposes into three sub-waves that the orchestrator emits in sequence:
 
 #### Wave 5a — Calibration pass 1 (all candidates)
 
-For every row in `_artifacts/json/panel_rows_candidates.json` (produced by merge Step 6), emit one `calibrate` ticket per row. Default annotator: codex/gpt-5.4-mini; fallback: claude-sonnet-4.6. Ticket shape per `templates/calibrate.md`. Run with `agent-ctl run-dag _calibration/tickets.json --concurrent 4`.
+For every row in `_artifacts/json/panel_rows_candidates_verified.json[survived]` (produced by Wave 4 verify, or `panel_rows_candidates.json[survived]` if the run used `--skip-web`), emit one `calibrate` ticket per row. Default annotator: codex/gpt-5.4-mini; fallback: claude-sonnet-4.6. Ticket shape per `templates/calibrate.md`. Run with `agent-ctl run-dag _calibration/tickets.json --concurrent 4`.
 
 Output: `_calibration/annotations/<BF_id>.json` per row. The aggregator (Claude inline) applies disposition rules:
 
@@ -436,6 +451,7 @@ Row disposition by verdict:
 - Route A `defense_wins` → appended to `_calibration/dropped_by_defense.json` with defender's counter-evidence as drop reason; does NOT re-enter calibration
 - Route B `consensus_held` → flow into Wave 5d (the consensus held up under challenge; re-annotate its `surviving_text` if the synthesizer produced one, otherwise keep the original row)
 - Route B `consensus_broken` → appended to `_calibration/dropped_by_red_team.json` with defender's shared-hallucination analysis as drop reason; does NOT re-enter calibration
+- **`not_run`** → set by the synth-output validator (see `SKILL.md` → Validation rules → Synthesis) when a synthesizer returns a verdict from the wrong route's vocabulary, or omits `surviving_text` on a non-drop verdict, or omits `route`. The row falls back to its `calibration_pass1` verdict and ships to the panel as if it had skipped debate; the failure is logged at `_artifacts/sessions/synth_route_mismatch.log` (one line per offending ticket: row id, ticket route, synth-emitted verdict). NOT a drop — calibration Pass 1 already vouched for the row, so the conservative behaviour is "ship the pre-debate row" rather than "drop on synth failure". Surfaces in the panel-render summary as `n_synth_validator_rejections`.
 
 #### Wave 5d — Calibration pass 2 (debate survivors)
 
@@ -443,9 +459,9 @@ For each debate survivor, emit a fresh `calibrate` ticket against the synthesize
 
 Merge into final set: rows that went direct from Wave 5a → to_panel keep `calibration_pass1` only; rows that went through debate carry both `calibration_pass1` AND `calibration_pass2`. Both survive into the panel. The renderer reads whichever calibration is most recent on each row.
 
-Write `_calibration/final_findings.json` with the complete calibrated set, preserving both calibration passes per row, debate history per debated row, and dropped findings in separate arrays (dropped_pass1, dropped_by_defense, dropped_pass2).
+Write `_calibration/final_findings.json` with the complete calibrated set, preserving both calibration passes per row, debate history per debated row, and dropped findings in separate arrays (`dropped_pass1`, `dropped_by_defense` (Route A defense_wins), `dropped_by_red_team` (Route B consensus_broken), `dropped_pass2`). Each Route B `consensus_broken` row records the synthesizer's `mode_fired` field as the drop reason.
 
-For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
+**Route A (disagreement) — three tickets per issue.** Example for `issue_001` (Route A row pulled from `_calibration/post_pass1_panel_rows.json` via the `gate_decision.route == "disagreement"` filter):
 
 ```json
 {
@@ -456,11 +472,12 @@ For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
     "inputs": [
       "_paper/paper.md",
       "_artifacts/json/orient_claude.json",
-      "_artifacts/json/ranked_issues_verified.json"
+      "_calibration/post_pass1_panel_rows.json"
     ],
     "outputs": ["_artifacts/json/debate_issue_001_r1_prosecute.json"],
-    "depends_on": ["verify"],
-    "status": "pending", "timeout_s": 1200
+    "depends_on": ["calibrate_pass1"],
+    "status": "pending", "timeout_s": 1200,
+    "route": "disagreement"
   },
   "debate_issue_001_r1_defend": {
     "id": "debate_issue_001_r1_defend", "type": "defend",
@@ -473,7 +490,8 @@ For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
     ],
     "outputs": ["_artifacts/json/debate_issue_001_r1_defend.json"],
     "depends_on": ["debate_issue_001_r1_prosecute"],
-    "status": "pending", "timeout_s": 1200
+    "status": "pending", "timeout_s": 1200,
+    "route": "disagreement"
   },
   "debate_issue_001_r1_synthesize": {
     "id": "debate_issue_001_r1_synthesize", "type": "synthesize",
@@ -487,12 +505,48 @@ For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
     "outputs": ["_artifacts/json/debate_issue_001_r1_synthesize.json"],
     "depends_on": ["debate_issue_001_r1_defend"],
     "status": "pending", "timeout_s": 1200,
-    "output_format": "json_stdout"
+    "output_format": "json_stdout",
+    "route": "disagreement"
   }
 }
 ```
 
-**Role rotation by round:**
+**Route B (consensus override) — two tickets per issue, no prosecute.** Example for `issue_007` (Route B row pulled by the `gate_decision.route == "consensus"` filter; prompts MUST inline the row's `claim_under_challenge` block via the `{{claim_under_challenge}}` placeholder):
+
+```json
+{
+  "debate_issue_007_r1_defend": {
+    "id": "debate_issue_007_r1_defend", "type": "defend",
+    "agent": "codex",
+    "prompt_path": "_artifacts/prompts/debate_issue_007_r1_defend.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/orient_codex.json",
+      "_calibration/post_pass1_panel_rows.json"
+    ],
+    "outputs": ["_artifacts/json/debate_issue_007_r1_defend.json"],
+    "depends_on": ["calibrate_pass1"],
+    "status": "pending", "timeout_s": 1200,
+    "route": "consensus"
+  },
+  "debate_issue_007_r1_synthesize": {
+    "id": "debate_issue_007_r1_synthesize", "type": "synthesize",
+    "agent": "gemini",
+    "prompt_path": "_artifacts/prompts/debate_issue_007_r1_synthesize.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/debate_issue_007_r1_defend.json"
+    ],
+    "outputs": ["_artifacts/json/debate_issue_007_r1_synthesize.json"],
+    "depends_on": ["debate_issue_007_r1_defend"],
+    "status": "pending", "timeout_s": 1200,
+    "output_format": "json_stdout",
+    "route": "consensus"
+  }
+}
+```
+
+**Role rotation by round** (Route A only — Route B is one-shot, no rotation):
 
 | Round | Prosecutor | Defender | Synthesizer |
 |-------|-----------|----------|-------------|
@@ -500,7 +554,7 @@ For each cohort issue in Wave 5c, emit three tickets. Example for `issue_001`:
 | 2 | codex | gemini | claude |
 | 3 | gemini | claude | codex |
 
-Within a single issue's debate, the tickets are strictly sequential. Across issues, they are parallel (bounded by agent-ctl's `--concurrent` cap).
+Route B always assigns codex defender + gemini synthesizer (defender gets the stronger non-Claude code-reasoning model; synthesizer gets long-context arbiter). Within a single issue's debate, the tickets are strictly sequential. Across issues, they are parallel (bounded by agent-ctl's `--concurrent` cap).
 
 ### Gate helper canonical location
 
@@ -526,7 +580,7 @@ Route B does not iterate. The red-team challenge is one-shot by design — the d
 
 **There is no `converged` verdict.** It was removed in v2 — see `templates/synthesize.md` for rationale. Convergence-as-default produced 100% round-1 termination on the 2026-04-13 v3 run, draining all dialectic value.
 
-**No tier-based pre-allocation of rounds.** Every issue starts with a budget of 1 round. Rounds 2 and 3 are funded **only when the synthesizer's verdict demands continuation** (`split` or `escalate`). Budget follows tension, not pre-assigned rank tier. Hard cap at `--max-rounds` (default 3).
+**No tier-based pre-allocation of rounds.** Every issue starts with a budget of 1 round. Round 2 is funded **only when the synthesizer's verdict demands continuation** (`split` or `escalate`). Budget follows tension, not pre-assigned rank tier. Hard cap at `--max-debate-rounds` (default 2).
 
 **Role rotation across rounds** (unchanged):
 
@@ -538,7 +592,7 @@ Route B does not iterate. The red-team challenge is one-shot by design — the d
 
 ### Wave 6.5 — DEPRECATED (v5-only)
 
-Do not use the old post-debate calibration sub-DAG or `final_report` handoff described in pre-v6 editions of this file. The authoritative v6 flow is Wave 5a → 5b → 5c → 5d above, then Wave 7 panel compilation/render below. `templates/calibrate.md` now describes the two-pass calibration flow that wraps debate; there is no longer a "calibration-after-debate-only" sub-DAG.
+Do not use the old post-debate calibration sub-DAG or the legacy report-centric handoff described in pre-v6 editions of this file. The authoritative v6 flow is Wave 5a → 5b → 5c → 5d above, then Wave 7 panel compilation/render below. `templates/calibrate.md` now describes the two-pass calibration flow that wraps debate; there is no longer a "calibration-after-debate-only" sub-DAG.
 
 ### Wave 7 — Panel compile + render (v6, emitted after calibration final_findings.json exists)
 
@@ -577,13 +631,13 @@ Claude also updates `review.md` at the top of the paper folder to set `phase: co
 
 Fallback model: `claude-opus` when the panel has >30 findings or gemini is rate-limited.
 
-### Wave 7 — A/B evaluation (optional, emitted after `final_report = done`, only on user request)
+### Wave 7c — A/B evaluation (optional, emitted after panel render completes, only on user request)
 
 Evaluation is a **self-contained sub-DAG** under `<paper-folder>/_evaluation/`, with its own `tickets.json`, `prompts/`, `annotations/`, `sessions/`, and results. Findings are blinded with randomised `BF###` IDs (not `merged_NNN`); the `blind_id → true_version/true_id` map lives only in `_evaluation/manifest_blind.json` and is never shown to the annotator. Default annotator: **codex with `gpt-5.4-mini`** (matches the 2026-04-12 manual baseline). See `templates/evaluation.md` for protocol and `templates/evaluate.md` for the prompt body.
 
 Emission procedure (orchestrator runs this inline before `run-dag`):
 
-1. Collect findings from every review version being evaluated (single-review: just current `ranked_issues.json`; cross-review: gather from each version).
+1. Collect findings from every review version being evaluated (single-review: current `_calibration/final_findings.json`; cross-review: gather from each frozen version's calibrated set or equivalent).
 2. Shuffle all findings across all versions into one pool; assign sequential `BF###` IDs in shuffled order.
 3. Write `_evaluation/manifest_blind.json` with the `[{blind_id, true_version, true_id}, ...]` list.
 4. Build one self-contained prompt per finding at `_evaluation/prompts/<blind_id>.md` — rubric + finding JSON (with blind_id baked in, metadata stripped) + paper text inlined + `write_file` output instruction pointing at `_evaluation/annotations/<blind_id>.json`.
@@ -629,17 +683,16 @@ From Claude's perspective, the end-to-end flow is:
 
 1. `/disputatio <path-to-paper.md>` → Claude creates `$PAPER/` and all subfolders (`review.md`, `_paper/paper.md`, `0_orientation/`, ..., `_artifacts/{prompts,json,sessions}/`)
 2. Claude generates wave 1 tickets, writes the orientation prompts into `_artifacts/prompts/`, writes `_artifacts/tickets.json`
-3. Claude executes the `orient_claude` ticket inline (reads paper, writes `_artifacts/json/orient_claude.json`, marks the ticket done in tickets.json)
-4. Claude runs `agent-ctl run-dag $PAPER/_artifacts/tickets.json --cwd $PAPER --concurrent 3` — executes orient_codex and orient_gemini in parallel, blocks until complete. Session logs are auto-archived to `_artifacts/sessions/`
-5. Claude renders the three orientation JSON files into `0_orientation/{claude,codex,gemini}.md` and writes `0_orientation/00_orientation.md`
-6. Claude emits wave 2 discovery tickets and their prompts, appends to tickets.json, runs `agent-ctl run-dag` again
-7. Claude renders the 15 discovery JSON files into `1_discovery/m<N>/{claude,codex,gemini}.md` and writes the per-method summaries
-8. Claude executes `merge_rank` inline (reads the 15 discovery files, merges, scores, writes `_artifacts/json/ranked_issues.json`, `_artifacts/json/triage.json`, and the markdown in `2_ranking/`)
-9. Claude emits `verify` ticket, runs `agent-ctl run-dag`, Gemini does web verification
-10. Claude renders `2_ranking/verification.md` from the verified JSON
-11. Claude emits wave 5 (debate round 1 tickets for top N issues), runs `agent-ctl run-dag`
-12. For each completed synthesis, Claude renders the round files into `3_debates/<rank>_<slug>/r1_*.md` and decides whether to emit round N+1 based on the synthesis status
-13. When all debate tickets are terminal, Claude executes `final_report` inline (writes `_artifacts/json/final.json` and `4_report/referee_report.md`, updates `review.md` to `phase: complete`)
+3. Claude executes `orient_claude` inline; `agent-ctl run-dag` executes orient_codex and orient_gemini.
+4. Claude renders `0_orientation/`.
+5. Claude emits holistic tickets, builds `attack_surface_index.json`, then emits the 9 discovery tickets and the optional baseline sentinel.
+6. Claude renders `0_holistic/` and `1_discovery/`.
+7. Claude executes `merge_rank` inline, writing ranked artifacts plus `panel_rows_candidates.json`, then renders `2_ranking/`.
+8. Claude emits verification work only when needed and renders `2_ranking/verification.md`.
+9. Claude emits calibration pass-1 tickets, applies the Route A / Route B gate over survivors, and emits debate tickets only for gate-clearers.
+10. For each completed synthesis, Claude renders `3_debates/<rank>_<slug>/...` and emits another round only when the synthesizer explicitly demands continuation and budget remains.
+11. After calibration finalization, Claude compiles `_artifacts/json/panel.json`.
+12. Claude emits one `panel_render` ticket; after it completes, `4_panel/` is rendered and `review.md` is marked `phase: complete`.
 
 Between waves, Claude's job is two-fold: **render** the JSON outputs into curated markdown, and **emit** the next wave's tickets. Both happen before the next `run-dag` invocation. See `templates/obsidian_render.md` for the exact rendering templates.
 
@@ -650,7 +703,7 @@ Because every ticket is a file on disk inside the paper folder, the entire pipel
 1. Open the paper folder in Obsidian (or cd to it in the filesystem)
 2. `agent-ctl dag-status _artifacts/tickets.json` — inspect what is done
 3. `agent-ctl run-dag _artifacts/tickets.json --cwd .` — execute any remaining ready tickets
-4. If Claude-typed tickets are pending (orient_claude, merge_rank, final_report, or wave-emission logic), re-invoke `/disputatio` on the same paper folder and Claude resumes those inline
+4. If Claude-typed tickets are pending (orientation, holistic, discovery, merge, panel compile, or wave-emission logic), re-invoke `/disputatio` on the same paper folder and Claude resumes those inline
 
 The skill is fully resumable: closing Claude Code, restarting later, and re-running the skill on the same paper folder picks up where it left off.
 

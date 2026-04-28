@@ -23,6 +23,14 @@
       "support_type": "direct_quote | derived_inference"
     }
   ],
+  "needs_web_verification": false,
+  "verification_query": null,
+  "web_verification": {
+    "status": "confirmed | refuted | inconclusive | not_attempted",
+    "summary": "one-paragraph summary of what the external evidence shows (null if not_attempted)",
+    "sources": [{"url": "...", "title": "...", "relevant_excerpt": "..."}],
+    "impact_on_row": "strengthen | weaken | unchanged | null"
+  },
   "architecture_support": {
     "anthropic": { "supports": true, "methods": ["broad_critic"], "notes": "..." },
     "openai":    { "supports": true, "methods": ["narrow_evidence"], "notes": "..." },
@@ -73,7 +81,7 @@
     "prompt_trace_ids": ["_artifacts/prompts/discover_claude_holistic_candidates.md", "..."],
     "status": "survived | dropped"
   },
-  "status": "survived | dropped_pass1 | dropped_by_defense | dropped_pass2 | dropped_at_merge"
+  "status": "survived | dropped_pass1 | dropped_by_defense | dropped_by_red_team | dropped_pass2 | dropped_at_merge"
 }
 ```
 
@@ -83,7 +91,7 @@ The same row object persists from **merge → pass 1 → gate → debate → pas
 
 - `merge` sets: `finding_id`, `concern`, `category`, `severity`, `confidence.band` (= `"not_calibrated"` at this stage), `evidence`, `architecture_support`, `debate_hint`, `audit.source_candidate_ids`, `audit.prompt_trace_ids`, `audit.status` (= `"survived"` unless killed at merge).
 - `calibration_pass1` writes: `calibration_pass1` and the current `calibration` fields (`calibration` is the authoritative verdict, `calibration_pass1` is the audit record).
-- `gate_decision` is populated by the inline four-way gate helper (Wave 5b).
+- `gate_decision` is populated by the inline two-route gate helper (Wave 5b).
 - `debate` is populated only for rows with `gate_decision.escalated: true`, and only after Wave 5c synthesis completes.
 - `calibration_pass2` and an updated `calibration` verdict are populated only for rows that went through debate (Wave 5d).
 - `priority` is populated by the render step (mode-dependent); untouched until Phase 6.
@@ -99,7 +107,7 @@ This matters because render and downstream consumers read `calibration` — neve
 
 The following files MUST describe the row shape consistently with this file. If they disagree, patch them toward here:
 
-- `SKILL.md` — phase descriptions and explicit rules (especially the four-way gate)
+- `SKILL.md` — phase descriptions and explicit rules (especially the two-route gate)
 - `templates/merge_and_rank.md` — row emission in Step 6
 - `templates/calibrate.md` — two-pass flow and disposition
 - `templates/emit_tickets.md` — Wave 5a/5b/5c/5d and panel compilation
@@ -112,7 +120,7 @@ The following files MUST describe the row shape consistently with this file. If 
 Three files hold rows at different stages:
 
 - `_artifacts/json/panel_rows_candidates.json` — rows written by merge Step 6, before calibration or debate. Shape: `{"survived": [row, ...], "dropped_at_merge": [row, ...]}`.
-- `_calibration/final_findings.json` — rows after Pass 1, gate, debate (if any), and Pass 2. Shape: `{"findings": [row, ...], "dropped_pass1": [row, ...], "dropped_by_defense": [row, ...], "dropped_pass2": [row, ...]}`.
+- `_calibration/final_findings.json` — rows after Pass 1, gate, debate (if any), and Pass 2. Shape: `{"findings": [row, ...], "dropped_pass1": [row, ...], "dropped_by_defense": [row, ...], "dropped_by_red_team": [row, ...], "dropped_pass2": [row, ...]}`.
 - `_artifacts/json/panel.json` — the orchestrator wraps `final_findings.json` with `paper`, `engine`, `holistic_pass`, and `summary` to produce the canonical panel artifact. Shape: full panel JSON per `docs/log/2026-04-14_upstream-pivot-plan.md` with a `findings[]` array pointing at rows matching this schema.
 
 The render step reads `panel.json` only. It does NOT read `panel_rows_candidates.json` or `final_findings.json` directly.

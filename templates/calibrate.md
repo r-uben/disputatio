@@ -1,26 +1,26 @@
 # Calibration prompt (v6, two-pass wrapping debate)
 
-Calibration is a **blinded per-finding quality gate** that wraps debate in v6: Pass 1 runs on every candidate panel row from merge, the four-way escalation gate reads Pass 1 results to decide which findings enter debate, and Pass 2 runs on debate survivors to narrow their `surviving_text` before the panel is rendered. This is the primary quality mechanism in the pipeline. The post-hoc evaluation (`templates/evaluation.md`) is a separate A/B comparison tool, not the calibration loop.
+Calibration is a **blinded per-finding quality gate** that wraps debate in v6: Pass 1 runs on every candidate panel row from merge, the two-route escalation gate (Route A disagreement / Route B consensus override) reads Pass 1 results to decide which findings enter debate, and Pass 2 runs on debate survivors to narrow their `surviving_text` before the panel is rendered. This is the primary quality mechanism in the pipeline. The post-hoc evaluation (`templates/evaluation.md`) is a separate A/B comparison tool, not the calibration loop.
 
 **Row shape authority**: `templates/schemas/panel_row.md`. Calibration adds `calibration`, `calibration_pass1`, and (for debated rows) `calibration_pass2` fields to each row; it never reshapes the row.
 
 ## Why this flow exists
 
-v5 ran calibration after debate on the top-N by rank_score, then shipped a referee letter. Result: 56.2% overclaim rate on report-entering findings in the 2026-04-14 v4 run, and debate budget wasted on claims that a cheap first-pass calibrator would have killed or narrowed immediately. v6 reverses the order: calibrate first (cheap, kills obvious overclaims), then fire the four-way gate, then debate only on gate-clearers, then calibrate again on debate survivors.
+v5 ran calibration after debate on the top-N by rank_score, then shipped a referee letter. Result: 56.2% overclaim rate on report-entering findings in the 2026-04-14 v4 run, and debate budget wasted on claims that a cheap first-pass calibrator would have killed or narrowed immediately. v6 reverses the order: calibrate first (cheap, kills obvious overclaims), then fire the two-route gate, then debate only on gate-clearers, then calibrate again on debate survivors.
 
 ## What this does NOT do
 
 - Does not rediscover issues — if discovery missed something, calibration will not invent it (the Phase 1 holistic pass and Wave 2.5 baseline are the coverage mechanisms).
 - Does not re-rank — `rank_score` from merge is preserved for panel ordering.
-- Does not override the four-way gate — Pass 1's verdict feeds the gate but does not itself decide escalation.
+- Does not override the two-route gate — Pass 1's verdict feeds the gate but does not itself decide escalation.
 
 ## Which findings enter calibration — v6 two-pass model
 
-**Pass 1 (Wave 5a, before the gate)**: every row in `_artifacts/json/panel_rows_candidates.json` produced by `templates/merge_and_rank.md` Step 6. No filter; the pass annotates all of them with `quote_verified` × `calibration` verdicts.
+**Pass 1 (Wave 5a, before the gate)**: every row in `_artifacts/json/panel_rows_candidates_verified.json` (the Wave 4 verify output) — or in `panel_rows_candidates.json` directly if the run skipped web verification via `--skip-web`. No filter; the pass annotates every `survived` row with `quote_verified` × `calibration` verdicts. Rows whose `web_verification.status == "refuted"` should bias the annotator toward `calibration: unsupported`, but the verdict is the annotator's, not the verifier's.
 
 Disposition after Pass 1:
 
-- `quote_verified: no` OR `calibration: unsupported` → drop. Written to `_calibration/dropped_pass1.json` with reason. Does NOT enter the four-way gate or debate.
+- `quote_verified: no` OR `calibration: unsupported` → drop. Written to `_calibration/dropped_pass1.json` with reason. Does NOT enter the two-route gate or debate.
 - `quote_verified: partial` OR `calibration: overclaimed` → fire one polish-rewrite via `templates/polish.md`; re-annotate once **with an upgraded annotator** (codex gpt-5.4 non-mini, fallback sonnet) — NOT the same gpt-5.4-mini that ran Pass 1, to break correlated-error blind spots between the two mini reads. Then:
   - **Clean pass** (upgraded re-annotator returns unqualified `supported` + `quote: yes`, no hedging triggers — see below) → mark `calibration_pass1.verdict: calibrated_narrowed`, keep severity.
   - **Uncertain pass** (any one of the four triggers below fires) → mark `calibrated_narrowed` AND demote severity one tier (material → local, local → nit). Demote is the conservative fallback when the stronger re-annotator can't cleanly vouch for the narrowed claim.
@@ -30,13 +30,14 @@ Disposition after Pass 1:
 
 Pass 1 survivors (supported or calibrated_narrowed) flow into Wave 5b gate evaluation.
 
-**Pass 2 (Wave 5d, after debate)**: every debate survivor (verdict in {prosecution_wins, split, escalate}) re-annotated against the synthesizer's `surviving_text`. Same rubric, same disposition rules. Written to `calibration_pass2` field.
+**Pass 2 (Wave 5d, after debate)**: every debate survivor — Route A verdicts in {`prosecution_wins`, `split`, `escalate`} OR Route B verdict `consensus_held` — re-annotated against the synthesizer's `surviving_text` (or, on Route B `consensus_held` rows where the synthesizer produced no `surviving_text`, against the original `claim_under_challenge.claim`). Same rubric, same disposition rules. Written to `calibration_pass2` field.
 
 Pass 2 does NOT fire on findings that bypassed debate — their Pass 1 verdict is final and flows straight to the panel.
 
 **What does NOT enter calibration at any point:**
 - Triaged findings from merge Step 1 (already dropped pre-merge).
-- Findings killed by defender in debate (verdict: defense_wins) — written to `_calibration/dropped_by_defense.json`, do not get a Pass 2.
+- Findings killed by defender in Route A debate (verdict: `defense_wins`) — written to `_calibration/dropped_by_defense.json`, do not get a Pass 2.
+- Findings dropped by Route B red-team (verdict: `consensus_broken`) — written to `_calibration/dropped_by_red_team.json`, do not get a Pass 2.
 - `dropped_at_merge` items from merge Step 6's atomicity/validator rejections.
 
 ## Blinding
