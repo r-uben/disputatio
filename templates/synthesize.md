@@ -157,10 +157,15 @@ When the orchestrator fires this prompt with `route: "consensus"`, the structure
 
 **Step 3 — Declare a Route B verdict.** Choose **exactly one**:
 
-- **`consensus_held`** — the defender did NOT successfully red-team any shared-hallucination mode. No mode produced `holds_against` with verbatim-grounded counter-evidence in the paper, OR the modes that landed had target-drift issues. The three-family consensus survives red-team challenge. The finding ships to the panel with a "consensus survived red-team" badge. Recommendation: **treat as genuine flaw, keep at material severity.**
-- **`consensus_broken`** — at least one shared-hallucination mode landed `holds_against` with verbatim-grounded counter-evidence in the paper. The consensus was a shared misread. The finding drops. Recommendation: **acknowledge in dropped_findings with the defender's counter-evidence as the drop reason, annotate which shared-hallucination mode fired.**
+- **`consensus_held`** — the defender did NOT successfully red-team any shared-hallucination mode in a way that directly falsifies `claim_under_challenge.claim`. The three-family consensus survives red-team challenge. The finding ships to the panel with a "consensus survived red-team" badge. Recommendation: **treat as genuine flaw, keep at material severity.**
+- **`consensus_broken`** — a fired mode is not enough on its own. To return `consensus_broken` ALL of the following must hold:
+  1. At least one shared-hallucination mode landed `holds_against` with verbatim-grounded counter-evidence in the paper, online appendix, or a cited prior work the paper points at.
+  2. The defender's counter-evidence directly falsifies `claim_under_challenge.claim` — i.e., reading the cited passage makes the pinned claim false on its face, not merely "the consensus pattern-matched."
+  3. The defender engaged with the verbatim pinned claim (no target drift). If `target_integrity` is flagged as drift, `consensus_broken` is unavailable; default to `consensus_held` and note the drift.
 
-Conservative tiebreaker: if the defender's red-team is ambiguous — evidence cited but not conclusive, or one mode `holds_against` and another `reinterprets` — default to `consensus_held`. The burden of proof is on the red-team, not the consensus.
+If the defender shows a fired mode that *weakens* the consensus but does not directly falsify the pinned claim (common: "another reading is plausible" without "this reading is wrong"), the verdict is `consensus_held`. The merge step deliberately pinned the narrowest shared wording; weakening that pinned wording is calibration's job, not Route B's.
+
+Conservative tiebreaker: if the defender's red-team is ambiguous — evidence cited but not conclusive, or one mode `holds_against` and another `reinterprets` — default to `consensus_held`. The burden of proof is on the red-team, not the consensus. Route B over-pruning is the documented failure mode (see the 2026-04-17 dev log entry on F003); under-pruning is the recovery path because calibration Pass 2 on the surviving row catches the rest.
 
 ### Step 4 — Write the surviving text (Route B)
 

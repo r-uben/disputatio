@@ -14,9 +14,11 @@ Runs once per model family in Wave 2. Unlike `discover_broad.md` (wide sweep) an
 
 ## Task
 
-Select **exactly 5 priority attack surfaces** from the index (or all of them if fewer than 5 are marked `priority: high` AND `requires_deep_engagement: true` — in that case, take everything that qualifies and fall back to `priority: medium` to reach 5). For each surface, apply one or more of M3/M4/M6/M8 — at minimum one M8 attempt on every selected surface whose type is `theory` or `proof`. Depth beats breadth in this track, but the prior shape ("2–4 surfaces") consistently underproduced — the 2026-04-15 A/B vs coarse.ink had narrow_evidence emit only 4 findings per family, leaving real algebra gaps unaddressed.
+Take every attack surface in the index marked `priority == "high"` AND `requires_deep_engagement == true`. If the resulting set still leaves you with too few engagement targets to produce a depth-rich track output, extend into `priority == "medium"` until the set is wide enough — you, the agent, judge how wide that needs to be given the paper. Do not pad with low-priority surfaces; do not skip a high-priority surface to economise.
 
-**Mandatory minimum: 6 findings.** The orchestrator rejects any narrow ticket whose output has fewer than 6 issues and re-runs once. A second underproduction is logged as a model failure, not retried again — but the run continues with whatever the second attempt returned.
+For each selected surface, apply one or more of M3/M4/M6/M8 — at minimum one M8 attempt on every selected surface whose `type ∈ {theory, proof}`. The 2026-04-15 A/B vs coarse.ink had narrow_evidence emit only 4 findings per family under the prior "2–4 surfaces" framing, leaving real algebra gaps unaddressed; the lesson is "engage every priority surface deeply", not "hit a fixed surface count".
+
+**Engagement contract.** Discovery is closed-book. The orchestrator's audit rule is documented in `templates/emit_tickets.md` ("Narrow-evidence engagement audit") and checks surface coverage, M8 outcomes, and engagement — not issue count. Your job here is to engage every selected surface until method application is exhausted, not to hit a number. Padding to clear a count is explicitly disallowed (and the merge atomicity validator will drop padded findings anyway).
 
 ### M3 — Systematic transformation
 
@@ -71,6 +73,18 @@ Single JSON file to `{{output_path}}`:
 {
   "track": "narrow_evidence",
   "agent": "<your family>",
+  "surface_attempts": [
+    {
+      "attack_surface_id": "AS1",
+      "type": "theory | proof | empirics | identification | framing | robustness | exposition",
+      "methods_attempted": ["m3", "m4", "m6", "m8"],
+      "m8_required": true,
+      "m8_outcome": "finding_emitted | clean_trace | not_applicable",
+      "engagement_outcome": "finding_emitted | engaged_no_finding",
+      "issues_emitted": ["ne_<family>_001", "ne_<family>_002"],
+      "notes": "one sentence per surface — what you tried, what landed, why M8 is clean if no finding"
+    }
+  ],
   "issues": [
     {
       "id": "ne_<family>_001",
@@ -102,15 +116,21 @@ Single JSON file to `{{output_path}}`:
 
 Only one of `m3_transform` / `m4_counterexample` / `m6_cofactors` / `m8_derivation_trace` is populated per finding, per the `method` field.
 
+`surface_attempts[]` is mandatory. Every selected attack surface gets one entry — including surfaces that produced zero findings. Two outcome fields:
+
+- `m8_outcome` applies only to `theory`/`proof` surfaces. `m8_required` is `true` for those (contract violation to set it `false`); `false` otherwise. Allowed values when required: `finding_emitted`, `clean_trace`. Allowed value when not required: `not_applicable`. A clean M8 trace MUST appear as `clean_trace` with a one-sentence note; otherwise the orchestrator cannot distinguish a clean trace from a skipped one.
+- `engagement_outcome` applies to every surface regardless of type. Allowed values: `finding_emitted` (one or more issues in `issues_emitted`), `engaged_no_finding` (every relevant method tried, no finding survived honest engagement). The audit treats `engaged_no_finding` as a clean engagement; `not_attempted` is not a legal value here.
+
 ## Quality bar
 
-- **Minimum 6 findings per ticket, target 6–12.** Depth over count — a single well-constructed counterexample is worth five weak transform observations — but the prior "3–8" floor was too low and consistently produced 4. Five attack surfaces × at least one method per surface should comfortably yield 6+ findings. Orchestrator rejects output with fewer than 6 issues and re-runs the ticket once.
+- **Engage every selected surface fully.** The agent picks the surface set; the agent does not pick the depth — depth is "until M3/M4/M6/M8 stop producing concrete weaknesses on this surface." A surface that yields zero findings after honest engagement is a `surface_attempts[]` entry with empty `issues_emitted`, not a reason to switch to a thinner surface.
+- **No padding.** A weak transform observation written to clear a count fails the merge atomicity check (it lacks a falsifier-bearing claim) and gets dropped at merge anyway. Do not pad.
 - Every finding must trace to a specific proposition (not a vague "the paper's approach"). The target proposition's label (Theorem 1, Corollary OA3, Proposition 4) appears in the `claim` or `evidence.location`.
 - M3 transform findings should name which transform applies in the `m3_transform` field. "Weaken" findings that just restate the assumption are noise; prefer weakenings that break the proof.
 
 ## Priority attack-surface targeting
 
-The orchestrator ranks attack surfaces by `priority` in Phase 1. This track spends its budget on the `high`-priority ones first. If a `high`-priority attack surface has already been addressed by the holistic track, you may skip it — but check the holistic-track output for depth. A surface where holistic produced only a framing critique may benefit from deeper M3/M4/M6 engagement.
+The orchestrator ranks attack surfaces by `priority` in Phase 1. This track spends its budget on the `high`-priority ones first. **You may not skip a high-priority surface even if the holistic track already addressed it** — the audit (see `templates/emit_tickets.md`) rejects narrow_evidence outputs that omit high-priority surfaces. If holistic produced a framing critique, your job here is the deeper M3/M4/M6/M8 engagement holistic did not do; record that in the `surface_attempts[]` entry's `notes` field. The only legitimate way for a high-priority surface to absent itself from `surface_attempts[]` is for it not to exist in the attack-surface index, which is upstream of this track.
 
 ## OCR warning
 

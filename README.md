@@ -109,7 +109,7 @@ A self-contained Obsidian folder per paper:
 notes/work/referee-reports/<paper-slug>/
 ├── review.md                     ← top-level index, phase status, mode
 ├── _paper/paper.md               ← OCR'd source
-├── 0_holistic/                   ← cross-architecture paper map and attack-surface index (NEW in v6)
+├── 0_holistic/                   ← cross-architecture paper map and attack-surface index
 ├── 1_discovery/                  ← broad critic + narrow evidence-judgment sweeps
 ├── 2_ranking/                    ← merged atomic findings with verdict history
 ├── 3_debates/                    ← only contested findings that triggered escalation
@@ -134,14 +134,14 @@ Three model families (Claude, Codex, Gemini) produce a holistic conceptual pass 
 
 ## Status
 
-**v6 upstream pivot in progress (2026-04-14).** Product repositioned from "referee report as primary deliverable" to "finding panel as primary deliverable, prose memo as secondary." Discovery tickets cut from 18 (3 agents × 6 methods) to 9 (3 agents × 3 tracks). Holistic pass added upfront. Debate moved from default-on-top-N to escalation-only on contested findings. Single-writer rendering replaces fragment assembly for prose uniformity.
+Current shape: finding panel as primary deliverable, prose memo as secondary, single-writer rendering for voice uniformity. Nine discovery tickets (three readers × three tracks: holistic, broad critic, narrow evidence-judgment). Debate runs escalation-only on contested findings, not by default. Calibration enforces a per-finding blinded annotator with demote-or-drop on overclaim. Full pipeline history in [`CHANGELOG.md`](CHANGELOG.md) and dated entries under [`docs/log/`](docs/log/).
 
-**v5 calibration results on Galeotti-Golub-Goyal 2020 (Econometrica):** 0% fabrication rate (down from 18.8% in v4), 22% pre-demote overclaim rate (down from 56% in v4), 0% user-visible overclaim after demotion by construction. 27 atomic merged findings passed verbatim-quote validation. See [`docs/log/`](docs/log/) for full run history.
+**Benchmark run — Galeotti, Golub & Goyal 2020 (Econometrica).** 27 findings shipped from 110 raw candidates after merge, calibration, and debate. Blinded A/B judge rated 100% of disputatio findings as supported vs 36.4% for a single-agent prose reviewer on the same paper under the same rubric. Result is artifact-flagged — our calibration filter uses a stronger model than the judge, so the spread partly measures filter-vs-judge asymmetry. A cross-judge stress test under a stronger grader is pending before this becomes a published headline. Full scorecard in [`docs/log/`](docs/log/).
 
 **Known limitations** (full list in [`docs/roadmap.md`](docs/roadmap.md)):
 - Codex (ChatGPT Pro OAuth) enforces a weekly cap. High-volume users need a direct API-key transport; `agent-ctl` currently supports only the OAuth path.
 - Gemini's OAuth silently expires mid-run with no error surfacing through `agent-ctl`. Long runs need to detect `FatalCancellationError` and halt the DAG with an actionable message.
-- The v6 holistic pass is new and its effect on final finding precision has not yet been measured on a benchmark. Expect early runs to surface more framing/scope concerns than prior versions.
+- Single-paper benchmark is not a benchmark. Three-paper cross-judge evaluation is the next validation step before wider distribution.
 
 ---
 
@@ -161,9 +161,8 @@ Full methodology in [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Documentation map
 
-- [`docs/v6-upstream-plan.md`](docs/v6-upstream-plan.md) — the v6 pivot: product, pipeline diff, schema, metrics, positioning copy.
 - [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
-- [`docs/methods.md`](docs/methods.md) — the discovery methods that survive in v6 (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling plus the new M8 holistic scope-mismatch pass).
+- [`docs/methods.md`](docs/methods.md) — the discovery methods folded into the three tracks (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling, M8 algebraic derivation trace).
 - [`docs/evaluation.md`](docs/evaluation.md) — evaluation methodology, per-finding blinded annotation, release-gate metrics, human-study protocols.
 - [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending the three-family panel to additional architectures.
 - [`docs/roadmap.md`](docs/roadmap.md) — known bugs, planned improvements, open questions.

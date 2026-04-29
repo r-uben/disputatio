@@ -112,7 +112,7 @@ for b in coarse_unique:
         "scores": {"centrality": 2, "cross_agent_support": 0, "evidence_specificity": 2, "severity": 2 if b["severity"] == "material" else 1},
         "debate_hint": {
             # baseline-unique rows: single-family signal by construction; let the
-            # four-way gate in Phase 4 decide whether this escalates, like any
+            # two-route gate in Phase 4 decide whether this escalates, like any
             # other row. Baseline is a coverage sentinel, not a router.
             "cross_family_disagreement": "none",
             "evidence_conflict_in_paper": "unknown",
