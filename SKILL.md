@@ -462,7 +462,7 @@ Reference figures from the Galeotti, Golub & Goyal 2020 benchmark and steady-sta
 
 | Quantity | Typical value |
 |---|---|
-| Wall clock end-to-end | **~2 hours** (parallelism-limited by the slowest family per wave) |
+| Wall clock end-to-end | **~2.5 hours** (parallelism-limited by the slowest family per wave; v7.1 broad/narrow upgraded to full models adds ~30 min over v7) |
 | Total agent calls per run | **~80–130** (3 orient + 3 holistic + 9 discovery + ~5–10 merge/verify + ~30–50 calibration + 0–15 debate + 1–2 render) |
 | Calibration row count | ~30–50 candidate rows annotated; ~5–10 trigger polish + re-annotate |
 | Debate triggers | **0–5 findings** escalate; typical paper sees 1–3 Route-A or Route-B fires |
@@ -480,7 +480,9 @@ When emitting tickets, route models per the current pipeline:
 |------|--------|-------|--------|
 | Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
 | Holistic pass | opus/sonnet | gpt-5.4 | gemini-3.1-pro-preview |
-| Discovery | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery — `holistic_candidates` | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery — `broad_critic` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
+| Discovery — `narrow_evidence` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
 | Merge & rank | **opus** | — | — |
 | Baseline sentinel | **opus** | — | — |
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
