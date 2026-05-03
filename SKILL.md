@@ -136,6 +136,41 @@ Raw outputs in `_artifacts/json/discover_<agent>_<track>.json`. Rendered into `1
 
 **Web search**: not triggered in this phase. Closed-book discovery.
 
+### Phase 2.5 — Claim-validity audit (v8.1, new)
+
+This phase exists because v8.0's obligation extraction handles **absences** of required objects (`templates/obligations.md`), but it does not handle **wrong-but-present** errors: cases where the paper provides the formal object and the object is wrong under the paper's own definitions. Examples coarse catches that v7 + v8.0 (alone) miss: paper conditions on too much; aggregation mixes topology with merger order; equivalence claim that only restates the problem; novelty inflation that exceeds the formal proof.
+
+Phase 2.5 runs in parallel with Phase 2 discovery (no dependency between them) and integrates before Phase 3 merge. Three sub-stages:
+
+#### Phase 2.5a — Per-family triage (parallel)
+
+Each available family runs `templates/claim_triage.md` to select audit-worthy formal claims from holistic main_claims, the v8.0 obligation ledger's `unanimous_satisfied` entries (places where v8.0 said "the object is there" — Phase 2.5 asks "but is it doing the right work?"), and discovery findings tagged `proof | empirics | identification`.
+
+Output: 8–12 candidates per family per paper, each with `claim`, `present_object`, anchors, audit_priority, and a mandatory `dropped_because[]` list for accountability. Triage is intentionally lossy.
+
+Raw outputs in `_artifacts/json/claim_triage_<agent>.json`. Run in parallel with Phase 2 discovery.
+
+#### Phase 2.5b — Per-family claim-validity audit (parallel)
+
+Each family runs `templates/claim_validity.md` on its triaged candidates. The audit asks: *given the paper's stated definitions, does the present formal object actually support the claimed property?*
+
+Output per audit: `validity_status: valid | partial | invalid | unclear`, `failure_mode` (8 enumerated patterns + `other`), `minimal_witness` (concrete construction within the paper's setup), `paper_definitions_used[]` (anti-hallucination check at calibration), `benign_interpretation_considered` (anti-pedantry guardrail).
+
+Raw outputs in `_artifacts/json/claim_validity_<agent>.json`. 8–12 audit records per family.
+
+#### Phase 2.5c — Global integration (single inline ticket)
+
+A single integrator (Claude/opus, inline) runs `templates/claim_validity_integrate.md`:
+
+- Clusters audits across families by **same formal object attached to same claim** (functional clustering, not lexical).
+- Distinguishes three patterns: `same defect` (strongest), `same object different defects` (worth calibrating both), `family-only weak concern` (indeterminate).
+- Preserves cross-family disagreement verbatim in `family_records[]`.
+- Two outputs: full audit ledger (`_artifacts/json/claim_validity_ledger.json`) + calibration queue (`_artifacts/json/claim_validity_queue.json`).
+
+Calibration queue forwards `invalid | partial | disputed` clusters only. `unanimous_valid` rows live in the ledger.
+
+Phase 2.5 vs Phase 1.5 (v8.0): both run obligation/audit + integrator; their outputs merge only at panel-row stage (Phase 3 or earlier). Same architecture, distinct purpose.
+
 ### Phase 3 — Merge, rank, and verify
 
 After discovery, Claude executes the merge and rank procedure described in `templates/merge_and_rank.md`:
@@ -187,6 +222,31 @@ All five must hold for `verdict: reportable_gap`. Other verdicts: `resolved_sati
 Calibrated gap-class panel rows merge into `panel_rows_candidates.json` alongside method-based rows before Phase 5a. Resolved/indeterminate/inadequate-search obligations are preserved in `_calibration/obligation_audit.json` for replay and the panel's `dropped_findings[]`.
 
 Full spec in `templates/gap_claim_calibration.md`.
+
+### Phase 3v — Claim-validity calibration (v8.1, new)
+
+Processes the v8.1 claim-validity queue (`claim_validity_queue.json` from Phase 2.5c) into validity-class panel rows. Distinct from Phase 3g (gap-cal) and Phase 5a (quote-supported calibration) — different evidentiary contract.
+
+**Single-stage rubric** (no satisfaction-check sub-stage like 3g, because v8.1 candidates already start from present formal objects). Each ticket runs the six-condition rubric per `templates/claim_validity_calibration.md`:
+
+1. **Object and property located** — both anchors exist in the paper.
+2. **Uses paper definitions** — anti-hallucination check; cited definitions verified at their claimed locations; no external machinery imported.
+3. **Local and explainable** — failure scope bounded; no blanket condemnation of an entire proof when one step is wrong.
+4. **Minimal witness** — concrete construction within the paper's own setup (counterexample / redefinition / computation / unanticipated case / derivation break). Vague witnesses fail.
+5. **Scoped to invalidation** — distinguishes what the audit invalidates from what it does not.
+6. **Benign interpretation rejected** — most charitable reading explicitly considered and shown not to apply (anti-pedantry guardrail).
+
+**All six** must pass for `verdict: reportable_validity_finding`. Other verdicts: `resolved_audit_overclaim | charitable_reading_holds | hallucinated_definitions | inadequate_witness | indeterminate`.
+
+Reportable validity findings populate panel rows with `claim_type: validity`, severity calibrated by what the failure breaks (`material` if a load-bearing claim fails; `local` if narrowed; `nit` if cosmetic).
+
+#### Output
+
+Calibrated validity-class panel rows merge into `panel_rows_candidates.json` alongside gap-class (Phase 3g) and method-based rows before Phase 5a. Resolved/hallucinated/inadequate audits are preserved in `_calibration/claim_validity_audit.json` for the panel's `dropped_findings[]`.
+
+Disputed entries (families disagreed on `validity_status`): calibrator does **not** majority-vote. Adjudicates by witness strength under the paper's own definitions. Same-object-different-defects entries (families agree there's a problem but disagree on `failure_mode`) get the consensus or stronger-witness `failure_mode` shipped, alternatives recorded as considered-and-rejected.
+
+Full spec in `templates/claim_validity_calibration.md`.
 
 ### Phase 4 — Dialectic debate (v6: escalation-only)
 
