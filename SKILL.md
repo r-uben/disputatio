@@ -171,6 +171,38 @@ Calibration queue forwards `invalid | partial | disputed` clusters only. `unanim
 
 Phase 2.5 vs Phase 1.5 (v8.0): both run obligation/audit + integrator; their outputs merge only at panel-row stage (Phase 3 or earlier). Same architecture, distinct purpose.
 
+### Phase 2.6 — Scope/framing audit (v8.2, new)
+
+This phase exists because v8.0 (absences) and v8.1 (wrong-but-present correctness) leave a third failure mode: the formal object exists, the formal object is correct under the paper's own definitions, but the **narrative claim around it overreaches** what the formal evidence actually establishes. Examples coarse catches that v7+v8.0+v8.1 miss: comparator unfairness, novelty inflation, empirical evidence weaker than abstract conclusion, "general method" framing from narrow proofs, formal-result-sold-as-practical-performance.
+
+Phase 2.6 runs in parallel with Phase 2 discovery and Phase 2.5 (no dependencies between them) and integrates before Phase 3. Three sub-stages mirroring v8.1's architecture:
+
+#### Phase 2.6a — Per-family narrative-claim triage (parallel)
+
+Each family runs `templates/scope_framing_triage.md` to select narrative claims worth auditing. Cast over abstract, intro, conclusion, section openings, and holistic main_claims. Retain only claims that license a strong reader inference AND have a plausible formal-evidence anchor (or possible overreach). Output: 6–10 candidates per family with `prose_surface` tagging (`abstract_topline | intro_topline | section_opening | conclusion_topline | discussion`), `claimed_scope`, `reader_inference`, `expected_formal_anchor`. Lossy-and-accountable with mandatory `dropped_because[]`.
+
+Raw outputs in `_artifacts/json/scope_framing_triage_<agent>.json`.
+
+#### Phase 2.6b — Per-family scope/framing audit (parallel)
+
+Each family runs `templates/scope_framing.md` on triaged candidates. The audit asks: *does the paper's narrative claim match what the formal evidence actually establishes?*
+
+Uses prior ledgers as authoritative anchor maps:
+
+1. **v8.0 obligation ledger** — for "is the formal apparatus there"
+2. **v8.1 claim-validity ledger** — for "is the formal apparatus correct"
+3. **Direct paper search** as fallback if no ledger anchor exists (mark `anchor_source: direct_search`)
+
+Output per audit: `mismatch_assessment` (eight enumerated kinds: `comparator_unfairness | novelty_inflation | empirics_below_conclusion | general_method_from_narrow | formal_to_practical_leap | folk_theorem_framing | unconditional_claim_from_conditional_result | other`), `minimal_witness` (specific scope/strength gap), `scope_correction` (constructive re-statement), and the **mandatory `self_caveat_check`** recording whether the paper qualifies the claim elsewhere and whether the caveat is at the same prose surface.
+
+Raw outputs in `_artifacts/json/scope_framing_<agent>.json`. 6–10 audit records per family.
+
+#### Phase 2.6c — Global integration (single inline ticket)
+
+Claude/opus inline runs `templates/scope_framing_integrate.md`. Clusters audits by **same narrative claim** (functional, not lexical). Distinguishes `same_claim_different_mismatch_kinds` (worth calibrating both kinds) from straight unanimity. Preserves cross-family disagreement verbatim. Records `consensus_caveat_assessment` for downstream pragmatic caveat handling.
+
+Two outputs: full ledger (`_artifacts/json/scope_framing_ledger.json`) + calibration queue (`_artifacts/json/scope_framing_queue.json` — `overreaches | partial | disputed` only).
+
 ### Phase 3 — Merge, rank, and verify
 
 After discovery, Claude executes the merge and rank procedure described in `templates/merge_and_rank.md`:
@@ -247,6 +279,35 @@ Calibrated validity-class panel rows merge into `panel_rows_candidates.json` alo
 Disputed entries (families disagreed on `validity_status`): calibrator does **not** majority-vote. Adjudicates by witness strength under the paper's own definitions. Same-object-different-defects entries (families agree there's a problem but disagree on `failure_mode`) get the consensus or stronger-witness `failure_mode` shipped, alternatives recorded as considered-and-rejected.
 
 Full spec in `templates/claim_validity_calibration.md`.
+
+### Phase 3s — Scope/framing calibration (v8.2, new)
+
+Processes the v8.2 scope/framing queue (`scope_framing_queue.json` from Phase 2.6c) into framing-class panel rows. Distinct from Phase 3g, Phase 3v, and Phase 5a — fourth evidentiary contract.
+
+**Single-stage rubric** with a pragmatic caveat-handling rule. Each ticket runs the six-condition rubric per `templates/scope_framing_calibration.md`:
+
+1. **Narrative claim located** — verify prose at the cited anchor matches what the audit claimed it said.
+2. **Formal evidence identified** — locate the theorem/proposition/experiment that bears on the claim.
+3. **Concrete mismatch** — specific scope/strength gap, not "the framing is too strong somewhere"; one of the eight enumerated `mismatch_kind`s (or `other`).
+4. **Scope correction offered** — constructive re-statement, not pure complaint.
+5. **Caveat handling (pragmatic)** — applies a different rule per `prose_surface`:
+   - **Abstract / intro topline**: caveats elsewhere do **not** save the framing for an abstract reader. Severity stays at audit's level unless abstract itself contains a same-surface qualifier.
+   - **Section opening**: usually defeated by nearby same-section caveats.
+   - **Conclusion topline**: usually defeated by caveats in the same conclusion section.
+   - Outcome can be `caveat_does_not_save_claim | caveat_saves_claim | caveat_reduces_severity | caveat_reduces_confidence`.
+6. **Audience inference genuinely misled** (anti-pedantry guardrail) — would an expert reader skimming abstract+intro+conclusion actually be misled? Normal academic compression doesn't fail; only genuine misdirection does.
+
+Components 1–4 and 6 must pass. Component 5 modulates severity rather than blocking outright (caveats reduce severity but don't always close findings). Verdicts: `reportable_framing_finding | resolved_normal_compression | caveat_saves_claim | inadequate_witness | no_audience_misdirection | indeterminate`.
+
+Reportable framing findings populate panel rows with `claim_type: framing`, severity calibrated by prose-surface and caveat strength: `material` (abstract topline overreach, no same-surface caveat, formal evidence materially narrower); `local` (intro topline / section overreach, weak caveats); `nit` (conclusion-only, near-imminent caveat, cosmetic).
+
+#### Output
+
+Calibrated framing-class panel rows merge into `panel_rows_candidates.json` alongside method-based, gap-class (Phase 3g), and validity-class (Phase 3v) rows before Phase 5a. Resolved/normal-compression/caveat-saved audits preserved in `_calibration/scope_framing_audit.json` for the panel's `dropped_findings[]`.
+
+Disputed entries adjudicated by witness strength and prose-surface analysis, not voted. Same-claim-different-mismatch-kinds entries get the consensus or stronger-witness `mismatch_kind` shipped, alternatives recorded as considered-and-rejected.
+
+Full spec in `templates/scope_framing_calibration.md`.
 
 ### Phase 4 — Dialectic debate (v6: escalation-only)
 
