@@ -91,6 +91,29 @@ Raw outputs in `_artifacts/json/holistic_<agent>.json`; rendered into `0_holisti
 
 Full spec in `templates/holistic.md`.
 
+### Phase 1.5 — Obligation extraction + integration (v8.0, new)
+
+This phase exists because v7's discovery tracks under-detect **formal-specification gaps** — kernel definitions missing initial conditions, MH algorithms missing complete-data densities, theorems with hidden non-decomposability hypotheses. These are absences, not contradictions; the method tracks look for what is *wrong*, not what is *missing*. Phase 1.5 produces an audit trail of *what must be there* for each load-bearing claim/method, then surfaces unresolved obligations as gap-class findings under a different calibration rubric than the quote-supported pipeline (`templates/gap_claim_calibration.md`).
+
+#### Phase 1.5a — Per-family obligation extraction (parallel)
+
+Each of the available families reads the paper and produces structured obligation records: for every load-bearing claim, method, theorem, algorithm, or worked construction, the required objects (definitions, properties, conditions, intermediate lemmas, datasets, reference values) that must exist for the claim to be executable or provable, plus where each is satisfied (or not) in the paper.
+
+Raw outputs in `_artifacts/json/obligations_<agent>.json`; rendered into `0_obligations/<agent>.md`. 8–15 obligation records per family per paper. Run in parallel with degraded-mode tolerance — partial-family runs (anthropic blocked by content filter, etc.) proceed on whichever families are available.
+
+Full spec in `templates/obligations.md`.
+
+#### Phase 1.5b — Obligation integration (single inline ticket)
+
+A single integrator (Claude/opus, inline) merges per-family obligation records into a global ledger, clusters equivalent required objects (LLM-based clustering — no string-similarity heuristics), preserves cross-family disagreement verbatim in `family_records[]`, and emits two outputs:
+
+- **Full ledger** at `_artifacts/json/obligation_ledger.json` — every cluster including unanimous_satisfied. Audit trail; never enters discovery or calibration.
+- **Calibration queue** at `_artifacts/json/obligation_queue.json` — only `unsatisfied | partial | disputed` clusters. 5–12 entries on a typical paper.
+
+`integrated_status` (unanimous_satisfied / unanimous_partial / unanimous_unsatisfied / split_satisfied_majority / split_unsatisfied_majority / split_3way / indeterminate) is a **routing label**, not a truth claim. The downstream gap calibrator (Phase 3g) is responsible for resolving disputed obligations.
+
+Full spec in `templates/obligation_integrate.md`.
+
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):
@@ -129,6 +152,41 @@ After discovery, Claude executes the merge and rank procedure described in `temp
 5. **Web verification (Wave 4)**: Gemini fetches external evidence for rows whose row-level `needs_web_verification: true`. Verify writes `web_verification = {status: confirmed | refuted | inconclusive, impact_on_row: strengthen | weaken | unchanged, ...}` onto the row and emits `panel_rows_candidates_verified.json`. Verify does NOT alter `rank_score` and does NOT drop rows in v6 — it produces evidence that calibration Pass 1 reads (a `refuted` row biases the annotator toward `unsupported`, but the verdict is the annotator's). The v5 +2/−3 score-modification + budget-cut logic has been removed. See `templates/verify.md`.
 
 **Ranking priority**: cross-agent support is weighted double because it is the strongest signal. Five methods on one model are correlated; agreement across different architectures is much more meaningful.
+
+### Phase 3g — Gap-claim calibration (v8.0, new)
+
+After Phase 3 produces `panel_rows_candidates.json` from method-based discovery, Phase 3g processes the obligation queue (`obligation_queue.json` from Phase 1.5b) into gap-class panel rows. Two-stage fan-out:
+
+#### Stage 1 — Satisfaction check (sub-DAG, parallel, conditional)
+
+Fires only on obligations where any family record claims `satisfied: yes` or `satisfied: partial`, OR `integrated_status` is one of the split states. For `unanimous_unsatisfied` obligations the satisfaction check is skipped — the rubric runs directly.
+
+Single question per ticket: *does the cited evidence at the family-cited `found_at` actually provide the required object in a usable form for the claimed method/result?* Output: `satisfies: yes | partial | no | indeterminate`, with `defect_if_any` precisely naming what is wrong or partial. Resolution:
+
+- `yes` → drop from queue as `resolved_satisfied`. Panel row not emitted.
+- `partial` → continue to gap rubric, obligation re-typed as partial.
+- `no` → continue to gap rubric.
+- `indeterminate` → drop as `indeterminate`. Panel row not emitted.
+
+**One satisfied citation defeats the gap. Majority vote does not apply.** Conversely, one satisfied verdict with a bad citation does not suppress the gap — the satisfaction check is precisely the adjudication step.
+
+#### Stage 2 — Gap rubric (sub-DAG, parallel)
+
+Runs on satisfaction-check survivors plus direct `unanimous_unsatisfied` obligations. Each ticket validates five components against the paper:
+
+1. **Burden** — paper genuinely claims/uses object X.
+2. **Obligation** — X requires Y to be executable/provable.
+3. **Scoped absence** — Y is not found in the obligation's natural homes (originating claim location / model setup / method subsection / proof or appendix / cited algorithm). No hard floor on number of locations; adequacy is per-obligation LLM judgment against natural homes.
+4. **Substitute evaluation** — closest partial substitute is shown insufficient.
+5. **Consequence** — concrete description of what breaks downstream.
+
+All five must hold for `verdict: reportable_gap`. Other verdicts: `resolved_satisfied | inadequate_search | indeterminate | not_a_gap`. Reportable gaps populate a panel row with `claim_type: gap`, severity calibrated by what the unresolved obligation breaks (material if it blocks a load-bearing claim; local if it weakens but does not break; nit if cosmetic).
+
+#### Output
+
+Calibrated gap-class panel rows merge into `panel_rows_candidates.json` alongside method-based rows before Phase 5a. Resolved/indeterminate/inadequate-search obligations are preserved in `_calibration/obligation_audit.json` for replay and the panel's `dropped_findings[]`.
+
+Full spec in `templates/gap_claim_calibration.md`.
 
 ### Phase 4 — Dialectic debate (v6: escalation-only)
 
@@ -429,6 +487,39 @@ Every action writes to disk. Nothing lives only in Claude context.
 | Evaluation artifacts | `_evaluation/` | During optional Phase 7 |
 | DAG state | `_artifacts/tickets.json` | After every state transition |
 
+### Engine metadata + graceful-degradation contract (v8.0)
+
+The `engine` block in `_artifacts/tickets.json` is the contractual record of what families participated, what was blocked, and how downstream phases must handle the run. Required fields:
+
+```json
+{
+  "version": "v8.0",
+  "mode": "author | referee",
+  "families_present": ["anthropic", "openai", "google"],
+  "families_blocked": [],
+  "block_reasons": {},
+  "blocked_phases": [],
+  "support_type": "quote | paraphrase | locator_only",
+  "degraded_mode": false
+}
+```
+
+When a family is unavailable for any phase (Anthropic content filter on verbatim quoting, gemini-3.1-pro-preview capacity exhaustion, codex weekly cap, Gemini OAuth expiry), record it contractually:
+
+- `families_blocked` lists family names blocked at any point in the run.
+- `block_reasons` maps family → reason (`content_filter_verbatim` | `capacity_429` | `oauth_expired` | `weekly_cap`).
+- `blocked_phases` lists phase IDs where the block bit (e.g., `phase_2_discovery`, `phase_4_synth`).
+- `support_type` describes the evidence regime: `quote` (full verbatim quoting), `paraphrase` (some family forced to paraphrase due to filter), `locator_only` (no quotes available, only section/page anchors).
+- `degraded_mode: true` if any of the above is non-default.
+
+**Downstream phase contract**: every phase reads engine metadata and runs on the available families. Specifically:
+
+- **Phase 1.5a** runs on `families_present` only. The integrator (1.5b) records `families_present` in the ledger.
+- **Phase 4** Route B `high_severity_consensus` requires the **exact** distinct-families set across `sources[]` to equal `families_present` — when fewer than 3 families are present, Route B is reachable only with the available family set, not by relaxing the requirement.
+- **Phase 6** render must surface `degraded_mode` and `block_reasons` in the memo summary. Degradation is visible to the reader, not hidden.
+
+Hard-fail is **not** the policy. Content filters and capacity limits are part of the operating environment, especially on filter-prone papers (van Vreeswijk & Sompolinsky 1998 reliably triggers Anthropic's content filter on verbatim text reproduction). The system runs degraded with reduced coverage and stronger calibration burden, never silently or with concealed limitations.
+
 ### Resumability
 
 Re-invoking `/disputatio` on an existing paper folder resumes from disk:
@@ -462,7 +553,7 @@ Reference figures from the Galeotti, Golub & Goyal 2020 benchmark and steady-sta
 
 | Quantity | Typical value |
 |---|---|
-| Wall clock end-to-end | **~2 hours** (parallelism-limited by the slowest family per wave) |
+| Wall clock end-to-end | **~2.5 hours** (parallelism-limited by the slowest family per wave; v7.1 broad/narrow upgraded to full models adds ~30 min over v7) |
 | Total agent calls per run | **~80–130** (3 orient + 3 holistic + 9 discovery + ~5–10 merge/verify + ~30–50 calibration + 0–15 debate + 1–2 render) |
 | Calibration row count | ~30–50 candidate rows annotated; ~5–10 trigger polish + re-annotate |
 | Debate triggers | **0–5 findings** escalate; typical paper sees 1–3 Route-A or Route-B fires |
@@ -480,7 +571,9 @@ When emitting tickets, route models per the current pipeline:
 |------|--------|-------|--------|
 | Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
 | Holistic pass | opus/sonnet | gpt-5.4 | gemini-3.1-pro-preview |
-| Discovery | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery — `holistic_candidates` | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery — `broad_critic` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
+| Discovery — `narrow_evidence` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
 | Merge & rank | **opus** | — | — |
 | Baseline sentinel | **opus** | — | — |
 | Defense | — | gpt-5.4 | gemini-3.1-pro-preview |

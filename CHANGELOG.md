@@ -5,8 +5,39 @@ version history — user-facing docs, the website, and rendered artifacts do not
 carry version strings by design. Dated dev log entries with full reasoning live
 under [`docs/log/`](docs/log/).
 
-The pipeline is numbered internally (v3 → v4 → v5 → v6 → v7) for contributor
+The pipeline is numbered internally (v3 → v4 → v5 → v6 → v7 → v7.1) for contributor
 bookkeeping. These are not product release names.
+
+## Unreleased — v7.1 (drop-mini)
+
+Discovery model routing on `broad_critic` and `narrow_evidence` upgraded:
+
+- Codex: `gpt-5.4-mini` → `gpt-5.4` at medium reasoning effort
+- Gemini: `gemini-3-flash-preview` → `gemini-3.1-pro-preview`
+- Claude: `sonnet` (unchanged)
+
+`holistic_candidates` and `orient` stay on the lighter models — both are
+structural/scoping tasks that benefit less from the model upgrade.
+
+Validated against the coarse.ink head-to-head bench (see
+[`docs/log/2026-04-27_coarse-bench-and-drop-mini.md`](docs/log/2026-04-27_coarse-bench-and-drop-mini.md)):
+
+- Forney 1988 (info theory): v7 5.0/6 → v7.1 5.5/6 (gemini-3.1-pro judge, +0.5)
+- Stephens & Donnelly 2000 (popgen): v7 2.5/6 → v7.1 3.5/6 (codex/gpt-5.4 judge, +1.0; gemini OAuth expired mid-run, fell back to codex judge)
+
+Stronger discovery models surface formal-spec gaps mini missed — specifically
+obligation-style gaps (kernel definitions, complete-data densities, dimensional
+constraints) that coarse.ink's adversarial-proof module catches. Stephens v7.1
+caught the MCMC-method-needs-complete-data-density gap (= coarse comment #3)
+at panel stage; v7 missed it entirely.
+
+Wall clock impact: ~+30 min on a typical paper. Subscription cost stays $0.
+
+Closes [#18](https://github.com/r-uben/disputatio/issues/18). Issues
+[#15](https://github.com/r-uben/disputatio/issues/15) (obligation extraction),
+[#16](https://github.com/r-uben/disputatio/issues/16) (section drill-down),
+[#17](https://github.com/r-uben/disputatio/issues/17) (gap-claim calibration
+rubric) remain open as v8 backlog — drop-mini is a real but partial fix.
 
 ## Unreleased
 
