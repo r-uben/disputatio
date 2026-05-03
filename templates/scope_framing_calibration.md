@@ -57,6 +57,7 @@ Produce a single JSON file at `{{output_path}}`:
       "caveat_locations": ["where in the paper the prose claim is qualified"],
       "caveat_strength": "strong | weak | absent",
       "caveat_at_same_surface": "yes | no",
+      "caveat_prominence": "same_sentence | same_paragraph | same_surface | later_prominent | buried | none",
       "caveat_rule_applied": "abstract_topline_strict | intro_topline_strict | section_local_pragmatic | conclusion_pragmatic",
       "rule_decision": "caveat_does_not_save_claim | caveat_saves_claim | caveat_reduces_severity | caveat_reduces_confidence",
       "notes": "1-3 sentences explaining the caveat-rule application"
@@ -76,6 +77,11 @@ Produce a single JSON file at `{{output_path}}`:
     "claim_type": "framing",
     "severity": "material | local | nit",
     "mismatch_kind": "consensus or selected mismatch_kind",
+    "obligation_id": "v8.0 cluster ID if anchored, null otherwise",
+    "claim_validity_id": "v8.1 cluster ID if anchored, null otherwise",
+    "formal_object_id": "stable cross-phase identifier",
+    "missing_formal_anchor": "yes | no — true if no formal apparatus in the paper bears on the prose claim (overclaim with no formal support)",
+    "source_phase": "v8.2",
     "evidence": [
       {
         "quote_or_paraphrase": "the prose claim as the paper makes it",
@@ -116,11 +122,16 @@ Six rubric components, evaluated in order. Five must pass for `verdict: reportab
 
 The prose claim must be locatable verbatim (or close paraphrase) at the anchor the audit specified. Verify the prose text actually matches the audit's `narrative_claim` field. If not, the audit is hallucinating prose. Fail.
 
-#### 2. Formal evidence identified
+#### 2. Formal evidence identified (or `missing_formal_anchor` confirmed)
 
 The formal apparatus that bears on the claim must be locatable. If the audit cites Theorem 3 as the relevant evidence but Theorem 3 doesn't address the claim's domain, the audit is mis-anchored. Fail. Acceptable anchor sources: v8.0 obligation ledger (preferred), v8.1 claim-validity ledger (preferred), direct paper search (fallback).
 
-If the audit's `expected_formal_anchor` was `none_clear` and the calibrator's own search confirms no formal apparatus addresses the claim at all, that itself is the framing failure — proceed to component 3.
+**Missing-anchor handling**: if the audit's `expected_formal_anchor` was `none_clear` AND the calibrator's own search confirms no formal apparatus addresses the claim at all:
+
+- If `missing_formal_anchor: yes` AND the prose claim is `material` (abstract/intro topline making a specific assertion): the absence of any formal support **is** the framing failure. Component 2 passes — the audit anchors to "no formal anchor exists." Proceed to component 3 with this finding shape.
+- If `missing_formal_anchor: yes` AND the prose claim is `local`/`nit` (section-opening summary, conclusion synthesis): generic framing without specific formal hooks is normal academic prose. Fail component 2 → verdict: `resolved_normal_compression`.
+
+This rule prevents v8.2 from becoming generic rhetoric policing — `missing_formal_anchor` is reportable only when the prose claim is load-bearing enough that the absence of formal support is itself the misdirection.
 
 #### 3. Concrete mismatch
 
@@ -132,21 +143,30 @@ The mismatch must be concrete: a specific scope condition the prose omits, a spe
 
 The audit must propose a constructive re-statement — how the prose could be re-phrased to match the formal evidence. Pure complaint without correction is unconstructive and fails the rubric. The corrected version need not be perfect prose; it must be specific enough that a reader sees what the honest framing would be.
 
-#### 5. Caveat handling (pragmatic)
+#### 5. Caveat handling (pragmatic, prominence-aware)
 
 This component implements the pragmatic caveat rule. Severity and confidence may shift based on outcome.
 
+**`caveat_prominence` enum** (audit records, calibrator verifies):
+
+- **`same_sentence`** — caveat is in the same sentence as the prose claim. Strong block on the finding regardless of surface.
+- **`same_paragraph`** — caveat is in the same paragraph. Strong block.
+- **`same_surface`** — caveat is at the same prose surface (e.g., abstract claim with abstract caveat). Blocks for `abstract_topline` and `intro_topline` rules. For `section_opening` / `conclusion_topline`, also blocks.
+- **`later_prominent`** — caveat is in a different prose surface but appears prominently (section title, opening of named caveat block, "Limitations" subsection). Reduces severity (`caveat_reduces_severity`); does not save abstract/intro topline findings.
+- **`buried`** — caveat is in body text far from the claim, in a footnote, or hidden mid-paragraph. **Does not save anything**; does not even reduce severity. The reader skimming the paper would not encounter it.
+- **`none`** — no caveat at all.
+
 **Rule by prose surface**:
 
-- **`abstract_topline_strict`** — abstract topline claims set the paper's contract. Caveats elsewhere (§6 conclusion, discussion) do **not** save the framing for an abstract reader. Severity stays at the audit's level. `rule_decision: caveat_does_not_save_claim` if caveat is only in distant sections; `caveat_reduces_severity` if abstract itself contains a weak qualifier; `caveat_saves_claim` only if abstract has a strong same-surface qualifier.
+- **`abstract_topline_strict`** — abstract topline claims set the paper's contract. Saves only if `caveat_prominence` is `same_sentence`, `same_paragraph`, or `same_surface`. `later_prominent` reduces severity but does not close the finding. `buried` and `none` mean no caveat protection. Severity stays at the audit's level unless the prominence enum directs reduction.
 
-- **`intro_topline_strict`** — same as abstract. Intro topline claims are read with the paper's contract; caveats deep in conclusion do not retroactively scope intro.
+- **`intro_topline_strict`** — same prominence-aware rule as abstract. Caveats deep in conclusion do not retroactively scope intro.
 
-- **`section_local_pragmatic`** — section-opening claims are usually defeated by nearby caveats (within the same section, often within the same paragraph). `rule_decision: caveat_saves_claim` if a strong same-section caveat exists; `caveat_does_not_save_claim` only if the caveat is genuinely buried, weak, or inconsistent with the section header.
+- **`section_local_pragmatic`** — section-opening claims are saved by `same_sentence`, `same_paragraph`, or `same_surface` (i.e., caveat in the same section). `later_prominent` reduces severity; `buried` does not save.
 
-- **`conclusion_pragmatic`** — conclusion topline claims are usually defeated by caveats in the same conclusion section (most papers caveat their own conclusions). High bar to flag. Reportable only if the conclusion makes a top-line claim AND fails to walk back AND the formal evidence is materially narrower.
+- **`conclusion_pragmatic`** — conclusion topline claims are saved by same-sentence/paragraph/surface caveats (most papers caveat their own conclusions). Reportable only if conclusion makes a top-line claim AND no `same_*` caveat exists AND the formal evidence is materially narrower.
 
-The audit's `caveat_at_same_surface: yes/no` informs this. Calibrator independently verifies by checking the caveat locations.
+The calibrator independently verifies the `caveat_prominence` value by inspecting the caveat locations against the prose claim's anchor. Hostile or pedantic prominence labeling is rejected — `buried` cannot be silently re-tagged as `same_surface` to defeat the rule.
 
 #### 6. Audience inference genuinely misled (anti-pedantry guardrail)
 

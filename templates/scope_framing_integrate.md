@@ -50,14 +50,24 @@ Every clustered audit including unanimous-`mismatch_assessment.exists: no` clust
           "self_caveat_check": {
             "claim_caveated_elsewhere": "yes | partial | no",
             "caveat_strength": "strong | weak | absent",
-            "caveat_at_same_surface": "yes | no"
+            "caveat_at_same_surface": "yes | no",
+            "caveat_prominence": "same_sentence | same_paragraph | same_surface | later_prominent | buried | none"
           },
+          "obligation_id": "v8.0 cluster ID if anchor came from obligation ledger, null otherwise",
+          "claim_validity_id": "v8.1 cluster ID if anchor came from claim-validity ledger, null otherwise",
+          "formal_object_id": "stable cross-phase ID for the formal apparatus",
+          "missing_formal_anchor": "yes | no",
           "confidence": "high | medium | low"
         }
       ],
       "integrated_status": "unanimous_overreach | unanimous_partial | unanimous_no_mismatch | split_overreach_majority | split_no_mismatch_majority | split_3way | same_claim_different_mismatch_kinds | indeterminate",
       "consensus_mismatch_kind": "if all overreach families agree on kind: that kind; else 'multiple' or null",
       "consensus_caveat_assessment": "best-of-three on whether self-caveat saves the claim, accounting for prose_surface differential",
+      "consensus_caveat_prominence": "best-of-three on caveat_prominence enum; if families disagree on prominence, calibrator independently re-judges",
+      "consensus_missing_formal_anchor": "true if all overreach families agree no formal anchor exists; false otherwise",
+      "obligation_id": "v8.0 cluster ID if all family records anchor to the same one; null otherwise",
+      "claim_validity_id": "v8.1 cluster ID if all family records anchor to the same one; null otherwise",
+      "formal_object_id": "consensus stable identifier across families",
       "consequence_if_unaddressed": "best-of-three description of reader misdirection"
     }
   ]

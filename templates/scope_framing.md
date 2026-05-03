@@ -49,8 +49,14 @@ Produce a single JSON file at `{{output_path}}`:
         "claim_caveated_elsewhere": "yes | partial | no",
         "caveat_locations": ["where in the paper, if anywhere, the prose claim is qualified or scoped"],
         "caveat_strength": "strong | weak | absent",
-        "caveat_at_same_surface": "yes | no — is the caveat at the same prose surface as the claim (e.g., abstract claim caveated in abstract), or in a different surface (abstract claim caveated only in §6 conclusion)?"
+        "caveat_at_same_surface": "yes | no — is the caveat at the same prose surface as the claim (e.g., abstract claim caveated in abstract), or in a different surface (abstract claim caveated only in §6 conclusion)?",
+        "caveat_prominence": "same_sentence | same_paragraph | same_surface | later_prominent | buried | none"
       },
+      "obligation_id": "v8.0 obligation cluster ID this claim's formal apparatus anchors to, if any (cross-phase ID for stable merging) — null if direct_search anchor",
+      "claim_validity_id": "v8.1 claim-validity cluster ID for the underlying formal object, if any — null if no v8.1 audit on this object",
+      "formal_object_id": "stable identifier for the formal apparatus the prose claim references (e.g. 'theorem_1', 'algorithm_3.2', 'experiment_5.4') — used for cross-phase deduplication",
+      "missing_formal_anchor": "yes | no — set to yes only when no theorem/proposition/experiment in the paper bears on the prose claim at all (overclaim from no formal support); requires direct paper search to confirm",
+      "source_phase": "v8.2",
       "confidence": "high | medium | low"
     }
   ]
