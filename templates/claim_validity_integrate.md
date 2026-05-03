@@ -38,17 +38,25 @@ Every clustered audit including unanimous-`valid` ones. Audit trail; never enter
           "family": "anthropic",
           "audit_id": "CV_001",
           "validity_status": "valid | partial | invalid | unclear",
+          "failure_class": "validity_failure | support_mismatch",
           "failure_mode": "wrong_conditioning | aggregation_error | ... | other",
           "minimal_witness": "...",
+          "minimal_formal_correction": "...",
           "consequence_if_wrong": "...",
           "benign_interpretation_considered": "...",
-          "paper_definitions_used": [{"name": "...", "location": "...", "quote_or_paraphrase": "..."}],
+          "paper_definitions_used": [{"name": "...", "location": "...", "quote_or_paraphrase": "...", "load_bearing": "yes | no"}],
+          "obligation_id": "v8.0 cluster ID or null",
+          "formal_object_id": "stable cross-phase ID",
           "confidence": "high | medium | low"
         }
       ],
       "integrated_status": "unanimous_valid | unanimous_partial | unanimous_invalid | split_valid_majority | split_invalid_majority | split_3way | same_object_different_defects | indeterminate",
+      "consensus_failure_class": "validity_failure | support_mismatch | mixed | null — set when all non-valid families agree on failure_class; 'mixed' if they split between validity_failure and support_mismatch (worth flagging to calibrator since the repair target differs)",
       "consensus_failure_mode": "if all non-valid families agree on failure_mode: that mode; else 'multiple' or null",
+      "consensus_minimal_formal_correction": "best-of-three repair target across families; null if families disagree on what the fix would be",
       "merged_paper_definitions": ["union of cited paper definitions across families, deduplicated by name+location"],
+      "obligation_id": "v8.0 cluster ID if all family records anchor to the same one; null otherwise",
+      "formal_object_id": "consensus stable identifier across families",
       "consequence_if_wrong": "best-of-three description of what breaks downstream"
     }
   ]

@@ -35,11 +35,18 @@ Produce a single JSON file at `{{output_path}}`:
         }
       ],
       "validity_status": "valid | partial | invalid | unclear",
+      "failure_class": "validity_failure | support_mismatch",
+      "failure_class_description": "validity_failure = the present formal object is itself wrong under paper's definitions (the theorem's proof step is invalid). support_mismatch = the present formal object is itself correct but does not actually imply the claim's asserted property (the theorem is true but doesn't establish what the paper claims it does).",
       "failure_mode": "wrong_conditioning | aggregation_error | topology_order_confound | likelihood_loglikelihood_mismatch | equivalence_only_restates | hidden_quantifier_shift | novelty_exceeds_formal | scope_creep | other",
       "failure_mode_other_description": "if failure_mode == other: name the pattern in 1 sentence",
       "minimal_witness": "the smallest concrete construction showing the failure — counterexample within the paper's own setup, redefinition, computation that contradicts the claim, or unanticipated case the claim does not cover",
+      "minimal_formal_correction": "the smallest concrete edit to the paper that would resolve the failure — narrow the theorem statement to add the missing condition, repair the proof step, replace the misidentified object, etc. Constructive, not 'rewrite the section'",
       "consequence_if_wrong": "1-2 sentences on what downstream claim/method/result fails or weakens",
       "benign_interpretation_considered": "1-2 sentences on the most charitable reading of the paper that would save the claim, and why that reading does not apply",
+      "obligation_id": "v8.0 obligation cluster ID for the underlying object, if present_object originated from the obligation ledger — null otherwise",
+      "candidate_id": "the v8.1 triage candidate ID this audit started from",
+      "formal_object_id": "stable identifier for the formal apparatus audited (e.g. 'theorem_1', 'algorithm_3.2', 'lemma_4_distance_bound') — used for cross-phase deduplication with v8.2 framing audits",
+      "source_phase": "v8.1",
       "confidence": "high | medium | low"
     }
   ]
@@ -75,6 +82,23 @@ These eight patterns are common, not exhaustive. If you detect a different patte
 - **`partial`** — the object supports a *narrower* version of the claim than the paper asserts. State exactly the narrower version and why the broader claim doesn't follow.
 - **`invalid`** — the present object does not support the claim under the paper's own definitions. There is a minimal witness — concrete counterexample within the paper's setup, or a derivation step that breaks under the paper's stated conditions.
 - **`unclear`** — the paper text is ambiguous, OCR-corrupted, or the audit requires domain expertise beyond what's on the page. Use sparingly.
+
+### Two failure classes
+
+For non-`valid` audits, distinguish:
+
+- **`validity_failure`** — the present formal object is itself wrong under the paper's own definitions. The theorem's proof step is invalid; the algorithm's loop invariant doesn't hold; the lemma's bound is incorrect. The defect is *in* the formal object.
+- **`support_mismatch`** — the present formal object is itself correct, but it does not actually imply the asserted property the paper claims it does. The theorem is true; the theorem just doesn't establish what the paper says it establishes. The defect is in the *inference* from object to claim, not in the object.
+
+These look similar but the repair is different: validity_failure requires fixing the formal object; support_mismatch requires either re-stating the claim narrower or providing a different formal object. The downstream calibrator and panel-row payload consume this distinction.
+
+### Repair target (`minimal_formal_correction`) is mandatory
+
+Every non-`valid` audit requires `minimal_formal_correction`: the smallest concrete edit to the paper that would resolve the failure. This is the parallel to v8.2's `scope_correction`. Without a repair target, the audit is "the formal object has a problem" — which is vibes critique, not a panel-row finding.
+
+Examples:
+- For `validity_failure` on Lemma 5: "Add the non-catastrophic encoder hypothesis to Lemma 5's preconditions; re-state the conclusion as conditional on it."
+- For `support_mismatch` on Theorem 1: "The theorem proves existence of an optimal interior solution; replace the claim 'characterizes optimal intervention' with 'characterizes interior optimal intervention; boundary regimes require separate analysis.'"
 
 ### `paper_definitions_used` is mandatory
 

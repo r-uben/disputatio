@@ -33,10 +33,11 @@ Produce a single JSON file at `{{output_path}}`:
     "uses_paper_definitions": {
       "passes": "yes | partial | no",
       "cited_definitions": [
-        {"name": "...", "location": "...", "verified_at_location": "yes | no | not_checked"}
+        {"name": "...", "location": "...", "verified_at_location": "yes | no | not_checked", "load_bearing": "yes | no"}
       ],
+      "verification_coverage": "all | spot_check_50 | spot_check_3 | none",
       "external_machinery_imported": "yes | no",
-      "notes": "1-2 sentences on whether the audit relies only on paper-internal definitions; flag if any cited definition is not actually at its claimed location (anti-hallucination)"
+      "notes": "1-2 sentences. Verification coverage rule: ALL definitions must be verified for any audit headed for reportable_validity_finding. Non-reportable / indeterminate audits verify max(3, 50% of cited_definitions). If any definition tagged load_bearing: yes is unverified or not at claimed location, the audit cannot be reportable regardless of other rubric components passing."
     },
     "local_and_explainable": {
       "passes": "yes | partial | no",
@@ -70,8 +71,13 @@ Produce a single JSON file at `{{output_path}}`:
     "concern": "1-sentence statement of the wrong-but-present finding, used as panel-row concern",
     "category": "proof | empirics | identification | framing | robustness | interpretation | notation | other",
     "claim_type": "validity",
+    "failure_class": "validity_failure | support_mismatch",
     "severity": "material | local | nit",
     "failure_mode": "the consensus or selected failure_mode from the audit",
+    "minimal_formal_correction": "the smallest concrete edit to the paper that would resolve the failure (carried over from audit)",
+    "obligation_id": "v8.0 cluster ID if anchored, null otherwise",
+    "formal_object_id": "stable cross-phase identifier",
+    "source_phase": "v8.1",
     "evidence": [
       {
         "quote_or_paraphrase": "the asserted property the paper makes",
@@ -93,7 +99,7 @@ Produce a single JSON file at `{{output_path}}`:
       }
     ],
     "suggested_action": {
-      "author": {"fix": "what the author would do to align the present object with the asserted property — re-state the claim narrower, repair the proof step, add the missing condition"},
+      "author": {"fix": "the minimal_formal_correction — re-state the claim narrower, repair the proof step, add the missing condition, swap to a different formal object that actually supports the claim"},
       "referee": {"how_to_use": "how a referee would phrase this concern in a letter — what to ask the author"}
     }
   }
@@ -114,12 +120,18 @@ Both the present formal object and the asserted property must be locatable in th
 
 #### 2. Uses paper definitions (anti-hallucination)
 
-The audit must cite paper-internal definitions only. Verify each cited definition exists at its claimed location:
+The audit must cite paper-internal definitions only. Verification coverage depends on the audit's likely outcome:
 
-- **Spot-check rule**: for `cited_definitions[]`, check at least the first 3 (or all if ≤3). Set `verified_at_location: yes/no` per cited definition.
-- **External machinery flag**: if the audit's `required_inference` relies on machinery the paper doesn't define (e.g., a measure-theoretic concept the paper never uses), `external_machinery_imported: yes` and the rubric fails.
+- **For audits headed for `reportable_validity_finding`**: verify **all** entries in `cited_definitions[]`. Every load-bearing definition (those the audit's `required_inference` actually depends on) must be verified at its claimed location.
+- **For non-reportable / indeterminate audits**: verify at least `max(3, 50% of cited_definitions)`. Spot-check covers the most-cited or most-load-bearing entries first.
 
-This component fails if any cited definition is hallucinated (not at its location) or if external machinery is imported. Fail → verdict: `hallucinated_definitions`.
+For each cited definition, set `verified_at_location: yes | no | not_checked` and `load_bearing: yes | no`.
+
+**Hard rule**: if any definition tagged `load_bearing: yes` is unverified (`verified_at_location: no` or `not_checked`), the audit **cannot** be reportable regardless of other rubric components passing. Verdict becomes `hallucinated_definitions` (if a load-bearing cite is `no`) or `indeterminate` (if a load-bearing cite is `not_checked` and verification was prevented by access/filter).
+
+**External machinery flag**: if the audit's `required_inference` relies on machinery the paper doesn't define (e.g., a measure-theoretic concept the paper never uses), `external_machinery_imported: yes` and the rubric fails → verdict: `hallucinated_definitions`.
+
+This rule prevents a finding from standing on invented local terminology. The cost (verifying all cited definitions for reportable audits) is bounded — a typical audit cites 2–5 definitions, and the verification quote-match against the paper is mechanical.
 
 #### 3. Local and explainable
 
