@@ -121,3 +121,14 @@ A docs/log dev entry on completion:
 9. If pass: open v8.0 PR closing #15, #16 (stripped), #17. If fail: revise design.
 
 Total budget: ~6 hours wall clock + ~1 hour audit + 30 min write-up. Doable in one session if everything goes smoothly; more realistically split across two sessions to absorb gemini auth churn.
+
+## Bench order across v8.x layers (per codex turn 9 revision)
+
+**Strictly sequential for the first slice; parallel after the first integration is verified.**
+
+1. **Run v8.0 in full** per the steps above. Decide ship/revise per the release gate.
+2. **Run a small v8.1 bench on the v8.0 ledger** (one paper, e.g., Stephens) and inspect whether the validity ledger shape is stable — does the integrator emit the expected cross-phase IDs, do the calibrator's verdicts cluster sensibly, does the shape match what v8.2 will need to consume?
+3. **If v8.1 ledger shape is stable**, v8.2 can run in parallel with broader v8.1 bench. v8.2 mainly needs v8.0 anchors and can optionally consume v8.1 outcomes.
+4. **If v8.1 ledger shape needs revision**, hold v8.2 bench until v8.1 is stable. Otherwise v8.2 may bake in incompatible ledger references.
+
+The risk this orders against: if v8.1 reveals integration changes that v8.2 should reuse (e.g., a new anchor format, a different cluster_id scheme, a missed field), running v8.2 in parallel with v8.1's first integration would force later schema migration. One-shot serialization avoids that.
