@@ -7,21 +7,16 @@ Uses `script -q` on macOS to defeat output buffering so progress is visible
 in real time. Supports multi-turn sessions via `send`.
 
 Subcommands:
-    start   <agent> "prompt" [--model M] [--cwd /path] [--timeout S] [--flags ...]
+    start   codex|gemini "prompt" [--model M] [--cwd /path] [--timeout S] [--flags ...]
     send    <id> "follow-up message" [--timeout S]
     check   <id> [--tail N]
     result  <id>
     kill    <id>
     status
-    cleanup [--agent <agent>]
-
-Launchable agents are defined in the AGENTS registry (see `class AgentSpec`).
-Adding a new agent is one build_<name>_cmd function plus one AGENTS entry.
+    cleanup [--agent codex|gemini]
 """
 
 import argparse
-import contextlib
-import fcntl
 import json
 import os
 import re
@@ -30,17 +25,46 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable
 
-STATE_FILE = Path.home() / ".claude" / "agent-sessions.json"
+def _claude_config_dir() -> Path:
+    """Resolve the active Claude config dir (honors CLAUDE_CONFIG_DIR)."""
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(env).expanduser() if env else Path.home() / ".claude"
+
+
+def _account_suffix() -> str:
+    """Suffix derived from CLAUDE_CONFIG_DIR (e.g. '-vox' for ~/.claude-vox).
+
+    Lets us route codex/gemini to matching homes (~/.codex-vox, ~/.gemini-vox)
+    so secondary Claude accounts use secondary subagent accounts.
+    """
+    name = _claude_config_dir().name
+    if name.startswith(".claude-"):
+        return name[len(".claude"):]  # ".claude-vox" -> "-vox"
+    return ""
+
+
+STATE_FILE = _claude_config_dir() / "agent-sessions.json"
 OUTPUT_DIR = Path("/tmp/agent-ctl")
 
-# Per-agent defaults (models, OAuth-conflicting env vars, fallback on 429)
-# live on each AgentSpec in the AGENTS registry below. See `class AgentSpec`
-# and adding-agents.md for how to register a new agent.
+# Env vars to unset per agent (conflict with OAuth auth)
+UNSET_KEYS = {
+    "codex": ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"),
+    "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+}
+
+# Default models per agent
+DEFAULT_MODELS = {
+    "codex": "gpt-5.4",
+    "gemini": "gemini-3.1-pro-preview",
+}
+
+# Fallback model on 429 capacity exhaustion. Empty by user preference: stay on
+# the requested model (e.g. gemini-3.1-pro-preview) and let it retry/fail
+# rather than silently downgrading to flash.
+FALLBACK_MODELS: dict[str, str] = {}
 
 # Default timeout (seconds) — 5 minutes
 DEFAULT_TIMEOUT = 300
@@ -52,31 +76,7 @@ PROMPT_SIZE_THRESHOLD = 10240  # 10 KB
 
 # ── State helpers ────────────────────────────────────────────────────────────
 
-_LOCK_FILE = STATE_FILE.with_suffix(".lock")
-
-
-@contextlib.contextmanager
-def _state_lock():
-    """Hold an advisory exclusive lock on ~/.claude/agent-sessions.lock
-    for the duration of state read+write. Concurrent agent-ctl
-    invocations (start, run-dag, status, cleanup) serialise here
-    instead of racing on next_id() and clobbering each other's
-    session entries on save_state(). Lock file is per-user; the
-    state file is also per-user, so cross-user races do not arise."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_LOCK_FILE, "w") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-
-
 def load_state() -> dict:
-    """Read the state file. Callers that mutate must hold _state_lock()
-    and use save_state(). Single read-only callers (status, check) can
-    skip the lock; they may see a momentary stale read but never
-    corruption because save_state() writes atomically."""
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text())
@@ -86,23 +86,11 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    """Write the state file atomically: write to a sibling temp path
-    and rename over the target. POSIX rename is atomic on the same
-    filesystem, so a concurrent reader either sees the old file or
-    the new one — never a half-written one."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATE_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    tmp.replace(STATE_FILE)
+    STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 def next_id(state: dict) -> str:
-    """Return next sequential session ID like '01', '02', ...
-
-    Caller must hold _state_lock() between this call and the
-    subsequent save_state(state), otherwise two concurrent starts
-    can compute the same ID and clobber each other.
-    """
+    """Return next sequential session ID like '01', '02', ..."""
     existing = [int(k) for k in state if k.isdigit()]
     return f"{max(existing, default=0) + 1:02d}"
 
@@ -143,17 +131,9 @@ GEMINI_UUID_RE = re.compile(
 )
 
 
-def _all_unset_keys() -> set[str]:
-    """Union of env vars to strip across every registered agent."""
-    keys: set[str] = set()
-    for spec in AGENTS.values():
-        keys.update(spec.unset_env_keys)
-    return keys
-
-
 def gemini_latest_uuid(cwd: str) -> str | None:
     """Return the UUID of the most recently created Gemini session."""
-    env = {k: v for k, v in os.environ.items() if k not in _all_unset_keys()}
+    env = _clean_env()
 
     try:
         out = subprocess.run(
@@ -194,27 +174,31 @@ def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
 
 
 def _clean_env() -> dict:
-    """Build environment with all conflicting keys removed."""
-    return {k: v for k, v in os.environ.items() if k not in _all_unset_keys()}
+    """Build environment with all conflicting keys removed.
+
+    When the parent Claude is running under a non-default CLAUDE_CONFIG_DIR
+    (e.g. ~/.claude-vox), inject matching CODEX_HOME / GEMINI_CLI_HOME so the
+    spawned subagent uses the parallel secondary account rather than the
+    default one in ~/.codex / ~/.gemini.
+    """
+    all_unset = set()
+    for keys in UNSET_KEYS.values():
+        all_unset.update(keys)
+    env = {k: v for k, v in os.environ.items() if k not in all_unset}
+
+    suffix = _account_suffix()
+    if suffix:
+        home = Path.home()
+        env.setdefault("CODEX_HOME", str(home / f".codex{suffix}"))
+        env.setdefault("GEMINI_CLI_HOME", str(home / f".gemini{suffix}"))
+    return env
 
 
 # ── Command builders ─────────────────────────────────────────────────────────
 
 def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
-                    extra_flags: list[str] | None,
-                    flags: dict | None = None,
-                    **_unused) -> list[str]:
-    """Build the codex exec command.
-
-    Known flag translations from `flags`:
-      - reasoning_effort -> -c model_reasoning_effort=<value>
-    Unknown keys in flags warn and are ignored.
-
-    NOTE on stdin rewriting: `prompt` MUST stay as the trailing
-    positional argument so _codex_stdin_rewrite (which drops the last
-    element when piping) keeps working. Do not append flags AFTER the
-    prompt.
-    """
+                    extra_flags: list[str] | None) -> list[str]:
+    """Build the codex exec command."""
     cmd = ["codex", "exec", "--full-auto"]
 
     # Check if cwd is a git repo; if not, add --skip-git-repo-check
@@ -225,374 +209,38 @@ def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
     cmd.extend(["-m", model])
     cmd.extend(["--output-last-message", str(result_file)])
 
-    flags = flags or {}
-    if "reasoning_effort" in flags:
-        cmd.extend(["-c", f"model_reasoning_effort={flags['reasoning_effort']}"])
-
-    for key in flags:
-        if key not in {"reasoning_effort"}:
-            print(
-                f"agent-ctl: codex ignoring unknown flag {key!r} "
-                f"(promote to a translation in build_codex_cmd if load-bearing)",
-                file=sys.stderr,
-            )
-
     if extra_flags:
         cmd.extend(extra_flags)
 
-    cmd.append(prompt)  # MUST stay last — see docstring
+    cmd.append(prompt)
     return cmd
 
 
-def build_gemini_cmd(prompt: str, model: str,
-                     extra_flags: list[str] | None = None,
-                     **_unused) -> list[str]:
+def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> list[str]:
     """Build the gemini headless command.
 
-    Always passes --yolo so Gemini can write files directly via write_file
-    tool. Without --yolo, Gemini blocks on tool approval in headless mode
-    and falls back to dumping JSON to stdout.
+    Defaults to --approval-mode auto_edit: lets Gemini auto-approve
+    read/write/edit tools (so web_search, read_file, write_file work in
+    headless mode) but does NOT auto-approve shell commands. This is the
+    sweet spot for research/OCR/note-taking — Gemini can persist outputs
+    without being able to execute arbitrary shell.
 
-    Accepts extra kwargs (result_file, cwd) for signature uniformity with
-    other build_*_cmd functions in the AGENTS registry, but ignores them.
+    Override via --flags -y / --flags --approval-mode {plan|yolo|...}.
+    If extra_flags already specifies an approval mode (or --yolo/-y), we
+    skip the default to avoid the "cannot use both" error from gemini CLI.
     """
-    cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text", "--yolo"]
+    cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text"]
 
-    if extra_flags:
-        cmd.extend(extra_flags)
+    extra = list(extra_flags) if extra_flags else []
+    user_set_mode = any(
+        f in ("-y", "--yolo", "--approval-mode") or f.startswith("--approval-mode=")
+        for f in extra
+    )
+    if not user_set_mode:
+        cmd.extend(["--approval-mode", "auto_edit"])
 
+    cmd.extend(extra)
     return cmd
-
-
-# ── Per-agent stdin rewriters ────────────────────────────────────────────────
-#
-# When a prompt exceeds PROMPT_SIZE_THRESHOLD it is piped via stdin from a
-# temp file instead of passed as a shell argument. Each agent's CLI has a
-# different expectation for what the command looks like when the prompt is
-# on stdin, so each AgentSpec carries its own rewriter.
-
-def _codex_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """Codex takes the prompt as a trailing positional; drop it when piping."""
-    return cmd[:-1]
-
-
-def _gemini_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """Gemini takes the prompt as `-p <text>`; keep the flag, blank the value.
-
-    `-p/--prompt` is documented as "appended to input on stdin (if any)",
-    so setting `-p ""` and piping the file to stdin makes Gemini treat the
-    piped content as the prompt.
-    """
-    fixed = list(cmd)
-    fixed[2] = ""
-    return fixed
-
-
-def build_opencode_cmd(prompt: str, model: str,
-                       extra_flags: list[str] | None = None,
-                       flags: dict | None = None,
-                       **_unused) -> list[str]:
-    """Build the opencode run command.
-
-    `opencode run [message..] -m <provider>/<model> [other flags]` is
-    the non-interactive entry point. The message is a POSITIONAL
-    argument (variadic in the upstream CLI), not a --prompt flag.
-    Model is REQUIRED in disputatio usage; the caller supplies it.
-
-    Known flag translations from `flags`:
-      - agent            -> --agent <name>
-      - log_level        -> --log-level <debug|info|warn|error>
-      - pure             -> --pure (bool)
-      - variant          -> --variant <high|max|minimal>  (provider-specific
-                                                           reasoning effort)
-      - thinking         -> --thinking (show thinking blocks)
-    Unknown keys produce a stderr warning and are ignored. Promote to
-    explicit translations here when a flag proves load-bearing.
-
-    NOTE on stdin rewriting: prompt MUST stay as the trailing positional
-    so _opencode_stdin_rewrite can drop the last element when piping.
-    Do not append flags AFTER the prompt.
-
-    See templates/agents/opencode.md for ticket shape and conventions.
-    """
-    cmd = ["opencode", "run", "-m", model]
-
-    flags = flags or {}
-    if "agent" in flags:
-        cmd.extend(["--agent", str(flags["agent"])])
-    if "log_level" in flags:
-        cmd.extend(["--log-level", str(flags["log_level"])])
-    if flags.get("pure"):
-        cmd.append("--pure")
-    if "variant" in flags:
-        cmd.extend(["--variant", str(flags["variant"])])
-    if flags.get("thinking"):
-        cmd.append("--thinking")
-
-    for key in flags:
-        if key not in {"agent", "log_level", "pure", "variant", "thinking"}:
-            print(
-                f"agent-ctl: opencode ignoring unknown flag {key!r} "
-                f"(promote to a translation in build_opencode_cmd if load-bearing)",
-                file=sys.stderr,
-            )
-
-    if extra_flags:
-        cmd.extend(extra_flags)
-
-    cmd.append(prompt)  # MUST stay last — see docstring
-    return cmd
-
-
-def _opencode_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """OpenCode takes the prompt as a trailing positional; drop it
-    when piping the prompt on stdin. opencode reads stdin when no
-    positional message is given."""
-    return cmd[:-1]
-
-
-def build_ollama_cmd(prompt: str, model: str,
-                     extra_flags: list[str] | None = None,
-                     flags: dict | None = None,
-                     **_unused) -> list[str]:
-    """Build the ollama run command.
-
-    `ollama run [flags] <model> "<prompt>"` runs a local model in
-    one shot. Large prompts are piped on stdin; see
-    _ollama_stdin_rewrite.
-
-    NOTE on per-call sampling options: `ollama run` does NOT expose
-    flags for temperature, num_ctx, num_predict, etc. Those are
-    Modelfile parameters, set either at model-build time or via the
-    REST `POST /api/generate` endpoint with an `options` payload.
-    For tickets that need them, use the REST API directly (out of
-    scope here) or build a Modelfile variant of the model with
-    pre-set parameters and reference it by name.
-
-    Known flag translations from `flags` (matches real ollama CLI):
-      - format        -> --format <string>     (e.g. "json" forces JSON)
-      - hidethinking  -> --hidethinking        (strip <think> blocks)
-      - think         -> --think <true|false|high|medium|low>
-      - keepalive     -> --keepalive <duration>
-      - nowordwrap    -> --nowordwrap
-      - verbose       -> --verbose
-    Unknown keys produce a stderr warning and are ignored. Any
-    non-CLI options (temperature, num_ctx, ...) trigger an explicit
-    warning pointing the user at the REST-API path.
-
-    See templates/agents/ollama.md for ticket conventions and
-    preflight checks.
-    """
-    flags = flags or {}
-
-    # Surface a clear warning for keys that look like sampling options
-    # but cannot be passed via `ollama run`. Without this, callers will
-    # set temperature in the ticket and silently get the model default.
-    _api_only = {"temperature", "num_ctx", "num_predict", "top_p",
-                 "top_k", "seed", "repeat_penalty"}
-    for key in flags:
-        if key in _api_only:
-            print(
-                f"agent-ctl: ollama ignoring flag {key!r} -- per-call "
-                "sampling options are not exposed by `ollama run`. Use "
-                "the REST /api/generate endpoint with an options payload "
-                "or pre-build a Modelfile with the value baked in.",
-                file=sys.stderr,
-            )
-
-    cmd = ["ollama", "run"]
-
-    if "format" in flags:
-        cmd.extend(["--format", str(flags["format"])])
-    if flags.get("hidethinking"):
-        cmd.append("--hidethinking")
-    if "think" in flags:
-        # Must use `--think=<value>` with equals; the space form
-        # (`--think false`) makes ollama's CLI parser treat the value
-        # as the model name and fail with "pull model manifest: file
-        # does not exist". Verified against ollama CLI behaviour.
-        cmd.append(f"--think={flags['think']}")
-    if "keepalive" in flags:
-        cmd.extend(["--keepalive", str(flags["keepalive"])])
-    if flags.get("nowordwrap"):
-        cmd.append("--nowordwrap")
-    if flags.get("verbose"):
-        cmd.append("--verbose")
-
-    known = _api_only | {"format", "hidethinking", "think", "keepalive",
-                         "nowordwrap", "verbose"}
-    for key in flags:
-        if key not in known:
-            print(
-                f"agent-ctl: ollama ignoring unknown flag {key!r} "
-                f"(promote to a translation in build_ollama_cmd if load-bearing)",
-                file=sys.stderr,
-            )
-
-    if extra_flags:
-        cmd.extend(extra_flags)
-
-    cmd.extend([model, prompt])  # model and prompt MUST be the last two
-    return cmd
-
-
-def _ollama_stdin_rewrite(cmd: list[str]) -> list[str]:
-    """Ollama takes the prompt as the trailing positional arg; drop it
-    and pipe from stdin instead. `ollama run` treats stdin as the
-    prompt when the positional is absent. The model name is the
-    second-to-last element and is preserved.
-    """
-    return cmd[:-1]
-
-
-# ── AgentSpec registry ───────────────────────────────────────────────────────
-#
-# Adding a new launchable agent is now a matter of writing one build_<name>_cmd
-# function (and a stdin rewriter if the CLI has a non-trivial prompt shape)
-# and adding one AgentSpec entry below. Dispatch sites look up the spec by
-# name and call spec.build_cmd / spec.stdin_rewrite — no new if/elif branches.
-#
-# `implicit_family` marks transports whose family is fixed by the CLI
-# itself (codex always hits OpenAI, gemini always hits Google). The
-# orchestrator still writes `family` into every ticket for schema
-# uniformity, but the launcher can fill it in from the spec if the
-# ticket omits it. Gateway transports (opencode, ollama) leave this
-# None; their tickets MUST carry family.
-#
-# `supports_multi_turn` gates cmd_send. Transports that set False are
-# refused explicitly instead of silently falling through to hardcoded
-# resume logic.
-#
-# `inline_only=True` marks agents the orchestrator (Claude Code) runs
-# itself rather than through agent-ctl. These must never reach the
-# launch path — the old else-fallthrough misrouted claude tickets to
-# Gemini with a sonnet model ID, producing 404s.
-#
-# Per-CLI behavior (invocation, model-string conventions, flag
-# translation) is documented in markdown under templates/agents/,
-# because Claude-as-orchestrator reads those files at emit time to
-# pick the right family and model for each ticket. See
-# docs/transport-model-family.md for why the semantics live there
-# rather than in this file.
-
-@dataclass(frozen=True)
-class AgentSpec:
-    name: str
-    default_model: str
-    fallback_model: str | None = None
-    unset_env_keys: tuple[str, ...] = ()
-    inline_only: bool = False
-    supports_multi_turn: bool = False
-    build_cmd: Callable[..., list[str]] | None = None
-    stdin_rewrite: Callable[[list[str]], list[str]] | None = None
-    implicit_family: str | None = None
-
-
-AGENTS: dict[str, AgentSpec] = {
-    "claude": AgentSpec(
-        name="claude",
-        default_model="opus-4.6",
-        inline_only=True,
-        implicit_family="anthropic",
-    ),
-    "codex": AgentSpec(
-        name="codex",
-        default_model="gpt-5.4",
-        fallback_model="gpt-5.4-mini",
-        unset_env_keys=("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"),
-        supports_multi_turn=True,
-        build_cmd=build_codex_cmd,
-        stdin_rewrite=_codex_stdin_rewrite,
-        implicit_family="openai",
-    ),
-    "gemini": AgentSpec(
-        name="gemini",
-        default_model="gemini-3.1-pro-preview",
-        fallback_model="gemini-3-flash-preview",
-        unset_env_keys=("GOOGLE_API_KEY", "GEMINI_API_KEY"),
-        supports_multi_turn=True,
-        build_cmd=build_gemini_cmd,
-        stdin_rewrite=_gemini_stdin_rewrite,
-        implicit_family="google",
-    ),
-    "opencode": AgentSpec(
-        name="opencode",
-        default_model="anthropic/claude-sonnet-4-6",
-        supports_multi_turn=False,
-        build_cmd=build_opencode_cmd,
-        stdin_rewrite=_opencode_stdin_rewrite,
-        implicit_family=None,  # gateway: ticket must supply family
-    ),
-    "ollama": AgentSpec(
-        name="ollama",
-        default_model="qwen2.5:32b",
-        supports_multi_turn=False,
-        build_cmd=build_ollama_cmd,
-        stdin_rewrite=_ollama_stdin_rewrite,
-        implicit_family=None,  # gateway: ticket must supply family
-    ),
-}
-
-
-# ── Canonical family vocabulary ──────────────────────────────────────────────
-#
-# The launcher refuses gateway-transport tickets whose family is missing
-# or outside this set. Vocabulary lives in templates/agents/families.md;
-# this list mirrors it. Keep the two in sync when a new architecture
-# lands — the markdown file is the source of truth Claude reads when
-# emitting tickets.
-
-_CANONICAL_FAMILIES: frozenset[str] = frozenset({
-    "alibaba", "anthropic", "cohere", "deepseek", "google",
-    "meta", "microsoft", "mistral", "moonshot", "openai", "xai",
-})
-
-
-def _validate_ticket_family(ticket: dict, spec: AgentSpec) -> None:
-    """Refuse to launch a ticket whose family is missing or unknown.
-
-    For single-family transports (implicit_family set), the field may
-    be absent (the launcher fills it in) but if present must match.
-    For gateway transports (implicit_family None), the field is
-    required and must be in _CANONICAL_FAMILIES.
-    """
-    fam = ticket.get("family")
-    tid = ticket.get("id", "<unknown>")
-    if spec.implicit_family is not None:
-        if fam is None:
-            return  # orchestrator elided; launcher will fill from spec
-        if fam != spec.implicit_family:
-            sys.exit(
-                f"ticket {tid}: family={fam!r} conflicts with transport "
-                f"{spec.name!r} (implicit family: {spec.implicit_family!r})"
-            )
-        return
-    if not fam:
-        sys.exit(
-            f"ticket {tid}: gateway transport {spec.name!r} requires an "
-            "explicit 'family' field. See templates/agents/families.md."
-        )
-    if fam not in _CANONICAL_FAMILIES:
-        sys.exit(
-            f"ticket {tid}: unknown family {fam!r}. "
-            f"Canonical set: {sorted(_CANONICAL_FAMILIES)}."
-        )
-
-
-def _launchable_spec(agent: str) -> AgentSpec:
-    """Return the spec for a launchable (non-inline) agent, or exit."""
-    spec = AGENTS.get(agent)
-    if spec is None:
-        sys.exit(
-            f"agent-ctl: unknown agent '{agent}'. "
-            f"Known agents: {', '.join(sorted(AGENTS))}."
-        )
-    if spec.inline_only:
-        sys.exit(
-            f"agent-ctl: agent '{agent}' is inline-only and must be executed "
-            "by the orchestrator (Claude Code), not dispatched to agent-ctl."
-        )
-    return spec
 
 
 def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
@@ -602,73 +250,89 @@ def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
     For prompts under PROMPT_SIZE_THRESHOLD, quotes the prompt inline
     (existing behavior). For larger prompts, writes to a temp file and
     pipes via stdin to avoid shell argument limits and LaTeX escaping.
-    The per-agent stdin shape is carried by the AgentSpec.
     """
     if len(prompt) <= PROMPT_SIZE_THRESHOLD:
         return " ".join(_quote(c) for c in agent_cmd)
 
+    # Write prompt to temp file
     safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", ticket_id or "prompt")
     prompt_file = Path(f"/tmp/agent_ctl_{safe_id}_{int(time.time())}.md")
     prompt_file.write_text(prompt, encoding="utf-8")
 
-    spec = AGENTS.get(agent)
-    if spec is None or spec.stdin_rewrite is None:
-        # Fall back to inline quoting for unknown agents or agents that do
-        # not declare a stdin rewriter. Upstream callers should never reach
-        # this branch in practice — cmd_start / _launch_ticket guard first.
-        return " ".join(_quote(c) for c in agent_cmd)
-
-    cmd_for_stdin = spec.stdin_rewrite(agent_cmd)
-    quoted = " ".join(_quote(c) for c in cmd_for_stdin)
-    return f"cat {_quote(str(prompt_file))} | {quoted}"
+    if agent == "codex":
+        # Codex: remove the trailing prompt arg, pipe from file
+        # cmd = ["codex", "exec", "--full-auto", ..., prompt]
+        cmd_without_prompt = agent_cmd[:-1]
+        quoted = " ".join(_quote(c) for c in cmd_without_prompt)
+        return f"cat {_quote(str(prompt_file))} | {quoted}"
+    else:
+        # Gemini: remove the prompt value (index 2) but keep -p flag (index 1).
+        # Gemini CLI: -p/--prompt "Appended to input on stdin (if any)."
+        # So we pass -p "" and pipe the prompt file to stdin.
+        # cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text", "--yolo"]
+        cmd_fixed = list(agent_cmd)
+        cmd_fixed[2] = ""  # replace prompt text with empty string, keep -p at [1]
+        quoted = " ".join(_quote(c) for c in cmd_fixed)
+        return f"cat {_quote(str(prompt_file))} | {quoted}"
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 def cmd_start(args) -> None:
+    state = load_state()
+    state = reap_finished(state)
+
     agent = args.agent
-    spec = _launchable_spec(agent)
+    sid = next_id(state)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    outfile = OUTPUT_DIR / f"session-{sid}.txt"
+    result_file = OUTPUT_DIR / f"session-{sid}-result.md"
+
     cwd = args.cwd or os.getcwd()
-    model = args.model or spec.default_model
+    model = args.model or DEFAULT_MODELS[agent]
     timeout = args.timeout or DEFAULT_TIMEOUT
 
-    # Hold the state lock across read+next_id+launch+save so two
-    # concurrent `start` invocations cannot compute the same ID.
-    with _state_lock():
-        state = load_state()
-        state = reap_finished(state)
-        sid = next_id(state)
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        outfile = OUTPUT_DIR / f"session-{sid}.txt"
-        result_file = OUTPUT_DIR / f"session-{sid}-result.md"
-
-        agent_cmd = spec.build_cmd(
-            prompt=args.prompt, model=model,
-            result_file=result_file, cwd=cwd,
-            extra_flags=args.flags,
-            flags={},
+    # Build agent-specific command. Only codex and gemini are launchable
+    # subprocesses — other agents (notably "claude") are executed inline by
+    # the orchestrator and should never reach this dispatch. Raising rather
+    # than silently falling through to gemini avoids the misroute that
+    # produced 404s when claude tickets were dispatched as gemini calls
+    # against a `sonnet` model.
+    if agent == "codex":
+        agent_cmd = build_codex_cmd(prompt=args.prompt, model=model,
+                                    result_file=result_file, cwd=cwd,
+                                    extra_flags=args.flags)
+    elif agent == "gemini":
+        agent_cmd = build_gemini_cmd(prompt=args.prompt, model=model,
+                                     extra_flags=args.flags)
+    else:
+        sys.exit(
+            f"agent-ctl: unknown agent '{agent}'. "
+            "Only 'codex' and 'gemini' are launchable via agent-ctl. "
+            "Tickets with agent='claude' are executed inline by the "
+            "orchestrator (Claude Code) — do not dispatch them here."
         )
 
-        env = _clean_env()
-        shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
-        pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
+    env = _clean_env()
+    shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
+    pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
 
-        state[sid] = {
-            "pid": pid,
-            "agent": agent,
-            "status": "running",
-            "model": model,
-            "cwd": cwd,
-            "prompt": args.prompt[:200],
-            "outfile": str(outfile),
-            "result_file": str(result_file),
-            "timeout": timeout,
-            "turn": 1,
-            "gemini_uuid": None,  # populated after first turn completes
-            "started": datetime.now(timezone.utc).isoformat(),
-            "ended": None,
-        }
-        save_state(state)
+    state[sid] = {
+        "pid": pid,
+        "agent": agent,
+        "status": "running",
+        "model": model,
+        "cwd": cwd,
+        "prompt": args.prompt[:200],
+        "outfile": str(outfile),
+        "result_file": str(result_file),
+        "timeout": timeout,
+        "turn": 1,
+        "gemini_uuid": None,  # populated after first turn completes
+        "started": datetime.now(timezone.utc).isoformat(),
+        "ended": None,
+    }
+    save_state(state)
 
     print(f"Session {sid} started ({agent})")
     print(f"  PID:     {pid}")
@@ -698,22 +362,6 @@ def cmd_send(args) -> None:
     model = meta["model"]
     timeout = args.timeout or meta.get("timeout", DEFAULT_TIMEOUT)
     turn = meta.get("turn", 1) + 1
-
-    # Refuse multi-turn for transports that have not opted in. The
-    # codex/gemini resume blocks below are agent-specific (different
-    # CLI shapes for resume), and silently falling through for new
-    # transports would either produce wrong commands or attempt the
-    # gemini path against an unrelated CLI. Each new transport must
-    # set supports_multi_turn=True AND grow an explicit branch here
-    # before send works for it.
-    spec = AGENTS.get(agent)
-    if spec is None or not spec.supports_multi_turn:
-        sys.exit(
-            f"agent-ctl: transport {agent!r} does not support multi-turn "
-            "sessions. Start a new session instead, or set "
-            "supports_multi_turn=True on the AgentSpec and add a resume "
-            "branch in cmd_send."
-        )
 
     # For Gemini: capture UUID from previous turn if not yet captured
     if agent == "gemini" and not meta.get("gemini_uuid"):
@@ -880,6 +528,33 @@ def cmd_status(args) -> None:
     state = reap_finished(state)
     save_state(state)
 
+    if getattr(args, "json", False):
+        # Structured output — stable schema for programmatic routing.
+        now = datetime.now(timezone.utc)
+        records = []
+        for sid, meta in sorted(state.items()):
+            status = meta["status"]
+            if status == "running" and not is_alive(meta["pid"]):
+                status = "done"
+                meta["status"] = "done"
+            start = datetime.fromisoformat(meta["started"])
+            end = datetime.fromisoformat(meta["ended"]) if meta.get("ended") else now
+            records.append({
+                "id": sid,
+                "agent": meta["agent"],
+                "status": status,
+                "model": meta["model"],
+                "cwd": meta.get("cwd", ""),
+                "turn": meta.get("turn", 1),
+                "started": meta.get("started", ""),
+                "ended": meta.get("ended"),
+                "elapsed_s": int((end - start).total_seconds()),
+                "prompt": meta.get("prompt", ""),
+            })
+        save_state(state)
+        print(json.dumps(records, indent=2))
+        return
+
     if not state:
         print("No sessions.")
         return
@@ -903,6 +578,93 @@ def cmd_status(args) -> None:
         print(f"{sid:<5} {meta['agent']:<8} {status:<10} {meta['model']:<20} {turn:<6} {elapsed:<10} {prompt}")
 
     save_state(state)
+
+
+def _candidate_sessions(state: dict, agent: str, cwd: str,
+                        topic: str | None, max_age_hours: int) -> list[tuple[str, dict]]:
+    """Return done sessions matching (agent, cwd), filtered by topic + age,
+    sorted most-recent-first. Used by send-or-start to find resumable matches.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    matches = []
+    for sid, m in state.items():
+        if m.get("agent") != agent:
+            continue
+        if m.get("cwd") != cwd:
+            continue
+        if m.get("status") != "done":
+            # 'running' sessions can't accept a 'send' yet; 'killed' is dead.
+            continue
+        try:
+            started = datetime.fromisoformat(m.get("started", ""))
+        except (TypeError, ValueError):
+            continue
+        if started < cutoff:
+            continue
+        if topic:
+            haystack = m.get("prompt", "").lower()
+            if topic.lower() not in haystack:
+                continue
+        matches.append((sid, m))
+    matches.sort(key=lambda kv: kv[1].get("started", ""), reverse=True)
+    return matches
+
+
+def cmd_send_or_start(args) -> None:
+    """Route a message to an existing session if there is a unique match for
+    (agent, cwd) within --max-age-hours; otherwise start a new session.
+
+    On multiple matches, exit non-zero with the candidate list so the caller
+    (Claude) can ask the user which session to resume — never resume silently.
+    """
+    state = load_state()
+    state = reap_finished(state)
+
+    agent = args.agent
+    cwd = args.cwd or os.getcwd()
+    topic = getattr(args, "topic", None)
+    max_age = getattr(args, "max_age_hours", None) or 168  # 7 days default
+
+    candidates = _candidate_sessions(state, agent, cwd, topic, max_age)
+
+    if not candidates:
+        print(f"send-or-start: no matching session ({agent}, cwd={cwd}); starting new.")
+        new_args = argparse.Namespace(
+            agent=agent, prompt=args.prompt, model=args.model,
+            cwd=cwd, timeout=args.timeout, flags=args.flags,
+        )
+        cmd_start(new_args)
+        return
+
+    if len(candidates) == 1 or getattr(args, "latest", False):
+        sid, _ = candidates[0]
+        print(f"send-or-start: resuming session {sid} ({agent}, cwd={cwd}).")
+        send_args = argparse.Namespace(
+            id=sid, msg=args.prompt, timeout=args.timeout,
+        )
+        cmd_send(send_args)
+        return
+
+    # Ambiguous — never auto-resolve. Print candidates and exit non-zero so
+    # the caller surfaces the choice to the user.
+    print(
+        f"send-or-start: ambiguous — {len(candidates)} matching sessions "
+        f"({agent}, cwd={cwd}):",
+        file=sys.stderr,
+    )
+    print(file=sys.stderr)
+    for sid, m in candidates[:10]:
+        started = m.get("started", "")[:19]
+        prompt = m.get("prompt", "")[:70]
+        print(f"  {sid}  turn={m.get('turn', 1)}  {started}  {prompt}", file=sys.stderr)
+    print(file=sys.stderr)
+    print(
+        "Resume one with:  agent-ctl send <id> \"<your message>\"\n"
+        "Start fresh with: agent-ctl start <agent> \"<your message>\"\n"
+        "Auto-pick latest: agent-ctl send-or-start ... --latest",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def cmd_wait(args) -> None:
@@ -961,14 +723,12 @@ def _save_tickets(path: Path, tickets: dict) -> None:
 def _ticket_ready(ticket: dict, tickets: dict) -> bool:
     """A ticket is ready if pending and all deps are done.
 
-    Inline-only agents (claude and any other spec with inline_only=True)
-    are executed by the orchestrator, not run-dag, so they never enter
-    the ready pool here.
+    Claude-typed tickets are executed inline by Claude Code (the orchestrator),
+    not by run-dag. Skip them so they aren't misrouted through the Gemini CLI.
     """
     if ticket.get("status") != "pending":
         return False
-    spec = AGENTS.get(ticket.get("agent", ""))
-    if spec is None or spec.inline_only:
+    if ticket.get("agent") == "claude":
         return False
     for dep_id in ticket.get("depends_on", []):
         dep = tickets.get(dep_id)
@@ -998,26 +758,20 @@ def _outputs_exist(ticket: dict, cwd: str) -> bool:
 def _clean_json_text(raw: str) -> str:
     """Clean raw text for JSON parsing.
 
-    Fixes common issues from agent stdout:
-    - ANSI escape sequences (CSI, OSC, private-mode) — ollama emits
-      cursor-hide/show and bracketed-paste markers even in non-TTY
-      mode, which land in the script(1) capture as '\\x1b[?25l' etc.
-      and break json.loads if left in place.
+    Fixes common issues from Gemini's write_file output:
     - Control characters embedded in strings (from LaTeX in paper text)
     - Invalid backslash escapes (\\p, \\a, \\L, etc. from LaTeX notation)
     - Runaway backslash chains from the previous iterative cleaner
     - Trailing commas in arrays/objects
 
-    Strategy: strip ANSI first (otherwise the surviving '[?25l' literal
-    tokens still poison the stream), then strip remaining control
-    chars, then the two-pass backslash normaliser.
+    Strategy: two-pass. First normalize any run of 2+ backslashes down to
+    exactly two (one literal backslash in JSON). This kills the runaway
+    `\\\\\\\\\\sum` patterns that the prior cleaner would produce by
+    repeatedly doubling. Then double up any *remaining* lone backslashes
+    that precede an invalid JSON escape character, using a negative
+    lookbehind so we don't disturb already-escaped pairs.
     """
     cleaned = raw
-    # Strip full ANSI escape sequences: CSI (ESC [...cmd), OSC
-    # (ESC ]...BEL or ST), and two-byte ESC commands (ESC @-_).
-    cleaned = re.sub(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]", "", cleaned)
-    cleaned = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", cleaned)
-    cleaned = re.sub(r"\x1b[@-_]", "", cleaned)
     # Strip control chars except newline, carriage return, tab
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
     # Pass 1: collapse runs of 2+ backslashes to exactly 2.
@@ -1137,54 +891,44 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
     if not prompt:
         raise ValueError(f"Ticket {ticket['id']} has no prompt or prompt_path")
 
-    spec = _launchable_spec(agent)
-    _validate_ticket_family(ticket, spec)
     timeout = ticket.get("timeout_s", DEFAULT_TIMEOUT)
-    model = ticket.get("model") or spec.default_model
+    model = ticket.get("model") or DEFAULT_MODELS[agent]
     ticket_cwd = ticket.get("cwd", cwd)
 
-    # Re-acquire the state lock and refresh from disk so we see any
-    # session entries written by concurrent agent-ctl processes since
-    # the run-dag loop last loaded state. Without this, two run-dag
-    # invocations (or a run-dag + a manual `start`) would compute the
-    # same next_id and overwrite each other's session record.
-    with _state_lock():
-        state = load_state()
-        state = reap_finished(state)
-        sid = next_id(state)
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        outfile = OUTPUT_DIR / f"session-{sid}.txt"
-        result_file = OUTPUT_DIR / f"session-{sid}-result.md"
+    sid = next_id(state)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    outfile = OUTPUT_DIR / f"session-{sid}.txt"
+    result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
-        agent_cmd = spec.build_cmd(
-            prompt=prompt, model=model,
-            result_file=result_file, cwd=ticket_cwd,
-            extra_flags=None,
-            flags=ticket.get("flags") or {},
-        )
+    if agent == "codex":
+        agent_cmd = build_codex_cmd(prompt=prompt, model=model,
+                                    result_file=result_file, cwd=ticket_cwd,
+                                    extra_flags=None)
+    else:
+        agent_cmd = build_gemini_cmd(prompt=prompt, model=model, extra_flags=None)
 
-        env = _clean_env()
-        shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
-                                     ticket_id=ticket["id"])
-        pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
+    env = _clean_env()
+    shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
+                                 ticket_id=ticket["id"])
+    pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
 
-        state[sid] = {
-            "pid": pid,
-            "agent": agent,
-            "status": "running",
-            "model": model,
-            "cwd": ticket_cwd,
-            "prompt": prompt[:200],
-            "outfile": str(outfile),
-            "result_file": str(result_file),
-            "timeout": timeout,
-            "turn": 1,
-            "gemini_uuid": None,
-            "started": datetime.now(timezone.utc).isoformat(),
-            "ended": None,
-            "ticket_id": ticket["id"],
-        }
-        save_state(state)
+    state[sid] = {
+        "pid": pid,
+        "agent": agent,
+        "status": "running",
+        "model": model,
+        "cwd": ticket_cwd,
+        "prompt": prompt[:200],
+        "outfile": str(outfile),
+        "result_file": str(result_file),
+        "timeout": timeout,
+        "turn": 1,
+        "gemini_uuid": None,
+        "started": datetime.now(timezone.utc).isoformat(),
+        "ended": None,
+        "ticket_id": ticket["id"],
+    }
+    save_state(state)
     return sid
 
 
@@ -1293,17 +1037,15 @@ def cmd_run_dag(args) -> None:
                         ticket["attempt"] = attempt
                         ticket.pop("session_id", None)
 
-                        # If this agent defines a fallback model and the log
-                        # shows capacity exhaustion (the Gemini 429 pattern),
-                        # switch to the fallback on the next attempt.
-                        fallback_spec = AGENTS.get(agent)
-                        fallback = fallback_spec.fallback_model if fallback_spec else None
-                        if fallback and log_text and (
-                            "MODEL_CAPACITY_EXHAUSTED" in log_text
-                            or log_text.count("429") > 5
-                        ):
-                            ticket["model"] = fallback
-                            print(f"[{tid}] capacity exhaustion detected, falling back to {fallback}")
+                        # If Gemini hit 429s, fall back to a more available model
+                        if agent == "gemini" and agent in FALLBACK_MODELS:
+                            if log_text and (
+                                "MODEL_CAPACITY_EXHAUSTED" in log_text
+                                or log_text.count("429") > 5
+                            ):
+                                fallback = FALLBACK_MODELS[agent]
+                                ticket["model"] = fallback
+                                print(f"[{tid}] 429 capacity exhaustion detected, falling back to {fallback}")
 
                         # Backoff delay before retry to avoid hammering
                         # rate-limited APIs (e.g., Gemini 429s)
@@ -1477,7 +1219,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_start = sub.add_parser("start", help="Start a new agent session")
-    p_start.add_argument("agent", choices=sorted(n for n, s in AGENTS.items() if not s.inline_only), help="Agent to use")
+    p_start.add_argument("agent", choices=["codex", "gemini"], help="Agent to use")
     p_start.add_argument("prompt", help="The prompt to send")
     p_start.add_argument("-m", "--model", help="Model override")
     p_start.add_argument("--cwd", help="Working directory")
@@ -1500,7 +1242,27 @@ def main():
     p_kill = sub.add_parser("kill", help="Kill a running session")
     p_kill.add_argument("id", help="Session ID")
 
-    sub.add_parser("status", help="Show all sessions")
+    p_status = sub.add_parser("status", help="Show all sessions")
+    p_status.add_argument("--json", action="store_true",
+                          help="Emit machine-readable JSON instead of a table")
+
+    p_sos = sub.add_parser(
+        "send-or-start",
+        help="Resume a unique matching session if one exists, else start new",
+    )
+    p_sos.add_argument("agent", choices=["codex", "gemini"])
+    p_sos.add_argument("prompt")
+    p_sos.add_argument("-m", "--model", help="Model override (start path only)")
+    p_sos.add_argument("--cwd", help="Working directory (defaults to $PWD)")
+    p_sos.add_argument("--timeout", type=int)
+    p_sos.add_argument("--topic",
+                       help="Substring filter on stored prompt for matching")
+    p_sos.add_argument("--max-age-hours", type=int, default=168,
+                       help="Only consider sessions younger than this (default: 168 = 7d)")
+    p_sos.add_argument("--latest", action="store_true",
+                       help="On ambiguity, pick the most recent match instead of failing")
+    p_sos.add_argument("--flags", nargs=argparse.REMAINDER,
+                       help="Extra flags forwarded to start path")
 
     p_wait = sub.add_parser("wait", help="Block until sessions finish")
     p_wait.add_argument("ids", nargs="+", help="Session IDs to wait for")
@@ -1515,7 +1277,7 @@ def main():
     p_dagstatus.add_argument("tickets", help="Path to tickets.json")
 
     p_cleanup = sub.add_parser("cleanup", help="Kill sessions and clear state")
-    p_cleanup.add_argument("--agent", choices=sorted(n for n, s in AGENTS.items() if not s.inline_only),
+    p_cleanup.add_argument("--agent", choices=["codex", "gemini"],
                            help="Only clean up sessions for this agent")
 
     args = parser.parse_args()
@@ -1538,6 +1300,8 @@ def main():
         cmd_run_dag(args)
     elif args.cmd == "dag-status":
         cmd_dag_status(args)
+    elif args.cmd == "send-or-start":
+        cmd_send_or_start(args)
     elif args.cmd == "cleanup":
         cmd_cleanup(args)
 

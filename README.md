@@ -48,13 +48,25 @@ A run on a typical economics or statistics paper takes **~2 hours wall clock** e
 - `claude` CLI authenticated (Claude Pro / Claude Code).
 - `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`.
 - `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`.
-- `agent-ctl` installed at `~/.claude/skills/agent_ctl.py` for ticket DAG execution. A vendored snapshot lives in [`vendor/agent_ctl.py`](vendor/agent_ctl.py); install with:
-  ```bash
-  mkdir -p ~/.claude/skills
-  cp vendor/agent_ctl.py ~/.claude/skills/agent_ctl.py
-  chmod +x ~/.claude/skills/agent_ctl.py
-  ```
 - An Obsidian vault to host the per-paper review folder at `notes/work/referee-reports/<paper-slug>/`.
+
+### Install
+
+The repo bundles three Claude Code skills (`disputatio`, `codex`, `gemini`) plus the `agent_ctl.py` orchestrator. One script wires them all into `~/.claude/skills/` as symlinks, so the repo is the single source of truth and edits propagate without manual sync:
+
+```bash
+git clone https://github.com/r-uben/disputatio.git
+cd disputatio
+./install.sh
+```
+
+The installer backs up any existing files at the destination (`*.bak.<timestamp>`) before linking — nothing is overwritten silently. To remove the symlinks and restore backups:
+
+```bash
+./install.sh uninstall
+```
+
+After install, restart Claude Code to pick up the new skills. Verify with `/disputatio --help` from inside Claude Code, or `python3 ~/.claude/skills/agent_ctl.py status` from the shell.
 
 ---
 
