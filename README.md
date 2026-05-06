@@ -52,15 +52,20 @@ A run on a typical economics or statistics paper takes **~2 hours wall clock** e
 
 ### Install
 
-The repo bundles three Claude Code skills (`disputatio`, `codex`, `gemini`) plus the `agent_ctl.py` orchestrator. One script wires them all into `~/.claude/skills/` as symlinks, so the repo is the single source of truth and edits propagate without manual sync:
+The repo includes the `disputatio` skill plus pinned snapshots of three helpers it relies on at runtime: the `codex` and `gemini` second-opinion skills (under `vendor/skills/`) and the `agent_ctl.py` orchestrator (under `vendor/`). One script wires everything into `~/.claude/skills/` as symlinks:
 
 ```bash
 git clone https://github.com/r-uben/disputatio.git
 cd disputatio
-./install.sh
+./install.sh                  # disputatio + vendored helpers
+./install.sh install --minimal   # disputatio only, keep your own helpers
 ```
 
-The installer backs up any existing files at the destination (`*.bak.<timestamp>`) before linking — nothing is overwritten silently. To remove the symlinks and restore backups:
+Use `--minimal` if you already maintain your own `codex`/`gemini` skills or your own `agent_ctl.py`. The full install will replace those (after backing them up to `*.bak.<timestamp>`); `--minimal` leaves them alone and only links the disputatio skill itself.
+
+The codex/gemini skills and agent_ctl.py under `vendor/` are pinned snapshots — they may drift behind their upstream sources between disputatio releases. If you need a newer version of those skills, use `--minimal` and install them yourself.
+
+To remove the symlinks and restore backups:
 
 ```bash
 ./install.sh uninstall

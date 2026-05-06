@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
-# install.sh — wire disputatio + bundled second-opinion skills into Claude Code.
+# install.sh — wire disputatio (and optionally its vendored helpers) into Claude Code.
 #
 # Symlinks the repo's skill files into ~/.claude/skills/ so the repo is the
 # single source of truth. Existing files at the destination are backed up
 # with a .bak.<timestamp> suffix; nothing is overwritten silently.
 #
-# Run again with --uninstall to remove symlinks and restore .bak files.
+# Modes:
+#   install            symlink disputatio + vendored helpers (codex, gemini, agent_ctl).
+#   install --minimal  symlink ONLY the disputatio skill. Useful if you maintain
+#                      your own codex/gemini skills and agent_ctl.py outside this repo.
+#   uninstall          remove the symlinks this script created and restore the
+#                      most recent .bak file at each destination, if any.
+#   --help             usage.
+#
+# Important: the vendored copies under vendor/skills/{codex,gemini}/ and
+# vendor/agent_ctl.py are pinned snapshots, not the upstream source of truth.
+# If you maintain those skills independently, prefer `install --minimal` so
+# this repo does not silently overwrite your live versions.
 
 set -euo pipefail
 
@@ -13,17 +24,22 @@ REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLAUDE_SKILLS="${HOME}/.claude/skills"
 TS="$(date +%Y%m%d-%H%M%S)"
 MODE="${1:-install}"
+SUBMODE="${2:-}"
 
 cyan()  { printf "\033[36m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
 yellow(){ printf "\033[33m%s\033[0m\n" "$*"; }
 red()   { printf "\033[31m%s\033[0m\n" "$*" >&2; }
 
-# (target, source) pairs — target is under ~/.claude/skills/, source is in this repo.
-LINKS=(
+# Always-installed link.
+CORE_LINKS=(
     "disputatio:${REPO_DIR}"
-    "codex:${REPO_DIR}/skills/codex"
-    "gemini:${REPO_DIR}/skills/gemini"
+)
+
+# Vendored helpers — installed by default, skipped under --minimal.
+VENDOR_LINKS=(
+    "codex:${REPO_DIR}/vendor/skills/codex"
+    "gemini:${REPO_DIR}/vendor/skills/gemini"
     "agent_ctl.py:${REPO_DIR}/vendor/agent_ctl.py"
 )
 
@@ -64,7 +80,6 @@ remove_link() {
     else
         cyan "  · $name not present"
     fi
-    # Restore most recent .bak if any
     local newest_bak
     newest_bak="$(ls -1t "${dest}.bak."* 2>/dev/null | head -n1 || true)"
     if [[ -n "${newest_bak}" ]]; then
@@ -89,10 +104,33 @@ verify_clis() {
     fi
 }
 
+usage() {
+    cat <<EOF
+usage: ./install.sh [install|install --minimal|uninstall]
+
+  install              (default) symlink disputatio + vendored codex/gemini/agent_ctl
+                       into ~/.claude/skills/. Existing files are backed up first.
+  install --minimal    symlink ONLY the disputatio skill. Use this if you maintain
+                       your own codex/gemini skills and agent_ctl.py upstream and
+                       do not want this repo's vendored snapshots to overwrite them.
+  uninstall            remove the symlinks this script created and restore the most
+                       recent .bak file at each destination, if any.
+EOF
+}
+
 case "$MODE" in
     install)
-        cyan "installing disputatio skills into ${CLAUDE_SKILLS}"
         require_dir "$CLAUDE_SKILLS"
+        if [[ "$SUBMODE" == "--minimal" ]]; then
+            cyan "installing disputatio (minimal mode — vendored helpers skipped)"
+            LINKS=("${CORE_LINKS[@]}")
+        else
+            cyan "installing disputatio + vendored helpers into ${CLAUDE_SKILLS}"
+            yellow "  (vendored copies will replace existing codex/gemini/agent_ctl.py;"
+            yellow "   existing files are backed up. Use './install.sh install --minimal'"
+            yellow "   if you want to keep your own versions.)"
+            LINKS=("${CORE_LINKS[@]}" "${VENDOR_LINKS[@]}")
+        fi
         for pair in "${LINKS[@]}"; do
             backup_then_link "${pair%%:*}" "${pair#*:}"
         done
@@ -103,25 +141,20 @@ case "$MODE" in
         echo "  /disputatio /path/to/paper.pdf --mode author"
         ;;
     --uninstall|uninstall)
-        cyan "uninstalling disputatio skills from ${CLAUDE_SKILLS}"
-        for pair in "${LINKS[@]}"; do
+        cyan "uninstalling disputatio symlinks from ${CLAUDE_SKILLS}"
+        for pair in "${CORE_LINKS[@]}" "${VENDOR_LINKS[@]}"; do
             remove_link "${pair%%:*}"
         done
         echo
         green "Uninstalled. Backups (if any) were restored to their original locations."
         ;;
     --help|-h|help)
-        cat <<EOF
-usage: ./install.sh [install|uninstall]
-
-  install    (default) symlink the repo's skills into ~/.claude/skills/.
-             existing files at the destination are backed up first.
-  uninstall  remove the symlinks and restore the most recent backup, if any.
-EOF
+        usage
         ;;
     *)
         red "unknown mode: $MODE"
-        echo "run ./install.sh --help for usage"
+        echo
+        usage
         exit 1
         ;;
 esac

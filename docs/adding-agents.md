@@ -59,25 +59,34 @@ The question is: **support reduced-mode officially, or refuse to run below N=3?*
 |---|---|---|
 | (a) Refuse to run below N=3 | Protects the calibration story; one mode, one set of claims | Forces failure when one family is unavailable; loses users who can't authenticate all three CLIs |
 | (b) Allow 2-family as a peer of 3-family | Maximum flexibility | Most users will pick the cheaper option; panel quality drops silently; "disputatio is mediocre" gets attributed to the wrong cause |
-| (c) Allow 2-family as a *documented reduced mode* with explicit messaging | Lowers the entry barrier without lying about what it bought | More UI surface; risk of users ignoring the messaging |
-| (d) Allow 1-family as a "rapid mode" | Even cheaper | Cross-architecture verification is zero; the whole pitch collapses |
+| (c) Allow 2-family as a *documented reduced mode* with explicit messaging; 1-family available under a different command name | Lowers the entry barrier without conflating the product with its degraded forms | More UI surface; risk of users ignoring the messaging |
+| (d) Allow 1-family inside the same command as 3-family | Even cheaper | Cross-architecture verification is zero; the whole pitch collapses |
 
 ### Recommendation
 
-**(c) — 2-family is a documented reduced mode; 1-family is refused.**
+**(c) — 2-family is a documented reduced mode under the same `disputatio` command; 1-family is broken out as a separate `solo-draft` command and is explicitly *not* a Disputatio panel.**
 
 Concretely:
 
 - **Default config remains `--agents claude,codex,gemini`** (3 distinct families). Site, README, and outreach materials describe only this configuration.
-- **`--agents claude,gemini` (or any 2 distinct families) is supported** but emits a startup banner:
+- **`--agents claude,gemini` (or any 2 distinct families) is supported under `disputatio`** but emits a startup banner:
   ```
   [reduced-mode] running on 2 families (anthropic, google).
   cross-architecture verification is partial — see docs/adding-agents.md §1b.
   ```
 - **Panel metadata records the actual configuration.** Each run writes `engine_metadata.cross_arch_support: "3-family" | "2-family"` and `engine_metadata.families_present: [...]`. Downstream readers see what they got.
-- **`--agents claude` (single family) is refused** with a hard error pointing at this section. The cross-architecture argument has no weakened-but-valid form for N=1.
-- **Two instances of the same family count as one.** `--agents claude,sonnet,haiku` resolves to family set `{anthropic}` and is refused as 1-family.
+- **1-family is available as `solo-draft`, a separate command.** It is explicitly **not** marketed or documented as a Disputatio panel. The output:
+  - is rendered as `solo_draft.md`, not `panel.md`
+  - carries `cross_arch_support: "single_model_unverified"`
+  - prepends a banner: *"This run had no cross-architecture verification. Findings have not been calibrated against an independent family. This is exploratory critique from a single model, not a Disputatio panel."*
+  - skips Route A and Route B entirely — there is no consensus to compute
+  - drops the `endorse / verify_before_endorsing / skip` priority labels (which are calibrated against cross-arch agreement) in favor of plain severity tiers
+- **Two instances of the same family count as one.** `--agents claude,sonnet,haiku` resolves to family set `{anthropic}` and is treated as `solo-draft`, not 2-family.
 - **Route B (consensus override) is disabled in 2-family mode.** Two-voter "consensus" is too weak to override a strong individual signal. Route A escalation is also weakened — ties are surfaced to the panel as `disagreement_unresolved` rather than auto-routed.
+
+### Why a separate command name
+
+A user runs `disputatio paper.pdf` and gets a result. If 1-family produces something called a "Disputatio panel," the brand and the architecture diverge silently — the very failure mode disputatio is supposed to prevent. Splitting by command name makes the degradation impossible to miss: you typed `solo-draft`, you got a solo-draft. The cross-architecture invariant is built into the product surface, not just the metadata.
 
 ### Why this matters for outreach
 
