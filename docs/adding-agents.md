@@ -39,6 +39,52 @@ For practical onboarding:
 
 ---
 
+## Question 1b — What about *fewer* agents? (Reduced-mode runs)
+
+### Constraint
+
+Adding agents past 3 is one direction; running on fewer is the other. The default is 3 distinct families because:
+
+- **Cross-architecture independence** is the load-bearing claim of the panel. Three teams trained different ways catch each other's blind spots; one or two cannot.
+- **Route A / Route B math is calibrated for an odd number of voters.** With 2 voters, ties are unresolvable. With 1 voter, "consensus" is meaningless.
+- **Discoverer redundancy** — if one model hallucinates a finding, the other two are the brake. With 2 voters, the brake is half-strength; with 1 it is gone.
+
+But there are real reasons someone might want a degraded run: lower cost, faster wall-clock, only one or two CLIs authenticated, or a content filter blocking one family on a given paper (Anthropic occasionally blocks adversarial-debate prompts on certain manuscripts).
+
+The question is: **support reduced-mode officially, or refuse to run below N=3?**
+
+### Options
+
+| Option | Pro | Con |
+|---|---|---|
+| (a) Refuse to run below N=3 | Protects the calibration story; one mode, one set of claims | Forces failure when one family is unavailable; loses users who can't authenticate all three CLIs |
+| (b) Allow 2-family as a peer of 3-family | Maximum flexibility | Most users will pick the cheaper option; panel quality drops silently; "disputatio is mediocre" gets attributed to the wrong cause |
+| (c) Allow 2-family as a *documented reduced mode* with explicit messaging | Lowers the entry barrier without lying about what it bought | More UI surface; risk of users ignoring the messaging |
+| (d) Allow 1-family as a "rapid mode" | Even cheaper | Cross-architecture verification is zero; the whole pitch collapses |
+
+### Recommendation
+
+**(c) — 2-family is a documented reduced mode; 1-family is refused.**
+
+Concretely:
+
+- **Default config remains `--agents claude,codex,gemini`** (3 distinct families). Site, README, and outreach materials describe only this configuration.
+- **`--agents claude,gemini` (or any 2 distinct families) is supported** but emits a startup banner:
+  ```
+  [reduced-mode] running on 2 families (anthropic, google).
+  cross-architecture verification is partial — see docs/adding-agents.md §1b.
+  ```
+- **Panel metadata records the actual configuration.** Each run writes `engine_metadata.cross_arch_support: "3-family" | "2-family"` and `engine_metadata.families_present: [...]`. Downstream readers see what they got.
+- **`--agents claude` (single family) is refused** with a hard error pointing at this section. The cross-architecture argument has no weakened-but-valid form for N=1.
+- **Two instances of the same family count as one.** `--agents claude,sonnet,haiku` resolves to family set `{anthropic}` and is refused as 1-family.
+- **Route B (consensus override) is disabled in 2-family mode.** Two-voter "consensus" is too weak to override a strong individual signal. Route A escalation is also weakened — ties are surfaced to the panel as `disagreement_unresolved` rather than auto-routed.
+
+### Why this matters for outreach
+
+The website never mentions reduced mode. An econ professor who lands there sees the 3-family default. Someone who finds the flag in `--help` sees the explicit warning and chooses with full information. Same pattern as the rest of the project — *show what was killed, show the support level, don't hide the degradation.*
+
+---
+
 ## Question 2 — How does role rotation extend past 3 agents?
 
 ### Constraint
