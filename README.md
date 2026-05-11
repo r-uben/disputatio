@@ -208,12 +208,16 @@ Known operational limitations:
 
 ## Documentation map
 
-- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
-- [`docs/methods.md`](docs/methods.md) — the discovery methods folded into the three tracks (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling, M8 algebraic derivation trace).
-- [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending the three-family panel to additional architectures.
-- [`docs/log/`](docs/log/) — dated dev log entries.
-- [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
-- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code (working directory conventions, design principles).
+Full index at [`docs/README.md`](docs/README.md). Quick links:
+
+- [`SKILL.md`](SKILL.md) — formal pipeline protocol Claude Code reads when executing `/disputatio`.
+- [`docs/pitch.md`](docs/pitch.md) — one-page description of what disputatio does and why.
+- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, file layout, resumability.
+- [`docs/methods.md`](docs/methods.md) — the nine discovery methods (M0–M8) and how they fuse into the three tracks.
+- [`docs/adding-agents.md`](docs/adding-agents.md) — extending past three families; reduced-mode runs.
+- [`docs/design-notes/`](docs/design-notes/) — per-feature design rationales for the v8.x audit layers.
+- [`docs/log/`](docs/log/) — dated dev log entries (decisions, pivots, validation runs as they happened).
+- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code when working inside this repo (contributor guidance, not user docs).
 
 ---
 

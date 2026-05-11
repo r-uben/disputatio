@@ -1,3 +1,9 @@
+# CLAUDE.md
+
+*This file is read by Claude Code when working inside this repo. It is contributor / agent guidance, not user documentation. If you are looking for what disputatio does or how to install it, see [README.md](README.md). If you are looking for the formal pipeline protocol, see [SKILL.md](SKILL.md).*
+
+---
+
 ## Disputatio (v6)
 
 A cross-architecture paper-review panel for pre-submission authors and first-round referees. Primary deliverable is a **finding panel** — each concern with exact quote, cross-family support, debate trail (only when triggered), calibration verdict, and a mode-specific priority label. Secondary deliverables (prose memo, optional revision plan or referee-letter draft) are rendered off the panel; the writer cannot invent findings. Claims that do not survive verification are preserved in the audit trail with drop reasons — the system demonstrates restraint instead of hiding what got killed.
