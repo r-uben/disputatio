@@ -28,11 +28,11 @@ Both modes share one engine. The difference is the priority label and the render
 
 ## Quick start
 
-Inside Claude Code:
+The short version: install the three CLI agents, clone this repo, run `./install.sh`, restart Claude Code, then from inside Claude Code:
 
 ```
-/disputatio /path/to/paper.pdf --mode author
-/disputatio /path/to/paper.pdf --mode referee
+/disputatio /path/to/paper.pdf --mode author      # pre-submission audit
+/disputatio /path/to/paper.pdf --mode referee     # journal-policy permitting
 ```
 
 Defaults:
@@ -43,27 +43,42 @@ Defaults:
 
 A run on a typical economics or statistics paper takes **~2 hours wall clock** end-to-end.
 
-### Prerequisites
+### Install (step by step)
 
-- `claude` CLI authenticated (Claude Pro / Claude Code).
-- `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`.
-- `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`.
-- An Obsidian vault to host the per-paper review folder at `notes/work/referee-reports/<paper-slug>/`.
+macOS or Linux. Windows is untested; WSL should work.
 
-### Install
+**1. Install the three CLI agents you don't already have.**
 
-The repo includes the `disputatio` skill plus pinned snapshots of three helpers it relies on at runtime: the `codex` and `gemini` second-opinion skills (under `vendor/skills/`) and the `agent_ctl.py` orchestrator (under `vendor/`). One script wires everything into `~/.claude/skills/` as symlinks:
+| Tool | Where | Account needed |
+|---|---|---|
+| `claude` (Claude Code) | https://claude.ai/code | Claude Pro |
+| `codex` | https://github.com/openai/codex (`npm install -g @openai/codex` or `brew install codex`) | ChatGPT Pro |
+| `gemini` | https://github.com/google-gemini/gemini-cli (`npm install -g @google/gemini-cli`) | Google account (OAuth) |
+| `python3` | usually pre-installed; 3.10+ recommended | — |
+
+**2. Authenticate each one.** First run of each CLI prompts for login. Verify all three respond:
+
+```bash
+claude --version
+codex --version
+gemini --version
+```
+
+**3. Clone disputatio and run the installer.**
 
 ```bash
 git clone https://github.com/r-uben/disputatio.git
 cd disputatio
-./install.sh                  # disputatio + vendored helpers
-./install.sh install --minimal   # disputatio only, keep your own helpers
+./install.sh
 ```
 
-Use `--minimal` if you already maintain your own `codex`/`gemini` skills or your own `agent_ctl.py`. The full install will replace those (after backing them up to `*.bak.<timestamp>`); `--minimal` leaves them alone and only links the disputatio skill itself.
+The installer creates symlinks from `~/.claude/skills/` into this repo for four things: the `disputatio` skill, the bundled `codex` and `gemini` second-opinion skills (under `vendor/skills/`), and the `agent_ctl.py` orchestrator (under `vendor/`). Existing files at those paths are backed up as `*.bak.<timestamp>` before linking — nothing is overwritten silently.
 
-The codex/gemini skills and agent_ctl.py under `vendor/` are pinned snapshots — they may drift behind their upstream sources between disputatio releases. If you need a newer version of those skills, use `--minimal` and install them yourself.
+If you already maintain your own `codex`/`gemini` skills or `agent_ctl.py` and don't want them replaced, use:
+
+```bash
+./install.sh install --minimal   # disputatio only, leave the helpers alone
+```
 
 To remove the symlinks and restore backups:
 
@@ -71,7 +86,25 @@ To remove the symlinks and restore backups:
 ./install.sh uninstall
 ```
 
-After install, restart Claude Code to pick up the new skills. Verify with `/disputatio --help` from inside Claude Code, or `python3 ~/.claude/skills/agent_ctl.py status` from the shell.
+**4. Restart Claude Code** so it picks up the new skills.
+
+**5. Set up the output location.** Disputatio writes each per-paper review folder to `<vault>/work/referee-reports/<paper-slug>/`. Default is an Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/`; any directory works.
+
+**6. Verify the install.**
+
+```bash
+# From the shell:
+python3 ~/.claude/skills/agent_ctl.py status
+
+# From inside Claude Code:
+/disputatio --help
+```
+
+You should see the agent-ctl subcommand list and the disputatio help text. If either is missing, the symlinks didn't land — re-run `./install.sh` and check the output for warnings.
+
+### Note on the vendored helpers
+
+The `codex` and `gemini` skills under `vendor/skills/` and `agent_ctl.py` under `vendor/` are pinned snapshots. They may drift behind their upstream sources between disputatio releases. If you need a newer version, use `install --minimal` and manage them yourself in `~/.claude/skills/`.
 
 ---
 
