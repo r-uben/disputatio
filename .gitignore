@@ -18,3 +18,10 @@ output/
 # Internal benchmark validation work — not for public repo
 docs/benchmark/
 docs/log/2026-04-29_forney-v7-1-validation.md
+
+# Local outreach prep — sales playbook, recipient lists, etc. Not for public repo.
+_outreach/
+
+# Local bench corpus snapshot (paper PDFs, third-party reviews). Working-tree
+# only — must never be tracked. Removed from the repo on 2026-05-11.
+docs/archive/

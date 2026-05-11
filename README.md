@@ -1,28 +1,37 @@
 # disputatio
 
-A cross-architecture paper review panel for the two moments that matter before publication: before an author submits, and before a referee writes the report.
+A cross-architecture paper review skill for the moment before an author submits a paper.
 
-The product is not a polished referee letter. The product is a **finding panel** — each concern carries an exact quote from the paper, support across model architectures, a contested-point debate trail, a calibration verdict, and a priority label tuned to the reader (author or referee). Claims that do not survive verification are shown with their drop reason instead of hidden. The point is knowing which concerns are real, which are stretched, and which are worth acting on before an editor or referee sees the paper.
+**You write the report. Disputatio assembles the material.** A run produces a folder of audit artifacts — a calibrated finding panel, the drop trail of concerns that were raised and killed (with reasons), per-phase intermediate work, debate transcripts where families disagreed, and a referee-style memo rendered off the panel. The human reads through it and writes the report (or revision plan) in their own voice.
 
-This is a **Claude Code skill**, not a Python package. Claude Code is the runtime; the skill is a protocol for orchestrating multi-agent paper criticism.
+Each shipped finding carries an exact quote from the paper, support across model architectures (Claude / GPT / Gemini), a calibration verdict, and a priority label. Claims that do not survive verification are preserved with their drop reason instead of hidden.
+
+This is a **Claude Code skill**, not a Python package. Claude Code is the runtime.
+
+Live description: <https://rubenfernandezfuertes.com/disputatio-ccc1a3e8/>
 
 ---
 
 ## Who this is for
 
-**Author mode — pre-submission review.** You are about to submit to a journal and want to know what a serious referee will catch. Run disputatio on your manuscript. For each surfaced concern you get: a verbatim quote, what is wrong, how it was tested, and a priority label — `fix_before_submit`, `watch_in_review`, or `can_ignore`. The optional revision plan maps priority findings to concrete sentence-level edits.
+**Primary — authors with a paper near submission** who want a structured pre-submission audit on their own work. The `--mode author` priority labels (`fix_before_submit / watch_in_review / can_ignore`) and the optional revision plan are designed for this use.
 
-**Referee mode — review assistance.** You have been asked to referee a paper and are writing your first-round report. Run disputatio on the manuscript. For each candidate concern you get: the quote, cross-architecture support, whether it survived a challenge-response round, and a priority label — `endorse`, `verify_before_endorsing`, or `skip`. The optional referee-letter draft scaffolds prose you edit in your own voice.
+**Conditional — reviewers** who have been assigned a paper, *only where journal policy permits external-AI assistance on confidential review material.* The `--mode referee` priority labels (`endorse / verify_before_endorsing / skip`) exist for this use. Many journals prohibit it — check first.
 
-Both modes share one engine. The difference is the priority label and the rendered summary memo.
+Both modes share one engine and one folder layout. The difference is the priority label vocabulary and the rendered summary memo.
 
 ---
 
 ## What it is not
 
-- Not a replacement for the reviewer's or author's judgment. Every finding is there to be endorsed, narrowed, or rejected — the system shows its work.
-- Not a speed play. A run takes hours, not minutes. You use it when stakes are high enough that "defend this concern in detail" matters more than "give me a plausible letter in thirty seconds."
-- Not a benchmark judge. The calibration loop is internal discipline, not a scoreboard.
+- **Not a referee substitute.** A referee brings field knowledge and editorial judgment disputatio cannot replicate. Every finding is there to be endorsed, narrowed, or rejected — the system shows its work, not yours.
+- **Not a proof checker.** It surfaces likely audit targets; it does not formally verify.
+- **Not broadly validated yet.** The architecture has been exercised on a handful of papers; panel quality at scale is the open question.
+- **Not a speed play.** ~2.5 hours wall clock per paper. Some papers trigger Anthropic's content filter and run on 2 of 3 families with reduced coverage.
+
+## Confidentiality
+
+Files are handled locally on your machine, but during inference the paper text is sent to Anthropic, OpenAI, and Google through your paid subscriptions. **This is not a confidential channel.** Only send work you would be comfortable having processed by those providers under their data-handling terms. For referee work on a manuscript you did not author, check your journal's policy first.
 
 ---
 
@@ -199,12 +208,16 @@ Known operational limitations:
 
 ## Documentation map
 
-- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
-- [`docs/methods.md`](docs/methods.md) — the discovery methods folded into the three tracks (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling, M8 algebraic derivation trace).
-- [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending the three-family panel to additional architectures.
-- [`docs/log/`](docs/log/) — dated dev log entries.
-- [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
-- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code (working directory conventions, design principles).
+Full index at [`docs/README.md`](docs/README.md). Quick links:
+
+- [`SKILL.md`](SKILL.md) — formal pipeline protocol Claude Code reads when executing `/disputatio`.
+- [`docs/pitch.md`](docs/pitch.md) — one-page description of what disputatio does and why.
+- [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, file layout, resumability.
+- [`docs/methods.md`](docs/methods.md) — the nine discovery methods (M0–M8) and how they fuse into the three tracks.
+- [`docs/adding-agents.md`](docs/adding-agents.md) — extending past three families; reduced-mode runs.
+- [`docs/design-notes/`](docs/design-notes/) — per-feature design rationales for the v8.x audit layers.
+- [`docs/log/`](docs/log/) — dated dev log entries (decisions, pivots, validation runs as they happened).
+- [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code when working inside this repo (contributor guidance, not user docs).
 
 ---
 
