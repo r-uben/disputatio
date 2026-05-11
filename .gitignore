@@ -14,3 +14,7 @@ _artifacts/
 output/
 # workspace/ is NOT gitignored — agents (gemini CLI) treat gitignored paths as unreadable.
 # Instead, just don't stage workspace files when committing.
+
+# Internal benchmark validation work — not for public repo
+docs/benchmark/
+docs/log/2026-04-29_forney-v7-1-validation.md

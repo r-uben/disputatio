@@ -1,6 +1,26 @@
 # vendor/
 
-Vendored third-party (or other-repo) dependencies that disputatio relies on.
+Pinned snapshots of dependencies disputatio uses at runtime. The upstream versions live in the maintainer's `~/.claude/skills/` and may evolve faster than the disputatio release cadence; the copies here are what shipped with the current disputatio commit.
+
+## Drift policy
+
+These files are **not** disputatio's intellectual core — they are general-purpose helpers (a multi-agent orchestrator and two second-opinion skills) that happen to be useful here. By bundling them, disputatio buys easier installation at the cost of letting the snapshots drift behind their upstream versions.
+
+When you are someone other than the maintainer, you have two choices:
+
+1. **Use the bundled versions** (default). Run `./install.sh` from the repo root. Vendored copies symlink into `~/.claude/skills/` and you get a self-contained working setup. You will not see upstream improvements until the next disputatio release pulls them in.
+2. **Use your own versions**. Run `./install.sh install --minimal`, which links only the disputatio skill itself. Manage `codex`, `gemini`, and `agent_ctl.py` independently in `~/.claude/skills/`. Disputatio will resolve them at runtime via Claude Code's normal skill discovery.
+
+## Layout
+
+```
+vendor/
+├── agent_ctl.py        # multi-agent orchestrator (1310 lines)
+├── skills/
+│   ├── codex/SKILL.md  # second-opinion skill (OpenAI / Codex CLI)
+│   └── gemini/SKILL.md # second-opinion skill (Google / Gemini CLI)
+└── README.md           # this file
+```
 
 ## `agent_ctl.py`
 

@@ -28,11 +28,11 @@ Both modes share one engine. The difference is the priority label and the render
 
 ## Quick start
 
-Inside Claude Code:
+The short version: install the three CLI agents, clone this repo, run `./install.sh`, restart Claude Code, then from inside Claude Code:
 
 ```
-/disputatio /path/to/paper.pdf --mode author
-/disputatio /path/to/paper.pdf --mode referee
+/disputatio /path/to/paper.pdf --mode author      # pre-submission audit
+/disputatio /path/to/paper.pdf --mode referee     # journal-policy permitting
 ```
 
 Defaults:
@@ -43,18 +43,68 @@ Defaults:
 
 A run on a typical economics or statistics paper takes **~2 hours wall clock** end-to-end.
 
-### Prerequisites
+### Install (step by step)
 
-- `claude` CLI authenticated (Claude Pro / Claude Code).
-- `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`.
-- `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`.
-- `agent-ctl` installed at `~/.claude/skills/agent_ctl.py` for ticket DAG execution. A vendored snapshot lives in [`vendor/agent_ctl.py`](vendor/agent_ctl.py); install with:
-  ```bash
-  mkdir -p ~/.claude/skills
-  cp vendor/agent_ctl.py ~/.claude/skills/agent_ctl.py
-  chmod +x ~/.claude/skills/agent_ctl.py
-  ```
-- An Obsidian vault to host the per-paper review folder at `notes/work/referee-reports/<paper-slug>/`.
+macOS or Linux. Windows is untested; WSL should work.
+
+**1. Install the three CLI agents you don't already have.**
+
+| Tool | Where | Account needed |
+|---|---|---|
+| `claude` (Claude Code) | https://claude.ai/code | Claude Pro |
+| `codex` | https://github.com/openai/codex (`npm install -g @openai/codex` or `brew install codex`) | ChatGPT Pro |
+| `gemini` | https://github.com/google-gemini/gemini-cli (`npm install -g @google/gemini-cli`) | Google account (OAuth) |
+| `python3` | usually pre-installed; 3.10+ recommended | — |
+
+**2. Authenticate each one.** First run of each CLI prompts for login. Verify all three respond:
+
+```bash
+claude --version
+codex --version
+gemini --version
+```
+
+**3. Clone disputatio and run the installer.**
+
+```bash
+git clone https://github.com/r-uben/disputatio.git
+cd disputatio
+./install.sh
+```
+
+The installer creates symlinks from `~/.claude/skills/` into this repo for four things: the `disputatio` skill, the bundled `codex` and `gemini` second-opinion skills (under `vendor/skills/`), and the `agent_ctl.py` orchestrator (under `vendor/`). Existing files at those paths are backed up as `*.bak.<timestamp>` before linking — nothing is overwritten silently.
+
+If you already maintain your own `codex`/`gemini` skills or `agent_ctl.py` and don't want them replaced, use:
+
+```bash
+./install.sh install --minimal   # disputatio only, leave the helpers alone
+```
+
+To remove the symlinks and restore backups:
+
+```bash
+./install.sh uninstall
+```
+
+**4. Restart Claude Code** so it picks up the new skills.
+
+**5. Set up the output location.** Disputatio writes each per-paper review folder to `<vault>/work/referee-reports/<paper-slug>/`. Default is an Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/`; any directory works.
+
+**6. Verify the install.**
+
+```bash
+# From the shell:
+python3 ~/.claude/skills/agent_ctl.py status
+
+# From inside Claude Code:
+/disputatio --help
+```
+
+You should see the agent-ctl subcommand list and the disputatio help text. If either is missing, the symlinks didn't land — re-run `./install.sh` and check the output for warnings.
+
+### Note on the vendored helpers
+
+The `codex` and `gemini` skills under `vendor/skills/` and `agent_ctl.py` under `vendor/` are pinned snapshots. They may drift behind their upstream sources between disputatio releases. If you need a newer version, use `install --minimal` and manage them yourself in `~/.claude/skills/`.
 
 ---
 
@@ -134,65 +184,16 @@ Three model families (Claude, Codex, Gemini) produce a holistic conceptual pass 
 
 ## Status
 
-Current shape (v7 shipped, v7.1 in PR review, v8.0 in design + first-paper bench validation): finding panel as primary deliverable, prose memo as secondary, single-writer rendering for voice uniformity. Nine discovery tickets (three readers × three tracks: holistic, broad critic, narrow evidence-judgment). Debate runs escalation-only on contested findings, not by default. Calibration enforces a per-finding blinded annotator with demote-or-drop on overclaim. Full pipeline history in [`CHANGELOG.md`](CHANGELOG.md) and dated entries under [`docs/log/`](docs/log/).
+Disputatio is in active evaluation. The architecture is built — finding panel as primary deliverable, prose memo as secondary, single-writer rendering for voice uniformity. Nine discovery tickets (three readers × three tracks: holistic, broad critic, narrow evidence-judgment). Debate runs escalation-only on contested findings, not by default. Calibration enforces a per-finding blinded annotator with demote-or-drop on overclaim.
 
-### v7 — coarse.ink head-to-head bench (4 papers)
+What is **not** yet established: panel quality at scale, validated through author and referee feedback on real manuscripts. That is the open question this evaluation phase exists to answer. Pipeline history in [`CHANGELOG.md`](CHANGELOG.md) and dated entries under [`docs/log/`](docs/log/).
 
-Scored against [coarse.ink](https://coarse.ink)'s published gpt-5.4-high run, refine.ink as reference review, gemini-3.1-pro single judge on 4 axes (coverage / specificity / depth / consistency, 1–6). Bench corpus pulled from coarse-ink MIT snapshot (`docs/benchmark/coarse_corpus/`).
+Known operational limitations:
 
-| Paper | coarse | disputatio v7 | Δ |
-|---|---|---|---|
-| Galeotti, Golub & Goyal 2020 (econ) | 6.00 | 5.5 | −0.50 |
-| Stephens & Donnelly 2000 (popgen) | 5.62 | 4.5 | −1.12 |
-| Van Vreeswijk & Sompolinsky 1998 (neuro) | 5.75 | 4.5 | −1.25 |
-| Forney 1988 (info theory) | 5.38 | 5.0 | −0.38 |
-| **Mean** | **5.69** | **4.88** | **−0.81** |
-
-v7 loses on coverage and depth — coarse catches formal-spec gaps disputatio systematically misses (kernel definitions, complete-data densities, ascertainment). Specificity and consistency tied 5–6 across both systems. Full bench notes: [`docs/log/2026-04-27_coarse-bench-and-drop-mini.md`](docs/log/2026-04-27_coarse-bench-and-drop-mini.md).
-
-### v7.1 — drop-mini ablation (PR open)
-
-Upgrades `broad_critic` and `narrow_evidence` discovery to gpt-5.4 medium + gemini-3.1-pro-preview. Closes some of the formal-spec gap by surfacing more findings at panel stage. Stephens v7.1 catches the MCMC complete-data-density gap (= coarse comment #3) that v7 missed.
-
-| Paper | v7 | v7.1 (clean) | Δ |
-|---|---|---|---|
-| Forney 1988 | 5.0 | 5.5 | +0.5 (gemini judge) |
-| Stephens 2000 | 2.5 | 3.5 | +1.0 (codex judge — gemini OAuth dead mid-run) |
-
-### v8.0 — obligation extraction (draft PR, n=1 measurement)
-
-Adds three new pipeline phases between holistic and discovery: per-family obligation extraction → global integrator → gap-claim calibration. Targets the absence-of-required-object failure mode v7 misses systematically. New templates in `templates/obligations.md`, `templates/obligation_integrate.md`, `templates/gap_claim_calibration.md`. SKILL.md surgery wires Phase 1.5a/1.5b/3g + a graceful-degradation contract for partial-family runs (anthropic content filter, gemini OAuth expiry, etc.).
-
-First measurement on Galeotti J (pure-addition test):
-
-| Run | Galeotti score | vs coarse 6.00 |
-|---|---|---|
-| disputatio v7 | 5.5 | −0.50 |
-| disputatio v7.1 | 5.0 | −1.00 (mode mismatch with v7) |
-| **disputatio v8.0 J** | **5.8** | **−0.20** |
-
-Closest disputatio has gotten to coarse on any paper. +0.8 over v7.1 baseline (referee-mode comparison) on a single change. Three more paper measurements pending before PR un-drafts. Backlog tickets for the failure modes v8.0 doesn't touch (correctness of present objects, framing overreach) live as #22 and #23.
-
-**Known limitations** (full list in [`docs/roadmap.md`](docs/roadmap.md)):
-- **Single-architecture failure modes**: papers can trigger Anthropic's content filter on verbatim text reproduction (van Vreeswijk 1998 reliably does). v8.0 graceful-degradation contract handles partial-family runs but reduces coverage.
-- **Gemini OAuth silent expiry mid-run**. Documented; no automatic re-auth.
-- **gemini-3.1-pro-preview capacity 429** under load. Documented; manual retry or fallback.
-- **Codex (ChatGPT Pro OAuth) weekly cap**. Heavy users hit it after ~1 full v7.1 run; `agent-ctl` currently supports only the OAuth path.
-- **Bench is n=4** — directional, not statistical. v8.1+ (#19) expansion ticketed.
-
----
-
-## Evaluation
-
-The internal evaluation harness lives under `docs/archive/compare/`:
-
-- `docs/archive/compare/adapt.py` — flattens panel output into a compatible format for cross-system comparison.
-- `docs/archive/compare/judge.py` — LLM-as-judge methodology with positional-bias mitigation.
-- Per-finding blinded annotation pipeline in `_calibration/` — the primary internal quality gate.
-
-For release gates we run: finding-level support rate, overclaim rate, user-visible overclaim escape rate, quote verification rate, and coverage against reference-reviewed benchmark papers. Slower human-in-the-loop studies (author utility, referee endorsement rate) are run once per major version.
-
-Full methodology in [`docs/evaluation.md`](docs/evaluation.md).
+- **Anthropic content filter** occasionally blocks verbatim quotation prompts on certain manuscripts (van Vreeswijk 1998 reliably triggers it). The graceful-degradation contract handles partial-family runs with reduced coverage.
+- **Gemini OAuth** can silently expire mid-run; no automatic re-auth.
+- **gemini-3.1-pro-preview** hits capacity 429 under load; manual retry or fallback.
+- **Codex (ChatGPT Pro OAuth) weekly cap** — heavy users hit it after roughly one full run; `agent-ctl` currently supports only the OAuth path.
 
 ---
 
@@ -200,9 +201,7 @@ Full methodology in [`docs/evaluation.md`](docs/evaluation.md).
 
 - [`docs/architecture.md`](docs/architecture.md) — ticket DAG, agent routing, model routing, file layout, resumability, decision loop.
 - [`docs/methods.md`](docs/methods.md) — the discovery methods folded into the three tracks (M0 close reading, M2 contradictions, M3 transformations, M5 self-measured critique, M6 causal disentangling, M8 algebraic derivation trace).
-- [`docs/evaluation.md`](docs/evaluation.md) — evaluation methodology, per-finding blinded annotation, release-gate metrics, human-study protocols.
 - [`docs/adding-agents.md`](docs/adding-agents.md) — design brief for extending the three-family panel to additional architectures.
-- [`docs/roadmap.md`](docs/roadmap.md) — known bugs, planned improvements, open questions.
 - [`docs/log/`](docs/log/) — dated dev log entries.
 - [`SKILL.md`](SKILL.md) — the formal protocol Claude Code reads when executing `/disputatio`.
 - [`CLAUDE.md`](CLAUDE.md) — orientation for Claude Code (working directory conventions, design principles).
