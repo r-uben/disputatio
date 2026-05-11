@@ -1,12 +1,12 @@
 # Outreach email template — first contact
 
-**Strategy** (per codex 5.5 sess 135 review):
+**Strategy**:
 
-- Reduced ask: 10 minutes of feedback on a demo panel, NOT "send me your paper" yet.
+- Reduced ask: 10 minutes of feedback on a description-only site + (optionally) a worked panel as attachment. NOT "send me your paper" yet.
 - Lead with pain, not architecture.
-- Demo is a worked example on a published paper (Galeotti), labeled clearly as such — not oversold as a fresh submission.
-- One honest-caveat sentence in the body.
-- Variables: `{first_name}`, `{paper_or_topic_anchor}` (recipient-specific anchor — recent paper they wrote, topic they're known for, course they teach), `{demo_panel_link}`, `{sender_name}`.
+- Headline framing: disputatio produces a *folder of audit material* the author uses to revise — not a finished referee report.
+- Confidentiality disclosure goes in the *follow-up* email (when the author offers their own paper), not the first contact.
+- Variables: `{first_name}`, `{paper_or_topic_anchor}` (recipient-specific anchor — recent paper they wrote, topic they're known for, course they teach), `{site_link}` (https://rubenfernandezfuertes.com/disputatio-ccc1a3e8/), `{sender_name}`.
 
 ---
 
@@ -16,13 +16,13 @@
 
 > Hi {first_name},
 >
-> Before submission, one of the hardest problems is knowing which serious referee objection you have not yet anticipated. I have been building **Disputatio**, a tool that audits economics papers across three model families (Claude / GPT / Gemini) and returns a structured finding panel rather than generic prose feedback.
+> Before submission, one of the hardest problems is knowing which serious referee objection you have not yet anticipated. I have been building **Disputatio**, a tool that audits economics papers across three model families (Claude / GPT / Gemini) and produces a folder of inspectable audit material — finding panel, drop trail, debate transcripts — that the author reads through and uses as source material when revising.
 >
-> Given your work on {paper_or_topic_anchor}, I thought you might have a useful eye for whether this kind of output is actually valuable to authors. Here is a worked demo panel: {demo_panel_link}. It is run on an existing economics paper (Galeotti, Golub & Goyal 2020 in *Econometrica*), so it is not presented as "before submission," but as an example of the current output format and level of critique.
+> Given your work on {paper_or_topic_anchor}, I thought you might have a useful eye for whether this kind of output is actually valuable to authors. There is a short description of the system at {site_link}. If you want a concrete artifact, I can also send the panel I ran on Galeotti, Golub & Goyal (2020, *Econometrica*) as an attachment — published paper, so it shows the format and critique level rather than a "before submission" demo.
 >
-> Would you be willing to spend 10 minutes looking at the demo and telling me whether the findings seem useful, wrong, or irrelevant? I am not asking you to send a paper at this stage.
+> Would you be willing to spend 10 minutes looking at it and telling me whether the findings seem useful, wrong, or irrelevant? I am not asking you to send a paper at this stage.
 >
-> The honest caveat is that this is early: it is not a referee substitute, not broadly benchmarked yet, and runs are still slow. I would mainly value your judgment on whether the direction is worth pursuing.
+> The honest caveat is that this is early: it is not a referee substitute, not broadly validated yet, and runs are slow. I would mainly value your judgment on whether the direction is worth pursuing.
 >
 > Best,
 > {sender_name}
@@ -35,7 +35,9 @@ If the recipient replies with substantive feedback or asks "can you run it on my
 
 > Thanks {first_name} — really helpful.
 >
-> If you'd be open to it, I can run disputatio on a draft you have near submission and send back the panel + a short referee-style memo. The run takes a couple of hours on my side, so no rush on your end. Caveat: anything you send stays on my local machine; the LLM calls go through my own paid subscriptions, not via your account or institutional credentials.
+> If you'd be open to it, I can run disputatio on a draft you authored and send back the full audit folder: finding panel, drop trail with reasons, calibration annotations, and a short referee-style memo you can edit in your own voice. The run takes ~2.5 hours on my side, no rush on yours.
+>
+> One honest disclosure on confidentiality: files are handled locally on my machine, but during inference the paper text is sent to Anthropic, OpenAI, and Google through my paid subscriptions. This is not a confidential channel. Only send work you would be comfortable having processed by those providers under their data-handling terms. If this would be referee work on someone else's manuscript, check your journal policy first — most journals prohibit it.
 >
 > {sender_name}
 
@@ -58,4 +60,4 @@ If there is warm context (introduced through a third party), open with that:
 - The recipient has publicly criticized LLM tooling for academic work — find someone else.
 - The recipient is a full professor who has written the canonical text on the relevant topic — they will not value LLM critique on their own work.
 - The recipient and sender have no plausible field connection — looks like cold-spam.
-- We do not yet have the demo panel link and feedback form ready — do not send the email; the demo is the artifact.
+- The site link in the email is broken or unreachable — verify it loads cleanly before sending.

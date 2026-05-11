@@ -13,14 +13,19 @@ You can rarely anticipate all three by re-reading your own draft. Asking a frien
 
 ## What disputatio does
 
-Three independent LLM families (Claude, GPT, Gemini) read the paper, each producing a structured **finding panel** instead of generic prose feedback. The panel is the primary deliverable; a referee-style memo is rendered off it.
+Three independent LLM families (Claude, GPT, Gemini) read the paper. The deliverable is **not a referee report** — it is a folder of audit material that you use to write the report yourself. The folder contains:
 
-Each finding carries:
-- A verbatim quote from the paper (or a precisely-located paraphrase)
+- A **finding panel** — atomic concerns, each pinned to a verbatim quote (or precisely-located paraphrase) from the paper. The headline view.
+- A **drop trail** — every concern that was raised and killed during calibration, with the reason. The system shows what it killed, not only what survived.
+- **Per-phase intermediate work** — orientation maps, attack-surface index, candidate findings by track, debate transcripts where families disagreed.
+- A **referee-style memo** rendered off the panel, in prose. You edit it in your own voice.
+
+Each shipped finding carries:
+- A verbatim quote (or precisely-located paraphrase)
 - A category — proof / empirics / identification / framing / robustness / interpretation / notation
 - A severity tier — material / local / nit
 - The minimal correction the author would make
-- An audit trail showing which families surfaced the concern and what was dropped
+- The audit trail showing which families surfaced it and what was killed alongside
 
 The system runs three independent audit layers:
 
@@ -31,9 +36,9 @@ The system runs three independent audit layers:
 ## What the workflow looks like
 
 1. Provide the paper (PDF or markdown).
-2. Disputatio runs the audit (~2.5 hours wall clock, $0 marginal cost on Claude Pro / ChatGPT Pro / Gemini OAuth subscriptions).
-3. You read the panel: 20–40 calibrated findings sorted by priority, plus a referee memo.
-4. You decide what to revise, ignore, or investigate further.
+2. Disputatio runs the audit (~2.5 hours wall clock, runs on Claude Pro / ChatGPT Pro / Gemini OAuth subscriptions).
+3. You read through the folder — panel, drop trail, debate transcripts — and decide which concerns you agree with, which you can defend rejecting, and which you want to investigate further.
+4. You write the report (or revision plan) in your own voice, using the audit material as source.
 
 Each shipped finding has been through cross-architecture audit, blinded calibration, and (for material concerns flagged by all three families) a Route-B red-team challenge that drops findings if the consensus turns out to be a shared misreading.
 
@@ -52,34 +57,29 @@ Findings dropped at calibration or debate are preserved with reasons. The system
 
 A complete v8.0 panel on Galeotti, Golub & Goyal (2020), *Targeting Interventions in Networks* (Econometrica), is available at `<demo-link>`. This is a published paper, so it is not a "before submission" demo — it shows the current output format and critique level.
 
-## Current evidence
+## Current status
 
-Cross-system benchmark against [coarse.ink](https://coarse.ink) on four papers (econ network theory, popgen, computational neuroscience, info theory), refine.ink as reference review, gemini-3.1-pro single judge:
-
-- Disputatio v8.0 on Galeotti: **5.8 / 6** (vs coarse 6.00 — closest tie disputatio has achieved; +0.8 over the v7.1 baseline)
-- v7.1 drop-mini on Forney: 5.0 → 5.5 (+0.5)
-- v7.1 drop-mini on Stephens: 2.5 → 3.5 (+1.0, codex judge)
-
-Other layers (v8.1 wrong-but-present, v8.2 framing) are implemented and design-validated by an external review (codex 5.5 architectural critique across nine turns of discussion) but not yet broadly bench-measured.
-
-The honest version: **n=4 papers, one full-pipeline v8.0 measurement, multiple within-paper deltas**. Directional evidence, not statistical proof.
+Disputatio is in active evaluation. The architecture is built — three-family discovery, blinded calibration with demote-or-drop on overclaim, escalation-only debate, single-writer rendering. What is **not** yet established is panel quality at scale, validated through author and referee feedback on real manuscripts. That is the open question this outreach exists to answer.
 
 ## What this does not claim
 
 - **Not a substitute for a referee.** A referee brings field knowledge and editorial judgment disputatio cannot replicate.
 - **Not a proof checker.** It surfaces likely audit targets; it does not formally verify.
-- **Not broadly validated across economics yet.** Bench corpus is four papers across four domains.
+- **Not broadly validated yet.** The architecture has been exercised on a handful of papers; panel quality at scale is the open question.
 - **Operationally slow.** ~2.5 hours wall clock per paper. Some papers trigger Anthropic content filters and run on 2 of 3 families.
-- **Single-judge bench.** All measurements use gemini-3.1-pro single-judge against a refine.ink reference. Cross-judge stress test pending.
+
+## Confidentiality
+
+Files are handled locally on the operator's machine, but during inference the paper text is sent to Anthropic, OpenAI, and Google through paid Pro subscriptions. **This is not a confidential channel.** Only send work you would be comfortable having processed by those providers under their data-handling terms. For referee work on a manuscript you did not author, check your journal's policy first — most journals prohibit submitting confidential review material to external AI services.
 
 ## Who it is for
 
-- Authors with a paper near submission who want a structured pre-submission audit.
+- **Primary: authors** with a paper near submission who want a structured pre-submission audit on their own work.
+- **Conditional: reviewers** who have been assigned a paper, only where journal policy permits external-AI assistance.
 - Advisors who want to give a coauthor a concrete starting point for a revision pass.
-- Reviewers who have just been assigned a paper and want a structured first read before writing their report.
 
 ## What feedback would help
 
-If you've looked at the demo panel: do the findings seem like real referee feedback, or like generic LLM critique with extra steps? Which ones are useful, which ones are wrong, which ones miss the point of what the paper is doing? Would you consider running this on a draft you're working on?
+If you've looked at the worked example: do the findings read like real referee feedback, or like generic LLM critique with extra steps? Which ones are useful, which ones are wrong, which ones miss the point of what the paper is doing? Would you consider running this on a draft you authored?
 
-Feedback form: `<form-link>`. Five questions, ~5 minutes.
+Reply by email — one paragraph is plenty.

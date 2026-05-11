@@ -1,8 +1,8 @@
 # Disputatio feedback form spec
 
-Five questions. Designed for a Google Form or Typeform. Total time target: ~5 minutes.
+**Status: deferred to Round 2.** For Round 1 (3–5 hand-picked recipients) we use free-text email replies — richer signal at small n, lower friction for the recipient, no broken-form risk. This spec stays in the repo so when Round 2 scales the response count, the form is ready to build.
 
-Per codex 5.5 sess 135 turn 2.
+Five questions. Designed for a Google Form or Typeform. Total time target: ~5 minutes.
 
 ---
 
