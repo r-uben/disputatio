@@ -537,10 +537,12 @@ When no `tickets.json` exists:
    `mkdir -p $PAPER/{_paper,0_orientation,0_holistic/{},1_discovery/{holistic_candidates,broad_critic,narrow_evidence},2_ranking,3_debates,4_panel,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
 4. **Copy `AGENTS.md` and `GEMINI.md` from the disputatio repo root into `$PAPER/`.** These are worker-facing operating manuals that the codex / gemini CLIs auto-load when invoked with cwd = paper workspace. Without them at the workspace root, the workers see only their global config (e.g. `~/.codex/AGENTS.md`) which is not disputatio-aware.
    ```bash
+   # Resolve the disputatio repo path from the symlink installed by install.sh.
+   DISPUTATIO_REPO="$(readlink ~/.claude/skills/disputatio 2>/dev/null || echo ~/.claude/skills/disputatio)"
    cp "$DISPUTATIO_REPO/AGENTS.md" "$PAPER/AGENTS.md"
    cp "$DISPUTATIO_REPO/GEMINI.md" "$PAPER/GEMINI.md"
    ```
-   (`$DISPUTATIO_REPO` resolves to wherever `~/.claude/skills/disputatio` points — usually the cloned repo.)
+   The `readlink` fallback handles the case where `~/.claude/skills/disputatio` is the actual repo (not a symlink). If neither resolves, the copy fails fast and the run halts at preflight rather than continuing without worker manuals.
 5. Copy or OCR the paper into `_paper/paper.md`; copy the PDF to `_paper/paper.pdf` when available.
 6. Write `review.md`.
 7. Emit Wave 1 tickets into `_artifacts/tickets.json`.
