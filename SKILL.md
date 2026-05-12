@@ -52,7 +52,7 @@ Every agent call is a ticket on disk. Tickets live in `<paper-folder>/_artifacts
 **Execution model**:
 - Claude generates tickets in **waves**. Each wave depends on the outputs of the previous wave.
 - `agent-ctl run-dag <paper-folder>/_artifacts/tickets.json --concurrent 3` executes all ready tickets in parallel up to the concurrency cap, then exits when no more ready tickets remain.
-- Claude-typed tickets (`orient_claude`, `holistic_claude`, `discover_claude_*`, `baseline_review`, `merge_rank`, and wave-emission logic) are executed by Claude directly, not by agent-ctl.
+- Claude-typed tickets are executed by Claude directly, not by agent-ctl. The dispatch mechanism is **native Claude Code subagents** for the per-phase worker roles (the orchestrator reads `SKILL.md` and uses the `Agent` tool to invoke a subagent per ticket), with the wiring rolled out incrementally — see `.claude/agents/README.md` for the current mapping and which phases are wired vs still inline. Wave-emission logic, route-decision logic, and the top-level orchestrator role remain inline in the default Claude Code session (they shape the next wave based on what just landed and cannot be subagented without losing the control loop).
 - After `run-dag` exits, Claude inspects the outputs, renders them as curated markdown into the numbered folders, generates the next wave of tickets, and calls `run-dag` again.
 
 **Automatic session archiving**: `agent-ctl run-dag` copies the session log (raw agent reasoning trace) into `<tickets_parent>/sessions/<ticket_id>.log` when a ticket finishes — both on success and on failure. The archive location is derived from the tickets.json parent directory, so for disputatio it lands in `<paper-folder>/_artifacts/sessions/`. Nothing is deleted; every reasoning trace is preserved forever.
@@ -71,6 +71,8 @@ The review proceeds in **eight phases (Phase 0 through Phase 7)**. Phase 7 is op
 
 Each of the three agents reads the paper once and produces a neutral **paper map**: claims, equations, propositions, assumptions, parameters, datasets, citations, section anchors, and OCR-corrupted regions. No judgments yet.
 
+**Dispatch**: codex and gemini run as external CLIs via `agent_ctl.py`; they pick up `AGENTS.md` and `GEMINI.md` respectively from the paper workspace. **The Claude family runs as the [`orient-reader`](.claude/agents/orient-reader.md) subagent** dispatched via the Agent tool, not inline — this isolates the role context from the orchestrator's working memory.
+
 Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders them as markdown into `0_orientation/<agent>.md`. The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
 
 Run all three agents in parallel. Estimated time: ~15-20 minutes wall clock (Codex with `--full-auto` does deep web cross-referencing).
@@ -86,6 +88,8 @@ Each of the three agents runs a **holistic conceptual pass** on the paper using 
 - **Evidence-heavy scrutiny zones** — which sections need close engagement versus which can be scanned
 
 This phase exists because single-shot reviewers have a structural advantage on conceptual-scope concerns when reading the paper as one object. The method-based discovery tracks in Phase 2 under-detect these; the holistic pass closes the gap. The three agents' holistic passes are NOT merged into a single paper map — each agent's pass becomes part of its own reading cache. The orchestrator does build a **canonical attack-surface index** (union across agents, dedup on surface description) that Phase 2 discovery tickets receive as context.
+
+**Dispatch**: codex and gemini via `agent_ctl.py` (external CLIs). **Claude family runs as the [`holistic-reader`](.claude/agents/holistic-reader.md) subagent** via the Agent tool.
 
 Raw outputs in `_artifacts/json/holistic_<agent>.json`; rendered into `0_holistic/<agent>.md`. Run in parallel. ~10-15 minutes wall clock.
 
