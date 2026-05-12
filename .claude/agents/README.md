@@ -4,28 +4,36 @@ Claude Code subagents (the `Agent` tool) that the disputatio orchestrator can di
 
 ## Status
 
-**Defined, not yet wired in.** The orchestrator currently dispatches inline (Claude reads `SKILL.md` and executes phases directly). These subagent definitions exist so that Phase B of the orchestration evolution — moving Claude-side phase dispatch into the native subagent system — can be done incrementally without touching `agent_ctl.py` (which still handles the codex/gemini CLI shell-outs).
+**Wiring in progress.** The orchestrator originally dispatched Claude-side phases inline (Claude reads `SKILL.md` and executes directly). Wiring those phases through these subagent definitions is incremental:
 
-When you want to invoke one of these directly from an interactive Claude Code session for testing:
-```
-> Use the discovery-worker subagent to run track T2 on the current paper.
-```
-
-## What's here
-
-| File | Role | When dispatched |
+| Phase / role | Subagent | Wired in SKILL.md? |
 |---|---|---|
-| [`discovery-worker.md`](discovery-worker.md) | Generic discovery role — finds candidate concerns on a single track for a single family | Phase 2 (Discovery) — 9 tickets total when fully wired |
-| [`calibration-judge.md`](calibration-judge.md) | Blinded per-finding annotator with demote-or-drop discipline | Phase 5 (Calibration) — once per candidate row |
-| [`debate-prosecutor.md`](debate-prosecutor.md) | Adversarial prosecution role in escalation debate rounds | Phase 4 (Disputatio) — only on escalated findings |
-| [`debate-synthesizer.md`](debate-synthesizer.md) | Synthesizer role producing the refined claim after prosecution + defense | Phase 4 — once per debated finding |
-| [`panel-renderer.md`](panel-renderer.md) | Single long-context writer for the final panel + memo + optional aux | Phase 6 (Determinatio) — once per run |
+| Phase 0 — orientation (Claude family) | [`orient-reader`](orient-reader.md) | **Yes** |
+| Phase 1 — holistic pass (Claude family) | [`holistic-reader`](holistic-reader.md) | **Yes** |
+| Phase 2 — discovery (any track, any family) | [`discovery-worker`](discovery-worker.md) | Defined, pending smoke test |
+| Wave 2.5 — baseline coverage sentinel | (pending — `baseline-reviewer`) | Not yet defined |
+| Phase 3 — atomic merge + ranking | (pending — `merge-ranker`) | Not yet defined |
+| Phase 4 — debate (escalation only) | [`debate-prosecutor`](debate-prosecutor.md), [`debate-synthesizer`](debate-synthesizer.md) | Defined, pending smoke test |
+| Phase 5 — blinded calibration | [`calibration-judge`](calibration-judge.md) | Defined, pending smoke test |
+| Phase 6 — single-writer render | [`panel-renderer`](panel-renderer.md) | Defined, pending smoke test |
+
+The wiring sequence (per codex 5.5 review):
+1. Wire orient + holistic first (this round). Run a smoke test on a real paper through Phase 1.
+2. After smoke test passes, define and wire `baseline-reviewer` and `merge-ranker`.
+3. After Phase 3 lands, wire the rest in order: calibration, debate, render.
+
+When you want to invoke one directly from an interactive Claude Code session for testing:
+```
+> Use the orient-reader subagent to produce the Claude orientation map for the current paper.
+```
 
 ## What's NOT here
 
 - **No codex / gemini subagents.** Those families are still invoked via `agent_ctl.py` shell-out to the external CLIs. Claude Code subagents are Claude-side only; they cannot replace cross-architecture dispatch.
-- **No orchestrator subagent.** The top-level disputatio runner is the default Claude Code session, not a subagent — it has to read SKILL.md and emit tickets, which is the orchestrator role itself.
-- **No discovery-broad / discovery-narrow / discovery-holistic separate files.** Track is a parameter to the generic `discovery-worker`, not a separate role.
+- **No orchestrator subagent.** The top-level disputatio runner is the default Claude Code session, not a subagent — it has to read `SKILL.md`, emit ticket waves, inspect landed artifacts, decide the next wave. Dispatching that role would lose the stateful control loop.
+- **No wave-emission subagent.** Wave-emission shapes the next wave based on what just landed; it is orchestration logic, not worker labor.
+- **No polish-rewriter.** Polish-rewrite is a sub-step of calibration with the same role as the judge — handled inside `calibration-judge`, not a separate subagent.
+- **No discovery-broad / discovery-narrow / discovery-holistic split.** Track is a parameter to the generic `discovery-worker`, not a separate role.
 
 ## How these relate to AGENTS.md / GEMINI.md
 
