@@ -535,9 +535,15 @@ When no `tickets.json` exists:
 2. Determine `<paper-slug>` from the input filename.
 3. Create the current directory layout:
    `mkdir -p $PAPER/{_paper,0_orientation,0_holistic/{},1_discovery/{holistic_candidates,broad_critic,narrow_evidence},2_ranking,3_debates,4_panel,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
-4. Copy or OCR the paper into `_paper/paper.md`; copy the PDF to `_paper/paper.pdf` when available.
-5. Write `review.md`.
-6. Emit Wave 1 tickets into `_artifacts/tickets.json`.
+4. **Copy `AGENTS.md` and `GEMINI.md` from the disputatio repo root into `$PAPER/`.** These are worker-facing operating manuals that the codex / gemini CLIs auto-load when invoked with cwd = paper workspace. Without them at the workspace root, the workers see only their global config (e.g. `~/.codex/AGENTS.md`) which is not disputatio-aware.
+   ```bash
+   cp "$DISPUTATIO_REPO/AGENTS.md" "$PAPER/AGENTS.md"
+   cp "$DISPUTATIO_REPO/GEMINI.md" "$PAPER/GEMINI.md"
+   ```
+   (`$DISPUTATIO_REPO` resolves to wherever `~/.claude/skills/disputatio` points — usually the cloned repo.)
+5. Copy or OCR the paper into `_paper/paper.md`; copy the PDF to `_paper/paper.pdf` when available.
+6. Write `review.md`.
+7. Emit Wave 1 tickets into `_artifacts/tickets.json`.
 
 ### Prompt generation
 
