@@ -6,9 +6,17 @@ This track is **upstream** of Phase 2 discovery, not downstream. The output feed
 
 ## When it fires
 
-One ticket per paper. Emitted in **Wave 1.75**, between Wave 1.5 (holistic) and Wave 2 (discovery). Single agent — `gemini` with search grounding — chosen over per-family fan-out because the failure mode is **retrieval**, not cross-family reasoning. Three LLMs from memory will overproduce canonical references and underproduce long-tail specialized adjacency; one grounded search-capable model with structured query design does the job.
+One ticket per paper. Emitted in **Wave 1.75**, between Wave 1.5 (holistic) and Wave 2 (discovery).
 
-Optional `/chrome` follow-up for Google Scholar verification + lateral "Cited by N" / "Related articles" traversal on any unverifiable candidate.
+**Executor: Claude-typed ticket** — the orchestrator runs the ticket inline in a Claude session with the `/chrome` MCP server connected. Claude is the executor because:
+
+- The retrieval step requires `/chrome` MCP tools (Google Scholar navigation, lateral "Cited by N" / "Related articles" traversal). MCP tools are only available in Claude sessions, not in subagents or external CLIs.
+- Verification cannot rely on training knowledge — the whole point is to fetch ground-truth metadata (DOI, venue, year) from Scholar.
+- Memory-recall candidates from `gemini-3-flash-preview` are treated as one input source among several, not as the retrieval primitive.
+
+**Hard prerequisite:** the Claude session must have the Chrome extension connected (via https://claude.ai/chrome) before the ticket runs. If `mcp__claude-in-chrome__tabs_context_mcp` returns "Browser extension is not connected," the ticket fails fast with a clear error — it does NOT fall back to training knowledge.
+
+`gemini-3-flash-preview` is used inline by Claude (via `agent-ctl`) for the Pass A memory-recall step only. The pro-preview variant is forbidden — it capacity-exhausts on search-grounded prompts; flash is stable. Test result on the Han-Hu-Zhang paper (2026-05-19): pro-preview failed both Pass B attempts with capacity errors; flash returned in 64s with author+year+title accuracy for 6 of 8 Ref #2-named references (venues hallucinated but corrected at verification).
 
 ## Inputs
 
@@ -33,36 +41,49 @@ A `--lit-engagement [strict|relaxed]` flag exposes the choice:
 
 ## Procedure
 
-### Step 1 — Build the search vocabulary
+### Step 1 — Build the search vocabulary (Claude inline, derived from the paper)
 
-From the inputs:
-- 4–6 method nouns (e.g., "CARA utility", "Gaussian Q-measure", "variance swap pricing")
-- 4–6 mechanism nouns (e.g., "hedging pressure equilibrium", "spot market basis risk", "price-contingent risk sharing")
-- The set of load-bearing already-cited works, by author-year
+The executor (Claude) reads the paper spine + main_claims + attack_surface_index + load-bearing citations and derives the search vocabulary. There is no hardcoded niche list in this template — the niches a paper engages with are paper-specific and must be derived from its content. The procedure is:
 
-Write to `search_vocabulary[]` in the output JSON. The annotator can audit this against the confidentiality rule.
+1. **Identify 3–6 sub-literatures the paper engages with.** Look at: the paper's lit-review section, the works it explicitly cites as nearest neighbors, the attack-surface index's `framing` and `theory` entries, the holistic pass's `main_claims`. A sub-literature is a named tradition with recurring authors and a recognizable problem (examples of the *shape*: "existence of equilibrium in noisy rational expectations", "endogenous market completeness via continuous-time diffusion", "variance risk premium asset-pricing tradition", "asymmetric-information welfare for derivatives" — but the actual sub-literatures depend on the paper).
+2. **Extract 4–6 method nouns** (specific techniques the paper uses, named precisely).
+3. **Extract 4–6 mechanism nouns** (the economic / structural mechanism the paper claims, in generic terms).
+4. **Enumerate the load-bearing already-cited works** by author-year, from `citations_load_bearing` in the orientation map.
 
-### Step 2 — Pass A: Model-memory recall (no search)
+Write to `search_vocabulary` in the output JSON with sub-objects `sub_literatures[]`, `method_nouns[]`, `mechanism_nouns[]`, `already_cited[]`. The vocabulary is the audit handle for the confidentiality rule — if a sub-literature description quotes verbatim paper text, the rule was violated and the vocabulary must be rewritten before any retrieval call fires.
 
-Prompt the gemini worker with the vocabulary and ask:
-> "Drawing only on your training-corpus memory (no web search yet), name 8–12 specialized older or adjacent works on these topics that a domain expert would consider when refereeing a paper in this lineage. Include author + year + venue + one-sentence relevance for each. Prefer older or specialized works over recent canonical ones — the heuristic is 'long-tail adjacency the author may not have considered.'"
+### Step 2 — Pass A: Model-memory recall (gemini-flash, no search)
 
-Capture the raw candidate list as `memory_recall_candidates[]`.
+Claude dispatches one `gemini-3-flash-preview` call via `agent-ctl` with the search vocabulary inlined. The prompt asks gemini to enumerate 10–15 specialized older or adjacent works for each sub-literature in the vocabulary, drawing from training-corpus memory only — explicitly *not* searching. Format constraint: strict JSON to stdout.
 
-### Step 3 — Pass B: Search-grounded recall
+The gemini-flash output is captured as `memory_recall_candidates[]`. Treat these as **leads**, not verified citations — gemini-flash is paper-accurate but venue-noisy (correct paper, wrong volume / issue / year is a common failure mode). Verification (Step 4) is responsible for correcting metadata.
 
-Same vocabulary, but enable Gemini's search grounding:
-> "Given this search vocabulary, search the web (Google Scholar, NBER, SSRN) for older or specialized adjacent works in the same lineage. Report 8–12 candidates with author + year + venue + DOI or URL and a one-sentence reason this paper should engage. Prefer specialised / older / less-canonical works."
+`gemini-3.1-pro-preview` is explicitly forbidden in this step — empirically capacity-exhausts on this prompt class.
 
-Capture as `search_grounded_candidates[]`.
+### Step 3 — Pass B: Browser-driven retrieval (Claude + /chrome)
 
-### Step 4 — Verification
+Claude drives Google Scholar through the `/chrome` MCP server. For each sub-literature in the vocabulary, Claude executes:
 
-For every candidate from Pass A or Pass B that lacks a verifiable URL/DOI:
-- Send to `/chrome` to navigate Google Scholar, search the candidate's title + first author + year, and capture the first matching result's metadata
-- If no match: drop the candidate, log as `unverifiable` in the output
+1. **Direct search.** Navigate to `scholar.google.com/scholar?q=<sub_literature_keywords>`, read the first 1–2 result pages, capture the first 8–10 results that match the sub-literature's theme.
+2. **Lateral traversal.** For each load-bearing already-cited work that anchors a relevant sub-literature, click "Cited by N" and filter the resulting list for papers that match the paper's themes — these are forward citations of the literature the paper engages, and a frequent source of specialized adjacencies the author missed.
+3. **Backward traversal (when valuable).** For top-ranked candidates from Step 1, click the candidate's "Cited by" page and look for older works the candidate cites that the paper does not — backward citation walks find the long-tail predecessors.
 
-For candidates that exist: record canonical citation form, DOI or stable URL, and the Scholar "Cited by N" count.
+For every candidate produced by any traversal: capture `{title, authors, year, venue, volume, issue, pages, doi, scholar_url, cited_by_count}`. No metadata is fabricated; if Scholar doesn't display a venue, the field is null and the candidate is flagged for follow-up rather than completed from memory.
+
+**Hard rule:** Pass B does NOT use training knowledge for any metadata field. Every value must trace to a Scholar result page or to the candidate paper's landing page. Training-knowledge fallbacks are an audit failure and the candidate drops as `unverifiable`.
+
+The Pass B output is captured as `search_grounded_candidates[]`.
+
+### Step 4 — Verification + dedup of Pass A leads
+
+For every entry in `memory_recall_candidates[]` that is not already a duplicate of a `search_grounded_candidates[]` entry:
+
+1. Search Scholar via `/chrome` for the candidate's title + first author + year as gemini reported them.
+2. If a single confident match exists: pull canonical metadata (overwrite the gemini-reported fields) and add to `verified_candidates[]`.
+3. If no match exists in the first 3 results: drop the candidate, log as `hallucinated_citation` in `unverifiable_candidates[]`.
+4. If multiple candidates match (e.g., same authors with two papers near that year — Elul 1995 vs Elul 1999 is a real example), treat each as a separate verified candidate; downstream ranking decides which belongs in the panel.
+
+This step is what catches gemini-flash's venue-hallucination failure mode — paper exists, metadata is wrong, Scholar fixes it.
 
 ### Step 5 — Bibliography dedup
 
@@ -170,11 +191,15 @@ Rows that fail any check drop to `_calibration/dropped_literature_engagement.jso
 
 ## Failure modes
 
-- **Gemini search hits captcha or 429** — retry once after 60 sec; fallback to /chrome scholar UI for the verification step.
-- **Verification step finds the candidate doesn't exist** — drop, log as `hallucinated_citation`. This is the equivalent of the verbatim-quote validator failing in the main pipeline.
+- **`/chrome` MCP not connected** — ticket fails fast at start. No fallback to training knowledge. The user must connect the Chrome extension (https://claude.ai/chrome) and re-run. This is by design — silently degrading to training-knowledge retrieval would produce hallucinated citations the rest of the pipeline trusts as ground truth.
+- **`gemini-3-flash-preview` capacity-exhausts on Pass A** — retry once after 60 sec; if still failing, skip Pass A entirely and run Pass B alone (browser-driven retrieval is sufficient on its own; gemini Pass A is an accelerator, not a critical path).
+- **Scholar captcha / rate limit** — pause /chrome for 5 min, then continue. If captcha persists, the user must solve it manually in the Chrome window before the ticket can proceed.
+- **Verification step finds the candidate doesn't exist** — drop, log as `hallucinated_citation`. gemini-flash's recall is paper-accurate but venue-noisy, so verification will frequently *correct* metadata rather than drop the candidate; an actual drop (paper doesn't exist) is rare.
 - **All candidates are already cited** — the paper is well-positioned; output an empty `findings[]` with a note. This is a clean outcome, not a failure.
-- **No passage anchor can be identified for any candidate** — the search vocabulary was too generic. Re-run Step 1 with more specific method/mechanism nouns.
+- **No passage anchor can be identified for any candidate** — the search vocabulary was too generic. Re-run Step 1 with more specific sub-literature descriptions and re-derive vocabulary from the holistic pass's `framing` and `theory` attack surfaces.
 
 ## Cost
 
-Typical run: 2 gemini calls (Pass A + Pass B) ~ $0.10, plus 3–10 /chrome lookups for verification (~ 2–5 minutes wall clock). Total: ~5–10 minutes added to a 2-hour pipeline. Negligible.
+Typical run: 1 `gemini-3-flash-preview` call for Pass A (~ $0.02, ~ 60 sec wall clock) + 20–40 `/chrome` navigations for Pass B + Step 4 verification (~ 15–25 min wall clock dominated by Scholar page-load latency, no per-call $ cost since /chrome is the user's browser session). Total: ~ 20–30 min added to a 2-hour pipeline.
+
+The wall-clock cost is dominated by Scholar latency, not by inference. Scholar rate-limits aggressive automation; at single-paper volume this is not an issue, but a deployment fanning out across many papers concurrently would need either /chrome session pooling or a graduation to an OpenAlex/Semantic-Scholar API backend (deliberately out of scope for v1 — see issue #33).
