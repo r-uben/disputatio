@@ -162,13 +162,13 @@ After all three holistic tickets complete, the orchestrator builds a **canonical
 
 ### Wave 1.75 — Literature engagement (new; closes the librarian gap)
 
-One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery). Single agent — gemini with search grounding — chosen over per-family fan-out because the failure mode is retrieval, not cross-family reasoning. See `templates/literature_engagement.md` for the authoritative protocol.
+One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery). **Claude-typed (executed inline by the orchestrator)** because the retrieval step requires the `/chrome` MCP server, which only loads in a Claude Code session. `gemini-3-flash-preview` is invoked inline by Claude (via `agent-ctl`) for the Pass A memory-recall sub-step only; it is not the ticket's executor. See `templates/literature_engagement.md` for the authoritative protocol (the template wins over this section if they disagree).
 
 ```json
 {
   "literature_engagement": {
     "id": "literature_engagement", "type": "literature_engagement",
-    "agent": "gemini", "model": "gemini-3.1-pro-preview", "family": "google", "flags": {"search_grounding": true},
+    "agent": "claude", "model": "sonnet", "family": "anthropic", "flags": {"requires_chrome_mcp": true},
     "prompt_path": "_artifacts/prompts/literature_engagement.md",
     "inputs": [
       "_paper/paper.md",
@@ -178,15 +178,18 @@ One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery)
     ],
     "outputs": ["_artifacts/json/literature_engagement.json"],
     "depends_on": ["holistic_claude", "holistic_codex", "holistic_gemini"],
-    "status": "pending", "timeout_s": 1800,
-    "output_format": "json_stdout"
+    "status": "pending", "timeout_s": 1800
   }
 }
 ```
 
-The ticket is followed by an inline `/chrome` verification step run by Claude (the orchestrator) for any candidate Gemini surfaces without a verifiable URL/DOI. After verification + bibliography dedup + passage-anchor selection, the surviving candidates feed Phase 2 discovery as additional input context AND emit panel rows into a new top-level array `literature_engagement_findings[]` at Phase 6 render time.
+`flags.requires_chrome_mcp: true` is a hard prerequisite — the orchestrator checks `mcp__claude-in-chrome__tabs_context_mcp` at ticket-start time. If the Chrome extension is not connected, the ticket fails fast with a clear error rather than silently degrading to training-knowledge retrieval (per `templates/literature_engagement.md` Failure modes).
 
-**Disable flag.** Run with `--no-lit-engagement` to skip this wave entirely (useful when web-verify is off and the paper is confidential beyond the strict-mode threshold; see `templates/literature_engagement.md` Confidentiality discipline).
+After the ticket completes, the surviving candidates feed Phase 2 discovery as additional input context (the orchestrator adds `_artifacts/json/literature_engagement.json` to every Phase 2 discovery prompt's input list before emitting Wave 2) AND emit panel rows into a new top-level array `literature_engagement_findings[]` at Phase 6 compile time (see Wave 7 below).
+
+**Disable flag.** Run with `--no-lit-engagement` to skip this wave entirely (useful when /chrome is not available or the paper is confidential beyond the strict-mode threshold; see `templates/literature_engagement.md` Confidentiality discipline).
+
+**Future migration: external `claude --chrome` worker.** When ClaudeSpec lands (#34), this ticket may dispatch as an external `agent-ctl start claude --flags --chrome` subprocess instead of inline. The `agent: "claude"` field above already routes through a future `ClaudeSpec`, and `flags.requires_chrome_mcp: true` translates to the `--chrome` CLI flag when the subprocess path is wired.
 
 ### Wave 2 — Discovery (v6: 9 tickets across 3 tracks)
 
@@ -624,7 +627,11 @@ Do not use the old post-debate calibration sub-DAG or the legacy report-centric 
 
 ### Wave 7 — Panel compile + render (v6, emitted after calibration final_findings.json exists)
 
-**Step 7a — Panel compile (inline orchestrator, no ticket).** Once `_calibration/final_findings.json` exists, Claude wraps it into `_artifacts/json/panel.json` by adding `paper`, `engine` (version + mode + families), `holistic_pass` (union attack-surface index from Phase 1), and `summary` metadata. The `findings[]` and `dropped_findings[]` arrays are copied through unchanged — panel rows follow `templates/schemas/panel_row.md` and are never reshaped at compile time. This is the ONLY step that writes `panel.json`; the renderer cannot produce it.
+**Step 7a — Panel compile (inline orchestrator, no ticket).** Once `_calibration/final_findings.json` exists, Claude wraps it into `_artifacts/json/panel.json` by adding `paper`, `engine` (version + mode + families), `holistic_pass` (union attack-surface index from Phase 1), and `summary` metadata. The `findings[]` and `dropped_findings[]` arrays are copied through unchanged — panel rows follow `templates/schemas/panel_row.md` and are never reshaped at compile time.
+
+If `_artifacts/json/literature_engagement.json` exists (Wave 1.75 ran and was not disabled via `--no-lit-engagement`), its `findings[]` array is ALSO copied through into a top-level `literature_engagement_findings[]` array on `panel.json`. These are *not* merged into the main `findings[]` array — they live in a separate stream because they operate under a different evidentiary contract (per `templates/literature_engagement.md` Calibration section). The renderer surfaces them in a dedicated "Suggested literature engagement" section per `templates/render_panel.md`.
+
+This is the ONLY step that writes `panel.json`; the renderer cannot produce it.
 
 **Step 7b — Panel render ticket.** One ticket, per `templates/render_panel.md`. The panel renderer is a single long-context call that reads the compiled `panel.json` plus the paper and produces the markdown outputs in uniform voice.
 
