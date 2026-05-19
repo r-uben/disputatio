@@ -13,7 +13,12 @@ Sessions are **stateful**: agent-ctl persists them in `~/.claude/agent-sessions.
 
 **Showing results to the user.** Print exactly `agent_ctl.py result <id>`. Do **not** pipe through `grep`, `tail`, `head`, `sed`, or `awk`. The output is already cleaned — any filter you add strips real content and is what makes the visible output look like garbage. If `result` returns "(still running — no result yet)", wait; do not fall back to scraping the raw stdout log.
 
-**Polling.** Never run visible `for i in $(seq …); do sleep 60; …; done` loops — they spam status lines into the transcript. Use `agent_ctl.py wait <id>` (blocks until done) or `run_in_background` a single poll. The user should see the result, not the wait.
+**Polling.** Never run visible `for i in $(seq …); do sleep 60; …; done` loops — they spam status lines into the transcript. The Bash tool's default timeout is 120s and a typical Gemini query (web research, code review, debate) can easily exceed that, so a naked `wait` call will time out *before* gemini finishes and look like a hang. Two safe patterns:
+
+- `agent_ctl.py wait <id> --max-wait 90` — bounded wait; exits 2 with "still running" before busting Bash's cap. Re-call until the session finishes.
+- `run_in_background: true` on a plain `agent_ctl.py wait <id>` — the harness notifies you when it returns.
+
+Use the second when you want to do other work while gemini runs. Use the first when you need to feed the result back into your next step.
 
 **Resume by default.** Whenever a recent gemini session (≤ 2 hours, same `cwd`) exists, use `send-or-start`, not `start` — even for bare prompts like "does gemini agree?", "ask again", "follow up". Only use `start` when (a) no recent session exists, (b) the topic clearly changed, or (c) `send-or-start` reports ambiguity (then surface the candidates and ask).
 
@@ -37,7 +42,7 @@ $A start gemini "Explore project" --timeout 600 --flags -y          # agent mode
 # Monitor
 $A status                   # list all sessions (codex + gemini)
 $A status --json            # machine-readable for routing decisions
-$A check 01                 # tail output of session 01
+$A check 01                 # tail output of session 01 — see note on buffering below
 
 # Get results
 $A result 01                # get final response
@@ -85,6 +90,12 @@ $A start gemini "task" --flags --approval-mode plan        # read-only explorati
 $A start gemini "Review @./src/" --flags -y                # with file references
 ```
 
+## Buffering: `check` is not a stream
+
+Gemini's `-o text` mode block-buffers stdout when not writing to a TTY — empirically, the entire response lands in a single write at process exit, not line-by-line. So `agent_ctl.py check <id>` shows essentially nothing useful during execution (just the startup ripgrep warning) and the real answer appears at the moment the session goes from RUNNING to DONE. Don't try to use `check` for live progress. Wait for the session to finish, then call `result`.
+
+(This is a deliberate trade-off: agent_ctl previously wrapped agents in `script -q /dev/null` to defeat buffering, but that created a fresh session for gemini's node worker which then escaped agent_ctl's process group and survived `kill` on timeout — leaking processes that held OAuth state and polluted `gemini --list-sessions`. Losing live streaming is the right price.)
+
 ## Auth
 
 Gemini CLI uses **OAuth cached credentials** (not API keys). agent-ctl automatically unsets conflicting env vars (`GOOGLE_API_KEY`, `GEMINI_API_KEY`).
@@ -94,8 +105,10 @@ Gemini CLI uses **OAuth cached credentials** (not API keys). agent-ctl automatic
 If agent-ctl doesn't work for some reason:
 
 ```bash
-env -u GOOGLE_API_KEY -u GEMINI_API_KEY gemini -p "YOUR QUESTION" -m gemini-3.1-pro-preview -o text 2>/dev/null
+env -u GOOGLE_API_KEY -u GEMINI_API_KEY gemini -p "YOUR QUESTION" -m gemini-3.1-pro-preview -o text --skip-trust 2>/dev/null
 ```
+
+`--skip-trust` is required for any cwd that isn't under a folder listed in `~/.gemini/trustedFolders.json`. agent-ctl adds it conditionally for you (only when needed); the direct fallback above hard-codes it because there's no way to detect at the shell level.
 
 ## File & Multimodal Context
 
