@@ -118,6 +118,28 @@ A single integrator (Claude/opus, inline) merges per-family obligation records i
 
 Full spec in `templates/obligation_integrate.md`.
 
+### Phase 1.75 — Literature engagement (v2 — graph-traversal via citation APIs)
+
+Closes the "librarian gap" — surfaces specialised adjacent works the paper does not cite but probably should engage with. The 2026-05-19 Han-Hu-Zhang vs AER Ref #2 comparison showed disputatio's auditor tracks miss the citation-positioning comments a domain referee writes; Anthony's public evaluation singled out "helpful old references I'd never heard of" as Ref #2's most-praised property.
+
+**Architecture (G+E hybrid per panel review):**
+
+- **Pass A (LLM)** — identify 3–5 *load-bearing structural ancestors* in the paper's bibliography (NOT foundational citations everyone cites — the direct mechanism-cousins). The LLM's job is to *anchor the graph query*, not generate candidates from memory.
+- **Pass B (citation API)** — fetch the citation set of each ancestor; for ancestors in the same sub-literature, apply two-anchor AND-intersection; for cross-sub-literature ancestors, use single-anchor citation-fetch sorted by `cited_by_count`. Primary engine: Semantic Scholar (4.4× denser citation coverage than OpenAlex on pre-2010 econ). Fallback / complementary: OpenAlex (concept-filter narrowing, metadata canonicalisation).
+- **Pass C (LLM)** — reranks Pass B's retrieved abstracts by mechanism-overlap with the target paper. Drops topically-adjacent-but-mechanism-distinct candidates.
+
+**Critical empirical finding (smoke test 2026-05-19):** Two-anchor AND-intersection returns 0 candidates when ancestors cross sub-literatures, even with dense Semantic Scholar coverage (Hirshleifer 1990 × Geanakoplos-Polemarchakis 1986: cites_A=181, cites_B=200, intersection=0). Cross-literature pairs are structurally sparse. The architecture defaults to **single-anchor citation-fetch + LLM rerank**, with two-anchor intersection used only when ancestors share a sub-literature.
+
+**v2 supersedes v1 (PR #36):** v1 used gemini-flash memory recall + /chrome Scholar verification; blind test scored 1/8 direct hits vs Ref #2 because parametric memory naturally favors canonical (most-cited) papers, not load-bearing comparators. v2 shifts the LLM's role from generating to anchoring and evaluating.
+
+**Confidentiality:** Pass A and Pass C consume paper text (existing data-flow contract). Pass B queries use already-published Work/paperIDs and standard concept tags — never verbatim paper text. Strict-mode default.
+
+**`/chrome` MCP no longer required** — Pass B uses HTTPS APIs (OpenAlex + Semantic Scholar are free, no API key required for basic use). `/chrome` remains optional for final spot-checks.
+
+Disable with `--no-lit-engagement`. Independent of `--skip-web`.
+
+Full spec in `templates/literature_engagement.md`. Helper: `scripts/openalex_query.py`.
+
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):

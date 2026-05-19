@@ -160,6 +160,35 @@ Each of the three agents runs one holistic conceptual pass on the paper using it
 
 After all three holistic tickets complete, the orchestrator builds a **canonical attack-surface index** inline: union of `attack_surfaces[]` across the three agents, deduplicated by `description` semantic match, priorities aggregated. Written to `_artifacts/json/attack_surface_index.json`. Phase 2 discovery tickets receive this as additional input context.
 
+### Wave 1.75 — Literature engagement (v2 — graph-traversal)
+
+One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery). **Claude-typed (executed inline by the orchestrator).** Three internal passes: LLM ancestor identification → citation-API graph traversal → LLM mechanism-overlap rerank. See `templates/literature_engagement.md` for the authoritative protocol; `scripts/openalex_query.py` for the API helper.
+
+```json
+{
+  "literature_engagement": {
+    "id": "literature_engagement", "type": "literature_engagement",
+    "agent": "claude", "model": "sonnet", "family": "anthropic", "flags": {},
+    "prompt_path": "_artifacts/prompts/literature_engagement.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/orient_claude.json",
+      "_artifacts/json/holistic_claude.json",
+      "_artifacts/json/attack_surface_index.json"
+    ],
+    "outputs": ["_artifacts/json/literature_engagement.json"],
+    "depends_on": ["holistic_claude", "holistic_codex", "holistic_gemini"],
+    "status": "pending", "timeout_s": 1800
+  }
+}
+```
+
+After the ticket completes, the surviving candidates feed Phase 2 discovery as additional input context AND emit panel rows into a new top-level array `literature_engagement_findings[]` at Phase 6 compile time.
+
+**Disable flag:** Run with `--no-lit-engagement` to skip this wave entirely. Independent of `--skip-web`.
+
+**v2 supersedes the v1 design in `feat/33-literature-engagement-track` (PR #36).** The v1 templates remain in the historical record; v2 replaces the Pass A/B contract and removes the /chrome MCP hard prerequisite.
+
 ### Wave 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5 18-ticket shape. Every ticket receives `_artifacts/json/attack_surface_index.json` as additional input context so the same index anchors all three tracks.
