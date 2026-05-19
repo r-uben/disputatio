@@ -118,6 +118,30 @@ A single integrator (Claude/opus, inline) merges per-family obligation records i
 
 Full spec in `templates/obligation_integrate.md`.
 
+### Phase 1.75 — Literature engagement (v3 — archetype-driven, closes the librarian gap)
+
+Surfaces specialised adjacent works the paper does not cite but probably should engage with. Closes the failure mode where disputatio's closed-book auditor produces correct atomic findings but misses the citation-positioning comments a domain referee writes naturally.
+
+The 2026-05-19 Han-Hu-Zhang vs AER Ref #2 comparison showed disputatio's pre-v3 architectures fail: v1 (gemini-flash memory + /chrome verify) scored 1/8 blind because LLM memory recall is canonical-biased; v2 (OpenAlex citation traversal) scored 0/8 because Ref #2's named refs don't cite any of Zhang's bibliography anchors (structural reachability gap). Reading Ref #2's exact phrasing surfaced the architectural insight: referee picks fit five specific **reasoning archetypes** (substitution-of-assumption; same instrument different domain; alternative mechanism same conclusion; mechanism-isomorphic predecessor; general theorem behind specific result), not topic adjacency.
+
+**v3 three-pass architecture:**
+
+1. **A1 — Archetype Generator** (gemini-3.1-pro-preview, paper-grounded). Generates 10–15 archetype-questions across the 5 types. Does NOT name specific papers.
+2. **A2 — Reference Finder** (codex gpt-5.4 medium effort, domain memory). For each archetype-question, names 1–3 load-bearing comparators. Explicit suppress-canonical rule (foundational syllabus forbidden). Gemini-flash-lite empirically violates the rule; codex's calibrated econ-finance training memory does not.
+3. **A3 — /chrome Scholar fill-in** (Claude session + browser MCP). For each archetype-question, targeted Scholar query captures the load-bearing comparator A2's memory missed. Query refinement when first attempt is off-domain (1–3 iterations per gap).
+
+After A1+A2+A3: cross-archetype rerank (papers appearing in multiple archetypes get top weight — the GPP 2009 triangulation signal), bibliography dedup, passage-anchor selection, final ranking by `2 × archetype_coverage + engagement_obligation + specificity`.
+
+**Empirical (Zhang, 2026-05-20):** 5/8 strict-clean direct hits vs Ref #2's 8 named refs (8/8 with two borderline name-anchored queries). Up from v1's 1/8 and v2's 0/8.
+
+**Confidentiality:** Pass A1/A2 use existing data-flow contract. Pass A3 Scholar queries use archetype-question keyword stems and specific-paper-title fragments only — never verbatim unpublished paper sentences. `--lit-engagement strict|relaxed` controls A3 query latitude.
+
+**Hard prerequisite:** `/chrome` MCP connected. Fail fast if not — no fallback to training-memory-only (that's v1, which scored 1/8).
+
+Disable with `--no-lit-engagement`. Independent of `--skip-web`.
+
+Full spec in `templates/literature_engagement.md`.
+
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):

@@ -160,6 +160,43 @@ Each of the three agents runs one holistic conceptual pass on the paper using it
 
 After all three holistic tickets complete, the orchestrator builds a **canonical attack-surface index** inline: union of `attack_surfaces[]` across the three agents, deduplicated by `description` semantic match, priorities aggregated. Written to `_artifacts/json/attack_surface_index.json`. Phase 2 discovery tickets receive this as additional input context.
 
+### Wave 1.75 — Literature engagement (v3 — archetype-driven)
+
+One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery). **Claude-typed (executed inline by the orchestrator).** Three internal passes: A1 archetype-question generator → A2 codex reference finder → A3 /chrome Scholar fill-in. See `templates/literature_engagement.md` for the authoritative protocol.
+
+```json
+{
+  "literature_engagement": {
+    "id": "literature_engagement", "type": "literature_engagement",
+    "agent": "claude", "model": "sonnet", "family": "anthropic",
+    "flags": {"requires_chrome_mcp": true},
+    "prompt_path": "_artifacts/prompts/literature_engagement.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/orient_claude.json",
+      "_artifacts/json/holistic_claude.json",
+      "_artifacts/json/attack_surface_index.json"
+    ],
+    "outputs": ["_artifacts/json/literature_engagement.json"],
+    "depends_on": ["holistic_claude", "holistic_codex", "holistic_gemini"],
+    "status": "pending", "timeout_s": 1800
+  }
+}
+```
+
+`flags.requires_chrome_mcp: true` is a hard prerequisite — orchestrator checks `mcp__claude-in-chrome__tabs_context_mcp` at ticket-start. If not connected, fails fast (no fallback to training-memory-only retrieval, which empirically scores 1/8).
+
+Internal models used:
+- A1 archetype generator: `gemini-3.1-pro-preview` (long-context paper-grounded reasoning)
+- A2 reference finder: `codex gpt-5.4` at `model_reasoning_effort=medium` (calibrated econ-finance training memory; gemini-flash-lite empirically fails the suppress-canonical rule)
+- A3 /chrome Scholar: Claude session via MCP, 15–30 navigations, 1–3 query iterations per archetype where the first attempt is off-domain
+
+After the ticket completes, surviving candidates feed Phase 2 discovery as additional input context AND emit panel rows into a top-level array `literature_engagement_findings[]` at Phase 6 compile time.
+
+**Disable flag:** `--no-lit-engagement` skips this wave. Independent of `--skip-web`.
+
+**v3 supersedes v1 (gemini-flash memory + /chrome verify, 1/8 blind on Zhang) and v2 (OpenAlex citation traversal, 0/8 — structural reachability gap).** Both prior PRs are closed/superseded.
+
 ### Wave 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5 18-ticket shape. Every ticket receives `_artifacts/json/attack_surface_index.json` as additional input context so the same index anchors all three tracks.
