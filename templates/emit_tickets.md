@@ -160,6 +160,34 @@ Each of the three agents runs one holistic conceptual pass on the paper using it
 
 After all three holistic tickets complete, the orchestrator builds a **canonical attack-surface index** inline: union of `attack_surfaces[]` across the three agents, deduplicated by `description` semantic match, priorities aggregated. Written to `_artifacts/json/attack_surface_index.json`. Phase 2 discovery tickets receive this as additional input context.
 
+### Wave 1.75 — Literature engagement (new; closes the librarian gap)
+
+One ticket per paper, emitted between Wave 1.5 (holistic) and Wave 2 (discovery). Single agent — gemini with search grounding — chosen over per-family fan-out because the failure mode is retrieval, not cross-family reasoning. See `templates/literature_engagement.md` for the authoritative protocol.
+
+```json
+{
+  "literature_engagement": {
+    "id": "literature_engagement", "type": "literature_engagement",
+    "agent": "gemini", "model": "gemini-3.1-pro-preview", "family": "google", "flags": {"search_grounding": true},
+    "prompt_path": "_artifacts/prompts/literature_engagement.md",
+    "inputs": [
+      "_paper/paper.md",
+      "_artifacts/json/orient_claude.json",
+      "_artifacts/json/holistic_claude.json",
+      "_artifacts/json/attack_surface_index.json"
+    ],
+    "outputs": ["_artifacts/json/literature_engagement.json"],
+    "depends_on": ["holistic_claude", "holistic_codex", "holistic_gemini"],
+    "status": "pending", "timeout_s": 1800,
+    "output_format": "json_stdout"
+  }
+}
+```
+
+The ticket is followed by an inline `/chrome` verification step run by Claude (the orchestrator) for any candidate Gemini surfaces without a verifiable URL/DOI. After verification + bibliography dedup + passage-anchor selection, the surviving candidates feed Phase 2 discovery as additional input context AND emit panel rows into a new top-level array `literature_engagement_findings[]` at Phase 6 render time.
+
+**Disable flag.** Run with `--no-lit-engagement` to skip this wave entirely (useful when web-verify is off and the paper is confidential beyond the strict-mode threshold; see `templates/literature_engagement.md` Confidentiality discipline).
+
 ### Wave 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family × 3 families = **9 discovery tickets**. Replaces the v5 18-ticket shape. Every ticket receives `_artifacts/json/attack_surface_index.json` as additional input context so the same index anchors all three tracks.

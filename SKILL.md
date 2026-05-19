@@ -118,6 +118,25 @@ A single integrator (Claude/opus, inline) merges per-family obligation records i
 
 Full spec in `templates/obligation_integrate.md`.
 
+### Phase 1.75 — Literature engagement (closes the librarian gap)
+
+This phase exists because Phase 2's discovery tracks are closed-book by design — they look for what is wrong *in* the paper, not for what is missing *around* it. Post-hoc comparison vs an expert-human AER referee on the Han-Hu-Zhang "Markets for Price Risk" paper (2026-05-19) surfaced literature positioning as the single largest gap: zero of the 8 specialised references the human referee named (Breon-Drish, Malamud-Trubowitz, Hugonnier-Malamud-Trubowitz, Martin, Brennan-Cao, Gârleanu-Pedersen-Poteshman, Rostek-Yoon, Elul) surfaced in the disputatio panel.
+
+Single ticket per paper, gemini-only with search grounding plus optional /chrome verification:
+
+- Inputs: paper spine + key terms + load-bearing citations (from Phase 0/1)
+- Two-pass: model-memory recall (no search), then search-grounded recall (Google Scholar / NBER / SSRN)
+- Verification: /chrome navigates Scholar to confirm each candidate exists and capture metadata
+- Dedup against the paper's bibliography
+- Passage-anchor selection: each surviving candidate must tie to a specific paper passage that would owe engagement
+- Output `_artifacts/json/literature_engagement.json` feeds Phase 2 discovery context AND emits panel rows into a new top-level array `literature_engagement_findings[]` separate from the auditor `findings[]` and `dropped_findings[]`
+
+Confidentiality discipline (hard): the only phase that deliberately sends content to external services. Search queries use abstract themes + method nouns + already-cited works — never verbatim sentences from unpublished sections. `--lit-engagement [strict|relaxed]` exposes the choice; default strict.
+
+Disable with `--no-lit-engagement` when web access is fully off or the paper is confidential beyond the strict-mode threshold. The flag is independent of `--skip-web` (which controls Phase 3 fact-check verify, a separate concern).
+
+Full spec in `templates/literature_engagement.md`.
+
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):
