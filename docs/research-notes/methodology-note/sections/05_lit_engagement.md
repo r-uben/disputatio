@@ -1,0 +1,49 @@
+## 5. Pattern 4: Archetype-driven literature engagement
+
+The fourth pattern addresses a failure mode distinct from the discovery-and-debate machinery of §§2–3: the system can produce atomically correct findings about the manuscript and still miss the specialised comparator literature a senior referee would name in the first paragraph of their report. We call this the *librarian gap*. The cross-architecture panel is silent on it because none of the three families is asked to act as a librarian during discovery; they are asked to audit a specific document. Closing the gap turns out to require a separate upstream phase whose architecture looks very different from the rest of the pipeline.
+
+### Two predecessors that did not work
+
+Two earlier attempts shaped the design by failing in instructive ways. The first asked a language model — Gemini's flash variant — to recall, from training memory, papers adjacent to the manuscript's themes. On the Han-Hu-Zhang sealed Ref #2 benchmark this scored one of eight named-and-not-already-cited references. The dominant failure mode was canonical-syllabus bias: prompted for "papers on derivative welfare," the model returned Kyle (1985), Ross (1976), Stein (1987) — the foundational representatives a graduate syllabus would list — rather than the load-bearing comparators a senior referee actually names. The second moved to citation-graph traversal: take the paper's bibliography as anchors and walk the OpenAlex graph along cites-of-cited-by edges. This scored zero of eight. The structural reason is sharp: Ref #2's named references do not cite any of Zhang's bibliography anchors. The comparators a domain referee picks live in *unnamed sub-literatures* the author engages but does not loudly cite; local graph operations cannot reach what is not already structurally near.
+
+Both architectures look for *topic-adjacent* papers, and topic adjacency is the wrong shape. The papers a referee names are not the papers most similar in subject; they are the papers that overlap on a particular reasoning move.
+
+### The architectural insight, with the caveat first
+
+What the prior team did next is where the design-overfit caveat needs to land, before the empirical number does. The team read Ref #2's exact phrasing for each of his named references and extracted, by hand, a taxonomy of the reasoning moves his picks shared. The result was a list of five archetypes:
+
+1. **Substitution-of-assumption** — paper has assumption X; what relaxations of X have been studied in this setting?
+2. **Same instrument, different domain** — paper uses instrument I in domain D; where has I been analysed in domain D'?
+3. **Alternative mechanism, same conclusion** — paper gets result Y via mechanism M; what other mechanisms deliver Y?
+4. **Mechanism-isomorphic predecessor** — paper's construction K has a structural shape; what earlier paper is isomorphic to K?
+5. **General theorem behind specific result** — paper proves specific result Z; what general theorem does Z specialise?
+
+The taxonomy was derived from one referee's report on one paper. Zhang is therefore partly a *design case* for this taxonomy, not a fully held-out test. Today's strict-blind discipline (see §4) keeps the execution clean — the agents that run A1, A2, and A3 never read Ref #2 — but it does not retroactively make the *design* of the protocol Ref-#2-naive. Any recall number we report on Zhang should be read as evidence about a system whose question-shape vocabulary was tuned by looking at this referee's question-shape vocabulary, not as a prospective recall claim against an unseen target. We say this before the number because saying it after would let the number do work it has not earned.
+
+### The three-pass procedure
+
+The pattern itself decomposes the librarian task along the question-shape axis rather than the topic axis. A1 reads the paper and generates 10–15 archetype-questions, each tagged with one of the five types and anchored to a specific assumption, proposition, or equation. A1 explicitly does *not* propose candidate references; its only output is well-formed questions. A2 takes those questions and names candidate comparators from training memory — in our implementation, codex at gpt-5.4 medium reasoning, chosen after gemini-flash-lite was found to violate the suppress-canonical rule by returning Kyle 1985 and Carr-Wu 2009 against an explicit forbid list. A2's prompt carries that suppress-canonical list as a hard constraint and treats "I don't know" as a preferable answer to canonical filler. A3 then runs the same archetype-questions through Scholar or Semantic Scholar, using only the question's keyword stem as the query basis — both to confirm A2's candidates and to recover comparators that codex's training distribution did not surface.
+
+### What we observed on Zhang
+
+On the strict-blind re-run reported in §4, this pattern recovered seven of nine of Ref #2's named-and-not-already-cited references. All seven came from A2's training memory alone — Brennan-Cao 1996, Breon-Drish 2015, Elul 1999, Gârleanu-Pedersen-Poteshman 2009, Hugonnier-Malamud-Trubowitz 2012, Malamud-Trubowitz 2007, and Martin 2017. The blind A3 subagent ran all thirteen archetype-questions through Semantic Scholar and added zero additional Ref #2 references beyond what A2 had already produced. The two strict-blind misses, Malamud (2008) on long-run forward rates and Martin et al. (2013) on simple variance swaps, look like paper-specificity gaps in A2's training distribution rather than gaps in the archetype framework: the questions named the right researcher and lineage in both cases, but the specific 2008 and 2013 entries did not surface. A narrower question formulation might reach them; we have not tested this.
+
+A more interesting signal than the headline recall is the **triangulation pattern**. GPP (2009) was surfaced by three distinct archetype-questions on the Zhang run — one alternative-mechanism slot and two isomorphic-predecessor slots — the only paper in that run with `archetype_coverage = 3`. When a single paper is named by multiple archetype-questions independently, that is a stronger confidence signal than any single-archetype hit, and the reranker uses `archetype_coverage` as the dominant ordering key for exactly this reason: papers surfaced by multiple reasoning moves are load-bearing in a way single-archetype hits are not. We have one data point on this signal; the cross-paper validation question is open.
+
+### Domain portability
+
+The five archetypes are field-agnostic by construction. They describe a referee's question shape, not topic content, and a forker has three concrete things to swap. The first is the search backend: PubMed for biotech, SSRN for finance, arXiv for ML or physics, Westlaw for legal review. The Semantic Scholar API works through most of these via its unified graph, which is what we default to in A3. The second is the suppress-canonical list. Ours is economics-specific — Kyle 1985, Stein 1987, Ross 1976, Admati 1985, Hellwig 1980, Grossman-Stiglitz 1980, Black-Scholes — but the dynamic generalises: every field has foundational representatives a graduate syllabus would list, and A2 will return them by default unless steered off. The third is the archetype mix. The five types should generalise as a starting taxonomy, but specific archetypes will dominate differently across fields: legal review will likely lean on same-instrument-different-domain (precedent translated across jurisdictions); biotech on mechanism-isomorphic predecessor (similar mechanism in an adjacent organism); ML on substitution-of-assumption (relaxing an architectural commitment). A field-by-field calibration of which archetypes carry the most signal is the kind of question a single-case study cannot answer.
+
+What this pattern gives a forker is therefore not a turnkey librarian but a decomposition strategy: separate the question-generation phase from the candidate-naming phase, separate both from the search-backend phase, and use reasoning archetypes — not topic adjacency — as the primitive that links them. The auditable disposition trail described in §6 is what makes the resulting candidate list legible to a downstream reader.
+
+---
+
+## Open questions for the orchestrator
+
+1. **Archetype taxonomy completeness.** The five archetypes are derived from one referee's report. A wider sample of senior referee reports — across subfields and across reviewing styles — would likely surface additional archetypes (the brief flags "negative result in adjacent literature" and "competing empirical claim" as plausible extensions). The section presents the five as a starting point rather than a closed set, but the orchestrator may want to push harder on this in §9 (limitations).
+
+2. **Suppress-canonical list provenance.** The economics list is hard-coded in the A2 prompt today. Whether it should live in the template, in a per-paper config, or be derived dynamically from the paper's own bibliography (canonical = anything cited by everything-else-it-cites) is unresolved. The section sidesteps this by treating the list as a per-fork artifact.
+
+3. **Triangulation as a confidence signal.** The section claims `archetype_coverage ≥ 2` is a stronger confidence signal than single-archetype hits. This rests on a single observation (GPP 2009 at coverage = 3 on the Zhang run). Whether the same signal would hold up across more papers, or whether semantic similarity across the archetype-question phrasings would do better as a confidence metric, has not been measured. The section presents triangulation as observed rather than validated.
+
+4. **n=1 generalisation.** The whole section rests on Zhang. The honest framing is in the design-overfit paragraph, but the orchestrator may want to add a forward pointer to §7 (case study) and §9 (limitations) where the n=1 framing is the explicit subject.
