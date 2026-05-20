@@ -60,13 +60,58 @@ What Route B unambiguously *does* give us, however, is a structured artifact: ev
 
 The pattern is also domain-portable, with one caveat. The seven shared-hallucination modes are field-agnostic in the sense that legal documents have OCR misreads, biotech protocols have notation collisions, ML papers have citation-trace gaps, social-science manuscripts have literature-conflated confusions. The defender model can be any architecture different from the consensus members. The caveat is that fields with much smaller literatures or much narrower notational conventions may see different mode-fire distributions; a legal-review fork might find `surface_pattern_overfit` dominant and `algebra_shared_slip` irrelevant. The checklist is a starting point, not a closed taxonomy.
 
+## 4. Pattern 3: Strict-blind phase isolation
+
+The third pattern is a structural rule about which sessions are allowed to read which artifacts. We need to lead with the failure mode it solves, because the rule sounds bureaucratic until the failure is concrete.
+
+### The contamination
+
+The literature-engagement track in our reference implementation has three passes. A1 generates archetype-driven research questions from the paper. A2 names candidate comparator papers from a language model's training memory in response to those questions. A3 confirms and supplements the candidate list via a literature-search backend (Scholar, Semantic Scholar, or equivalent). The architectural contract was that A1, A2, and A3 should all be Ref-#2-blind — none of them should read the sealed referee report that the system is being compared against in the post-hoc evaluation step.
+
+We honoured the contract at the level of individual agent calls. A1 was dispatched to a fresh subagent with explicit no-read instructions for `_referee_aer/`, `_calibration/`, and `4_panel/`. A2 was dispatched to a fresh codex session that received only the archetype-questions and the paper context. Both passes never saw the referee report.
+
+The problem was elsewhere. A3 — the Scholar fill-in pass — was driven from the *orchestrator session*. The orchestrator is the long-running session that coordinates the pipeline, holds the panel-building state, and (in our case) had also read the referee report to produce a post-hoc comparison memo immediately before the literature-engagement track ran. When the orchestrator picked the two Scholar queries that the A3 pass would run, the queries were `"Malamud long run forward rates yields bonds options heterogeneous"` and `"variance swap general equilibrium pricing SVIX"`. Both queries targeted papers that the orchestrator knew, from having read the referee report, were named references the system had not yet recovered.
+
+The recall number this produced — eight of eight of the referee's named references hit on a "Ref-#2-blind" run — was the number we initially reported as the headline. The two papers that the A3 informed-supplement queries had recovered were Malamud (2008) "Long run forward rates" and Martin et al (2013) "Simple Variance Swaps." Both are unambiguously real, well-known references. Without orchestrator knowledge of the comparison set, neither would have been queried for by name. The first six refs surfaced from A2's training memory alone, and that part of the run *was* genuinely blind; the seventh (Martin 2017's QJE paper "What is the Expected Return on the Market?") also surfaced from A2. But the eighth and ninth — Malamud 2008 and Martin 2013 — only surfaced because the human-in-the-loop with the comparison set in hand picked the queries that would find them.
+
+The honest strict-blind recall on this run, after we re-dispatched A3 as a separate Claude subagent with the same no-read rules as A1 and A2, is seven of nine. The blind subagent ran all thirteen archetype-questions through Semantic Scholar and surfaced zero additional Ref #2 references beyond what A2 had already produced from training memory. The two "informed-supplement" candidates were preserved transparently in a separate audit bucket — not deleted, but explicitly carved out of the headline metric and labelled with the contamination explanation.
+
+This is not a story about a careless researcher. We had explicit blind-discipline rules, written down in the protocol, that we believed we were following. The leakage happened at a level the rules did not cover: not at the agent call, but at the orchestrator's choice of which queries to dispatch. That single-step removed unconsciously from the rule's surface area was enough to inflate a real seven-of-nine result into a fake eight-of-eight headline.
+
+### The architectural fix
+
+The fix has three components:
+
+**Phase isolation by subagent dispatch.** Every phase that generates findings, queries, or candidate comparators must run in a session that has explicit read-allowlists for the artifacts it needs and explicit no-read for anything that might leak comparison-target knowledge. Subagent dispatch with allowlist enforcement is the simplest mechanism we have found; the alternative ("the orchestrator promises not to peek") relies on session-level discipline that fails in exactly the way ours did.
+
+**Comparison artifacts live outside the live pipeline.** The post-hoc evaluation against a sealed referee report (or any other gold-standard target) writes to a separate directory — in our case `_evaluation/ref_comparison.json` — that the pipeline phases are forbidden to read. The artifact is generated by a comparison step that runs *after* all generation phases have completed, in a fresh session that has read access to both the pipeline output and the sealed target but writes only to `_evaluation/`. The pipeline phases get no read access to anything `_evaluation/` ever touches.
+
+**Headline metrics are strict-blind by default.** Any "X of N" recall claim ships with explicit strict-blind framing. Informed-supplement candidates — found by queries that were targeted at known gaps — ship as a separate carve-out, never folded into the headline. This is a discipline of language as much as a discipline of architecture. A reader of the published report should be able to tell, from the wording alone, whether a hit was blindly recovered or post-hoc supplemented.
+
+### Why this generalizes
+
+The contamination mode is not unique to literature engagement or to our specific pipeline. Any multi-agent system that is evaluated against a held-out target has the same risk surface: an orchestrator (human or LLM) that has access to both the pipeline state and the evaluation target will unconsciously route information from the target into the pipeline's decisions. The leakage paths are subtle — choice of search queries, choice of merge thresholds, choice of which findings to escalate — and they are invisible from any single agent's transcript. They are only visible from the orchestrator's transcript, and only if someone is looking for them.
+
+The pattern transfers to any held-out-evaluation setting. A code-review system evaluated against the merged version of a pull request has the same risk: an orchestrator that has seen the merged code will pick prompt phrasings that pre-load the bugs the merged version fixed. A medical-decision-support system evaluated against an outcome label has the same risk: an orchestrator with access to outcomes will weight the right symptoms higher. The architectural lesson is identical: isolate the phases that generate decisions from the phases that read evaluations, and make the isolation a property of the session graph, not a discipline of attention.
+
+### What a forker needs to do differently
+
+If you adopt this pattern for your own domain, the concrete steps are:
+
+1. Identify every artifact your system uses for post-hoc evaluation against a gold-standard target. Make a list. Be paranoid — this includes referee reports, expert ratings, prior-publication revision histories, peer-review records, oracle annotations.
+2. Audit which sessions in your orchestration ever read each of those artifacts. Most pipelines will discover that the orchestrator session ends up touching all of them at some point.
+3. Re-architect so generation phases run in sessions that have never touched any artifact on the list. Subagent dispatch is the simplest mechanism. The allowlist must be enforced at the session level, not the prompt level.
+4. Move the comparison step to a separate post-hoc artifact (`_evaluation/` in our naming convention; pick what fits your project). The comparison step runs after all generation phases close. It reads pipeline output and evaluation target; it writes only comparison numbers.
+5. Audit every recall claim in your reports for whether it is strict-blind or informed-supplement. Surface the distinction in the published numbers.
+
+The cost is mild: subagent dispatch is a few hundred milliseconds of overhead per phase, and the architectural discipline takes a few hours to retrofit on an existing pipeline. The benefit is that your evaluation numbers become trustworthy. The discipline is not optional. We learned this the way one usually learns these things.
+
 ---
 
-## Sections 4–8 — pending
+## Sections 5–8 — pending
 
 To be written:
 
-- **§4** Strict-blind phase isolation, with the 2026-05-20 contamination story as worked example
 - **§5** Archetype-driven literature engagement
 - **§6** Auditable disposition trail
 - **§7** Case study — Han-Hu-Zhang vs sealed AER Ref #2, with explicit design-overfit caveat and pending-author-validation flag
