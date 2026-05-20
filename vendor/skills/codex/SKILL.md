@@ -13,7 +13,12 @@ Sessions are **stateful**: agent-ctl persists them in `~/.claude/agent-sessions.
 
 **Showing results to the user.** Print exactly `agent_ctl.py result <id>`. Do **not** pipe through `grep`, `tail`, `head`, `sed`, or `awk`. The file is already cleaned via `--output-last-message` — any filter you add strips real content and is what makes the visible output look like garbage. If `result` returns "(still running — no result yet)", wait; do not fall back to scraping the raw stdout log.
 
-**Polling.** Never run visible `for i in $(seq …); do sleep 60; …; done` loops — they spam status lines into the transcript. Use `agent_ctl.py wait <id>` (blocks until done) or `run_in_background` a single poll. The user should see the result, not the wait.
+**Polling.** Never run visible `for i in $(seq …); do sleep 60; …; done` loops — they spam status lines into the transcript. The Bash tool's default timeout is 120s and a typical Codex query (code review, refactor, deep debug) can easily exceed that, so a naked `wait` call will time out *before* codex finishes and look like a hang. Two safe patterns:
+
+- `agent_ctl.py wait <id> --max-wait 90` — bounded wait; exits 2 with "still running" before busting Bash's cap. Re-call until the session finishes.
+- `run_in_background: true` on a plain `agent_ctl.py wait <id>` — the harness notifies you when it returns.
+
+Use the second when you want to do other work while codex runs. Use the first when you need to feed the result back into your next step.
 
 **Resume by default.** Whenever a recent codex session (≤ 2 hours, same `cwd`) exists, use `send-or-start`, not `start` — even for bare prompts like "does codex agree?", "ask again", "follow up". Only use `start` when (a) no recent session exists, (b) the topic clearly changed, or (c) `send-or-start` reports ambiguity (then surface the candidates and ask).
 
@@ -38,7 +43,7 @@ $A start codex "Fix tests" --timeout 600 --flags --full-auto        # agentic mo
 # Monitor
 $A status                   # list all sessions (codex + gemini)
 $A status --json            # machine-readable for routing decisions
-$A check 01                 # tail output of session 01
+$A check 01                 # tail output of session 01 (may lag — see buffering note below)
 $A check 01 --tail 100      # more lines
 
 # Get results
@@ -86,6 +91,10 @@ $A start codex "task" --flags -s read-only             # read-only sandbox
 $A start codex "task" --flags -i screenshot.png        # attach image
 $A start codex "task" --flags -c model_reasoning_effort=high   # raise reasoning effort
 ```
+
+## Buffering: `check` lags during execution
+
+agent_ctl no longer wraps agents in a pty (`script -q /dev/null` was removed because it broke process-group kill on gemini — the worker `setsid`'d into its own session and survived timeout). Without the pty, stdout from agent CLIs is block-buffered, so `check <id>` may show stale output during execution. Codex's final answer is still captured cleanly via `--output-last-message`, so `result <id>` after `wait` is the reliable interface. Don't rely on `check` for live progress — use it post-hoc to inspect what happened.
 
 ## Auth
 

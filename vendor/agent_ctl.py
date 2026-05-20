@@ -154,14 +154,37 @@ def gemini_latest_uuid(cwd: str) -> str | None:
 
 def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
                        cwd: str, env: dict) -> int:
-    """Launch a command in background with timeout. Returns PID."""
+    """Launch a command in background with timeout. Returns PID.
+
+    Historically wrapped the agent in `script -q /dev/null` to "defeat
+    output buffering," but `script(1)` opens a pty and makes its child the
+    leader of a *new* session — and gemini's node worker stays in that
+    detached session, so when `script` later exits (e.g. because the child
+    closed the pty) the gemini node gets reparented to init and survives
+    every subsequent `kill -TERM -<our_pgid>`. From agent_ctl's POV the
+    tracked bash PID is gone → is_alive() reports False → session marked
+    done — meanwhile the real gemini node keeps running, holding OAuth
+    state and polluting `gemini --list-sessions`. Dropping the wrapper
+    keeps every descendant inside our process group, so the timeout's
+    `kill -TERM -$$` (mirrored from cmd_kill's killpg) actually reaches
+    them. Bonus: removes the `^D` + ripgrep-warning noise the pty replay
+    injected at the head of every output. Codex emits its real answer
+    through `--output-last-message`; gemini's `-o text` writes to stdout
+    in a single batch, so we don't lose real-time progress that matters.
+    """
     wrapper = (
-        f"script -q /dev/null {shell_cmd} > {_quote(str(outfile))} 2>&1"
+        f"{shell_cmd} > {_quote(str(outfile))} 2>&1"
     )
     timed_wrapper = (
         f"( {wrapper} ) & CPID=$!; "
-        f"( sleep {timeout} && kill -TERM $CPID 2>/dev/null ) & TPID=$!; "
-        f"wait $CPID 2>/dev/null; kill -TERM $TPID 2>/dev/null; exit 0"
+        f"( sleep {timeout}; "
+        f"  kill -TERM -$$ 2>/dev/null; "
+        f"  sleep 2; "
+        f"  kill -KILL -$$ 2>/dev/null "
+        f") & TPID=$!; "
+        f"wait $CPID 2>/dev/null; "
+        f"kill -TERM $TPID 2>/dev/null; "
+        f"exit 0"
     )
     proc = subprocess.Popen(
         ["bash", "-c", timed_wrapper],
@@ -171,6 +194,44 @@ def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
         start_new_session=True,
     )
     return proc.pid
+
+
+def _gemini_trusted_dirs() -> list[Path]:
+    """Return absolute paths of folders marked TRUST_FOLDER in Gemini config.
+
+    Reads ~/.gemini/trustedFolders.json (or $GEMINI_CLI_HOME/trustedFolders.json
+    when set). Missing/malformed file → empty list, which means we'll add
+    --skip-trust everywhere. That's the safe default: failing-closed would
+    silently break headless calls in any non-home cwd.
+    """
+    home = Path(os.environ.get("GEMINI_CLI_HOME", str(Path.home() / ".gemini")))
+    cfg = home / "trustedFolders.json"
+    if not cfg.exists():
+        return []
+    try:
+        data = json.loads(cfg.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [Path(p).expanduser().resolve()
+            for p, v in data.items()
+            if v == "TRUST_FOLDER"]
+
+
+def _cwd_is_gemini_trusted(cwd: str) -> bool:
+    """True if cwd (or any ancestor) is in the trusted-folders list."""
+    try:
+        cur = Path(cwd).expanduser().resolve()
+    except (OSError, ValueError):
+        return False
+    trusted = _gemini_trusted_dirs()
+    if not trusted:
+        return False
+    for ancestor in [cur, *cur.parents]:
+        if ancestor in trusted:
+            return True
+    return False
 
 
 def _clean_env() -> dict:
@@ -216,7 +277,8 @@ def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
     return cmd
 
 
-def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> list[str]:
+def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None,
+                     cwd: str | None = None) -> list[str]:
     """Build the gemini headless command.
 
     Defaults to --approval-mode auto_edit: lets Gemini auto-approve
@@ -228,6 +290,12 @@ def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> 
     Override via --flags -y / --flags --approval-mode {plan|yolo|...}.
     If extra_flags already specifies an approval mode (or --yolo/-y), we
     skip the default to avoid the "cannot use both" error from gemini CLI.
+
+    Adds --skip-trust automatically when `cwd` isn't under a folder listed
+    in ~/.gemini/trustedFolders.json. Gemini CLI ≥0.41 refuses headless
+    operation in untrusted cwds (silently downgrades approval mode to
+    'default' and then errors out), so without this guard /gemini hangs or
+    returns the trust-error message instead of a real response.
     """
     cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text"]
 
@@ -238,6 +306,10 @@ def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None) -> 
     )
     if not user_set_mode:
         cmd.extend(["--approval-mode", "auto_edit"])
+
+    user_set_trust = any(f == "--skip-trust" for f in extra)
+    if not user_set_trust and cwd and not _cwd_is_gemini_trusted(cwd):
+        cmd.append("--skip-trust")
 
     cmd.extend(extra)
     return cmd
@@ -304,7 +376,7 @@ def cmd_start(args) -> None:
                                     extra_flags=args.flags)
     elif agent == "gemini":
         agent_cmd = build_gemini_cmd(prompt=args.prompt, model=model,
-                                     extra_flags=args.flags)
+                                     extra_flags=args.flags, cwd=cwd)
     else:
         sys.exit(
             f"agent-ctl: unknown agent '{agent}'. "
@@ -381,11 +453,12 @@ def cmd_send(args) -> None:
 
     if agent == "gemini":
         uuid = meta.get("gemini_uuid")
-        cmd = ["gemini", "-p", args.msg, "-m", model, "-o", "text"]
-        if uuid:
-            cmd.extend(["--resume", uuid])
-        else:
-            cmd.extend(["-r", "latest"])
+        resume_flags = ["--resume", uuid] if uuid else ["-r", "latest"]
+        # Reuse build_gemini_cmd so follow-ups keep --approval-mode auto_edit
+        # and pick up --skip-trust when needed. Without this, every send-turn
+        # silently downgraded to default approval and re-hit the trust check.
+        cmd = build_gemini_cmd(prompt=args.msg, model=model,
+                               extra_flags=resume_flags, cwd=cwd)
     elif agent == "codex":
         cmd = ["codex", "exec"]
         git_dir = Path(cwd) / ".git"
@@ -454,6 +527,34 @@ def cmd_check(args) -> None:
         print("(output file not created yet)")
 
 
+_RESULT_RIPGREP_NOISE = re.compile(
+    r"Ripgrep is not available\. Falling back to GrepTool\.\s*"
+)
+
+
+def _clean_result(text: str) -> str:
+    """Strip wrapper-induced noise from raw session output.
+
+    `script -q /dev/null` runs the agent inside a pty and replays the
+    typescript verbatim — leading `^D` (literal caret+D) plus `\\b`
+    backspace characters appear on the first line, line endings are `\\r\\n`,
+    and Gemini emits a 'Ripgrep is not available...' diagnostic during
+    startup that has nothing to do with the answer. Normalize all of this
+    so the user sees just the real response.
+    """
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = cleaned.lstrip()
+    # Leading EOT in either raw (0x04) or printable (^D) form
+    if cleaned.startswith("\x04"):
+        cleaned = cleaned[1:]
+    if cleaned.startswith("^D"):
+        cleaned = cleaned[2:]
+    # Backspaces emitted by the pty after the EOT marker
+    cleaned = cleaned.lstrip("\b")
+    cleaned = _RESULT_RIPGREP_NOISE.sub("", cleaned, count=1)
+    return cleaned.strip()
+
+
 def cmd_result(args) -> None:
     state = load_state()
     state = reap_finished(state)
@@ -468,17 +569,16 @@ def cmd_result(args) -> None:
     # For Codex: prefer --output-last-message result file (clean, no spinner noise)
     result_file = Path(meta.get("result_file", ""))
     if result_file.exists() and result_file.read_text().strip():
-        print(result_file.read_text())
+        print(_clean_result(result_file.read_text()))
         return
 
     # Fall back to raw output (also primary path for Gemini, which uses -o text)
     outfile = Path(meta["outfile"])
     if outfile.exists() and outfile.read_text().strip():
-        content = outfile.read_text().strip()
-        # For gemini, -o text already gives clean output; for codex fallback,
-        # the raw output includes headers but is better than nothing
-        print(content)
-        return
+        content = _clean_result(outfile.read_text())
+        if content:
+            print(content)
+            return
 
     if is_alive(meta["pid"]):
         print("(still running — no result yet)")
@@ -668,10 +768,18 @@ def cmd_send_or_start(args) -> None:
 
 
 def cmd_wait(args) -> None:
-    """Block until one or more sessions finish."""
+    """Block until one or more sessions finish.
+
+    With --max-wait <s>, return early (exit 2) if not all sessions are done
+    within that bound. Callers (Claude Code Bash tool defaults to 120s,
+    max 600s) can use this to poll without busting their own timeout: pick
+    --max-wait below the Bash cap, then re-call until done.
+    """
     state = load_state()
     sids = args.ids
     poll_interval = 5
+    max_wait = getattr(args, "max_wait", None)
+    deadline = time.time() + max_wait if max_wait else None
 
     # Validate all session IDs exist
     for sid in sids:
@@ -696,8 +804,20 @@ def cmd_wait(args) -> None:
                 agent = meta.get("agent", "?")
                 print(f"[{sid}] {agent} finished ({elapsed}s)")
         pending -= done
-        if pending:
-            time.sleep(poll_interval)
+        if not pending:
+            break
+        if deadline is not None and time.time() >= deadline:
+            for sid in sorted(pending):
+                meta = state.get(sid, {})
+                started = meta.get("started", 0)
+                if isinstance(started, str):
+                    started = datetime.fromisoformat(started).timestamp()
+                elapsed = int(time.time() - started)
+                agent = meta.get("agent", "?")
+                print(f"[{sid}] {agent} still running ({elapsed}s)")
+            print(f"max-wait exceeded; still pending: {', '.join(sorted(pending))}")
+            sys.exit(2)
+        time.sleep(poll_interval)
 
     print(f"All sessions complete: {', '.join(sids)}")
 
@@ -905,7 +1025,8 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
                                     result_file=result_file, cwd=ticket_cwd,
                                     extra_flags=None)
     else:
-        agent_cmd = build_gemini_cmd(prompt=prompt, model=model, extra_flags=None)
+        agent_cmd = build_gemini_cmd(prompt=prompt, model=model,
+                                     extra_flags=None, cwd=ticket_cwd)
 
     env = _clean_env()
     shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
@@ -1266,6 +1387,10 @@ def main():
 
     p_wait = sub.add_parser("wait", help="Block until sessions finish")
     p_wait.add_argument("ids", nargs="+", help="Session IDs to wait for")
+    p_wait.add_argument("--max-wait", type=int, default=None,
+                        help="Max seconds to wait before printing "
+                             "'still running' and exiting 2 (lets callers "
+                             "poll without busting their own timeout)")
 
     p_rundag = sub.add_parser("run-dag", help="Execute a ticket DAG until no ready tickets remain")
     p_rundag.add_argument("tickets", help="Path to tickets.json")
