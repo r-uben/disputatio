@@ -118,6 +118,30 @@ A single integrator (Claude/opus, inline) merges per-family obligation records i
 
 Full spec in `templates/obligation_integrate.md`.
 
+### Phase 1.75 — Literature engagement (v3 — archetype-driven, closes the librarian gap)
+
+Surfaces specialised adjacent works the paper does not cite but probably should engage with. Closes the failure mode where disputatio's closed-book auditor produces correct atomic findings but misses the citation-positioning comments a domain referee writes naturally.
+
+The 2026-05-19 Han-Hu-Zhang vs AER Ref #2 comparison showed disputatio's pre-v3 architectures fail: v1 (gemini-flash memory + /chrome verify) scored 1/8 blind because LLM memory recall is canonical-biased; v2 (OpenAlex citation traversal) scored 0/8 because Ref #2's named refs don't cite any of Zhang's bibliography anchors (structural reachability gap). Reading Ref #2's exact phrasing surfaced the architectural insight: referee picks fit five specific **reasoning archetypes** (substitution-of-assumption; same instrument different domain; alternative mechanism same conclusion; mechanism-isomorphic predecessor; general theorem behind specific result), not topic adjacency.
+
+**v3 three-pass architecture:**
+
+1. **A1 — Archetype Generator** (gemini-3.1-pro-preview, paper-grounded). Generates 10–15 archetype-questions across the 5 types. Does NOT name specific papers.
+2. **A2 — Reference Finder** (codex gpt-5.4 medium effort, domain memory). For each archetype-question, names 1–3 load-bearing comparators. Explicit suppress-canonical rule (foundational syllabus forbidden). Gemini-flash-lite empirically violates the rule; codex's calibrated econ-finance training memory does not.
+3. **A3 — /chrome Scholar fill-in** (Claude session + browser MCP). For each archetype-question, targeted Scholar query captures the load-bearing comparator A2's memory missed. Query refinement when first attempt is off-domain (1–3 iterations per gap).
+
+After A1+A2+A3: cross-archetype rerank (papers appearing in multiple archetypes get top weight — the GPP 2009 triangulation signal), bibliography dedup, passage-anchor selection, final ranking by `2 × archetype_coverage + engagement_obligation + specificity`.
+
+**Empirical (Zhang, 2026-05-20):** 5/8 strict-clean direct hits vs Ref #2's 8 named refs (8/8 with two borderline name-anchored queries). Up from v1's 1/8 and v2's 0/8.
+
+**Confidentiality:** Pass A1/A2 use existing data-flow contract. Pass A3 Scholar queries use archetype-question keyword stems and specific-paper-title fragments only — never verbatim unpublished paper sentences. `--lit-engagement strict|relaxed` controls A3 query latitude.
+
+**Hard prerequisite:** `/chrome` MCP connected. Fail fast if not — no fallback to training-memory-only (that's v1, which scored 1/8).
+
+Disable with `--no-lit-engagement`. Independent of `--skip-web`.
+
+Full spec in `templates/literature_engagement.md`.
+
 ### Phase 2 — Discovery (v6: 9 tickets across 3 tracks)
 
 Three tracks per family (holistic / broad critic / narrow evidence-judgment) produce candidate findings. Every candidate is typed by category at write time. **Canonical category vocabulary** (single source of truth, used by discovery, merge, calibration, and the panel schema):
@@ -559,18 +583,31 @@ When `/disputatio <path>` is invoked, Claude runs a state-driven loop. Read disk
 
 **Current flow**:
 
+This list IS THE EXECUTION CHECKLIST the orchestrator loop follows. Every phase block defined above MUST appear here in order. When a new phase block is added above, this list MUST be updated in the same commit. Empirically, 2026-05-20: Phase 1.75 lit-engagement was defined as a phase block + emit_tickets.md Wave 1.75 entry but missed from this list — the orchestrator went Wave 1 → 1.5 → Wave 2 directly, skipping lit-engagement. The same gap exists for Phase 1.5, 2.5, 2.6, 2.7, 3g, 3v, 3s; fixed below.
+
 1. **Init + preflight** — create the paper folder only after auth, vault-write, and template sanity checks pass.
 2. **Wave 1: orientation** — 3 independent paper maps.
-3. **Wave 1.5: holistic** — 3 holistic passes plus inline `attack_surface_index.json`.
-4. **Wave 2: discovery** — 9 tickets (3 tracks × 3 families) plus optional baseline sentinel.
-5. **Phase 3: merge + verify** — merge atomic findings, produce panel-row candidates, optionally run web verification.
-6. **Phase 5a: calibration pass 1** — blind-annotate all candidate panel rows before any debate decision.
-7. **Phase 4: escalation gate** — apply Route A / Route B to calibration survivors only; emit debate tickets only for gate-clearers.
-8. **Phase 5b: finalize calibrated set** — polish/re-annotate where required, then write `_calibration/final_findings.json`.
-9. **Phase 6: panel compile + render** — compile `_artifacts/json/panel.json`, then run one render ticket producing `4_panel/panel.md` plus the mode-specific memo and optional auxiliary file.
-10. **Phase 7: optional A/B evaluation** — only on request, under `_evaluation/`.
+3. **Wave 1.5a: holistic** — 3 holistic passes plus inline `attack_surface_index.json`.
+4. **Phase 1.5: obligations (v8.0)** — per-family obligation extraction (1.5a) + global integration (1.5b). Output: `obligation_ledger.json` + `obligation_queue.json`. **OPTIONAL** — opt in via `--obligations` flag; otherwise skip. Skipped by default.
+5. **Wave 1.75: literature engagement (v3)** — A1 archetype generator (gemini-3.1-pro-preview) → A2 reference finder (codex gpt-5.4) → A3 /chrome Scholar fill-in. Output: `literature_engagement.json` propagated to Phase 2 discovery inputs. **REQUIRES** `/chrome` MCP connected; fails fast if not. **DISABLE** via `--no-lit-engagement`. Default ON.
+6. **Wave 2: discovery** — 9 tickets (3 tracks × 3 families) plus optional baseline sentinel. **Phase 2.5 (claim-validity, v8.1) and Phase 2.6 (scope-framing, v8.2) and Phase 2.7 (exposition, v8.3)** are conceptually parallel sub-waves to Phase 2; emit them alongside discovery when the corresponding `--claim-validity`, `--scope-framing`, `--exposition` flags are on. All four sub-waves are independent (no inter-dependencies between them); discovery is the only one ON by default. Each produces its own `<track>_queue.json` for its dedicated calibrator below.
+7. **Phase 3: merge + verify** — merge atomic findings from Phase 2 discovery (only), produce panel-row candidates, optionally run web verification.
+8. **Phase 3g/3v/3s: dedicated calibrators (v8)** — when Phase 1.5 / 2.5 / 2.6 / 2.7 ran, their queues feed Phase 3g (gap-claim), 3v (claim-validity), 3s (scope-framing), 3e (exposition) calibrators respectively. Each produces typed panel rows that merge into `panel_rows_candidates.json` alongside method-based rows BEFORE Phase 5a.
+9. **Phase 5a: calibration pass 1** — blind-annotate all candidate panel rows before any debate decision.
+10. **Phase 4: escalation gate** — apply Route A / Route B to calibration survivors only; emit debate tickets only for gate-clearers.
+11. **Phase 5b: finalize calibrated set** — polish/re-annotate where required, then write `_calibration/final_findings.json`.
+12. **Phase 6: panel compile + render** — compile `_artifacts/json/panel.json` (wrap `findings[]` + `dropped_findings[]` + `literature_engagement_findings[]` + any v8 track findings), then run one render ticket producing `4_panel/panel.md` plus the mode-specific memo and optional auxiliary file.
+13. **Phase 7: optional A/B evaluation** — only on request, under `_evaluation/`.
 
 The run is complete when `panel.json` exists, the Phase 6 render outputs exist, and `review.md` is marked `phase: complete`.
+
+**Default flags (what fires unless disabled)**:
+
+- Wave 1, 1.5a holistic, 1.75 lit-engagement, 2 discovery, 3, 5a, 4 gate, 5b, 6 — always
+- Phase 1.5 obligations, 2.5 claim-validity, 2.6 scope-framing, 2.7 exposition — opt-in via per-track flags
+- Phase 7 evaluation — opt-in via `--evaluate`
+
+If `/chrome` MCP is not connected at init, Wave 1.75 fails fast with a clear error — no fallback to training-memory-only retrieval (that's the v1 design which scored 1/8 blind). Run with `--no-lit-engagement` to skip the wave when /chrome isn't available.
 
 ### Init procedure
 
