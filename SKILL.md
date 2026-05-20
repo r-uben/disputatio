@@ -313,6 +313,51 @@ Disputed entries adjudicated by witness strength and prose-surface analysis, not
 
 Full spec in `templates/scope_framing_calibration.md`.
 
+### Phase 2.7 — Expositional craft audit (new — closes the "Other comments" gap)
+
+This phase exists because v6 + v8.0/8.1/8.2 catch absences, wrong-but-present errors, and narrative overreach — but they do not catch **editorial / paper-craft** issues a careful reader would flag: notation collisions, duplicated derivations, missing symbol tables, section-order dependency mismatches, formal results mis-labeled as informal claims, absent running examples. The 2026-05-19 Han-Hu-Zhang vs AER Ref #2 comparison surfaced these as the third systematic gap; Anthony's public evaluation explicitly praised Ref #2's "great expositional comments" as a property that made the report valuable.
+
+V1 is narrowly scoped to six structural patterns; taste-level restructuring is explicitly excluded to avoid building a pedantry generator. Same orchestration pattern as Phase 2.6 (scope/framing): per-family triage + audit + global integration, then a fifth evidentiary calibrator at Phase 3e.
+
+#### Phase 2.7a — Per-family exposition triage (parallel)
+
+Each family runs `templates/exposition_triage.md` to select 4–8 audit-worthy expositional pattern candidates. Cast over abstract, intro, section openings, body scan, appendix scan, and holistic main claims. Output: candidate list with `pattern_kind`, anchored `present_object`, mandatory `dropped_because[]`.
+
+Raw outputs in `_artifacts/json/exposition_triage_<agent>.json`. Run in parallel with Phase 2.6 and Phase 2.5 (no dependencies between them).
+
+#### Phase 2.7b — Per-family exposition audit (parallel)
+
+Each family runs `templates/exposition.md` on triaged candidates. Audit produces: `scope_correction` (concrete fix), `reader_friction_witness` (named cognitive cost), `paper_self_handling` (does the paper already address the friction), and the load-bearing `anti_pedantry_check`. Verdict: `reportable_exposition_finding | resolved_in_paper | no_audience_misdirection | taste_level_restructuring | single_instance_not_pattern | indeterminate`.
+
+Raw outputs in `_artifacts/json/exposition_<agent>.json`. 4–8 audit records per family.
+
+#### Phase 2.7c — Global integration (single inline ticket)
+
+Claude (orchestrator) inline runs `templates/exposition_integrate.md`. Clusters audits by **same paper artifact + same pattern_kind** (functional, not lexical). Preserves cross-family disagreement verbatim in `family_records[]`. Two outputs: full ledger (`_artifacts/json/exposition_ledger.json`) + calibration queue (`_artifacts/json/exposition_queue.json` — only `unanimous_reportable | majority_reportable | split_reportable_majority | disputed | indeterminate_with_majority_signal` clusters).
+
+### Phase 3e — Expositional calibration (new — fifth evidentiary contract)
+
+Processes the exposition queue (`exposition_queue.json` from Phase 2.7c) into exposition-class panel rows. Distinct from Phase 3g (gap-cal), Phase 3v (claim-validity), Phase 3s (scope/framing), and Phase 5a (quote-supported) — **fifth** evidentiary contract. The contract differs from the others in one key way: an exposition finding is a *constructive editorial suggestion*, not a defect claim. The calibrator does not check "does evidence establish a claim of error" — it checks "does the proposed editorial fix close a real reader-friction gap without crossing into taste-level restructuring."
+
+**Six-component rubric** (all must pass for `verdict: supported_editorial`):
+
+1. Pattern is real and anchored (verbatim quotes substring-match paper.md).
+2. **Reader-friction witness is concrete** (load-bearing): the audit names a specific cognitive cost, not "this could be clearer."
+3. **Anti-pedantry guard** (load-bearing): would a competent referee writing a busy report include this comment? Three concrete sub-questions, with `demote_on_doubt` fallback.
+4. Fix is concrete, not taste-level. Four-tier classification: `concrete_local | concrete_section | borderline_restructure | taste_level`. The last fails.
+5. Pattern, not instance. Each pattern_kind has a count threshold (≥ 2 notation collisions, ≥ 3 label_mismatch citations, etc.); single instances fall to the M0 close-reading track.
+6. Paper does not self-handle the friction.
+
+Reportable exposition findings populate panel rows with `claim_type: exposition`, severity calibrated by how load-bearing the affected part of the paper is (`material` rare and reserved for patterns that block a competent reader; `local` default; `nit` for cosmetic patterns).
+
+Disputed entries (families called different `pattern_kind` on same anchor): calibrator does **not** majority-vote. Adjudicates by anchor strength and witness specificity. Preserves the runner-up in `audit.alternatives_considered`.
+
+#### Output
+
+Calibrated exposition rows merge into `panel_rows_candidates.json` alongside main, gap, validity, and scope-framing rows. Renderer surfaces them in a dedicated subsection of the panel + memo titled "Editorial / expositional suggestions" — distinct from auditor `findings[]` and from `literature_engagement_findings[]`.
+
+Full spec in `templates/exposition_calibration.md`.
+
 ### Phase 4 — Dialectic debate (v6: escalation-only)
 
 Debate is NOT the default path in v6. Most findings ship directly to calibration (Phase 5) and then into the panel without ever triggering a prosecution round. Debate fires only when **contested-finding escalation** is warranted.
