@@ -239,18 +239,33 @@ Total: ~ 10–15 min wall clock, ~$0.20 inference cost, $0 external-service cost
 
 ## Empirical evidence (Zhang, 2026-05-20)
 
-5/8 strict-clean direct hits vs Ref #2's 8 named refs. 8/8 with two borderline name-based queries (Malamud-Trubowitz author-line; Brennan-Cao title-phrase). Both clear the ≥ 4 ship threshold.
+Strict-blind recall (all phases including A3 isolated from any read of the referee report) settles at **7 / 9** of Ref #2's named-and-not-already-cited references. The +2 informed-supplement candidates (Malamud 2008 and Martin et al 2013 "Simple Variance Swaps") were recovered only via orchestrator-picked Scholar queries that knew the target list; they are preserved in a separate `informed_supplement[]` audit bucket and excluded from the headline metric.
 
 Full progression of architectural attempts:
 
-| Architecture | Score |
-|---|---|
-| v1 default gemini-flash memory | 1/8 |
-| v1 Ref-#2-leaked taxonomy | 6/8 (contaminated) |
-| v2 OpenAlex citation traversal | 0/8 (structural reachability gap) |
-| v1 sharper "suppress canonical" | 0/8 (topic-adjacent ≠ archetype) |
-| **A1 archetype + A2 codex** | **2/8** |
-| **A1 + A2 + A3 /chrome supplement (v3)** | **5/8 strict / 8/8 with borderline** |
+| Architecture | Score | Notes |
+|---|---|---|
+| v1 default gemini-flash memory | 1/8 | Canonical bias |
+| v1 Ref-#2-leaked taxonomy | 6/8 | Contaminated — referee-leaked vocabulary |
+| v2 OpenAlex citation traversal | 0/8 | Structural reachability gap |
+| v1 sharper "suppress canonical" | 0/8 | Topic-adjacent ≠ archetype |
+| A1 archetype + A2 codex | 2/8 | Real architectural win (Martin 2017, GPP 2009 × 3) |
+| A1 + A2 + A3 /chrome supplement (v3, 2026-05-19 first run) | 5/8 strict / 8/8 with borderline | "With borderline" included informed query supplements |
+| **A1 clean + A2 codex + A3 blind subagent (2026-05-20 strict-blind re-run)** | **7 / 9 strict-blind** | A3 phase-isolated from orchestrator. A3-informed-supplement (+2: Malamud 2008, Martin 2013) carved out into `informed_supplement[]`. Strict-blind is the headline. |
+
+## Blind discipline (mandatory)
+
+The 2026-05-20 strict-blind re-run surfaced a failure mode the v3 spec did not enumerate: **orchestrator-context leakage.** If the same session that reads the post-hoc referee report also drives any generation phase (A1, A2, or A3), the recall metric becomes partly cherry-picked. The fix is phase isolation, not better prompting.
+
+Mandatory blind discipline:
+
+1. **A1, A2, and A3 must each run in a session that has never read the referee report or any post-hoc comparison artifact.** Subagent dispatch is the simplest way to enforce this.
+2. **A3 worker must not have read access to** `_referee_aer/`, `_calibration/`, `4_panel/`, `_archive/<date>_contaminated_*/`, or any prior `literature_engagement_*.json` other than the clean `literature_engagement_archetypes.json` (so the blind A3 cannot "fill A2's gaps" — that's exactly the contamination vector).
+3. **A3 queries must derive from the archetype-question's keyword stem alone.** No specific paper title fragments. No author last names unless they appear in the archetype-question's own `paper_anchor` field (paper-cited works are admissible because the paper exposes them).
+4. **Post-hoc comparison runs in `_evaluation/`**, not in the live pipeline. The comparison artifact (`_evaluation/ref_comparison.json` for runs with a sealed referee report) records the strict-blind recall decomposition and the informed-supplement delta separately.
+5. **Headline metrics are strict-blind.** Any "X/N" claim ships with explicit strict-blind framing. Informed-supplement numbers ship as a separate carve-out, never as the headline.
+
+See `docs/log/2026-05-20_strict-blind-discipline.md` for the full contamination diagnosis and fix.
 
 ## What v3 still doesn't do
 
