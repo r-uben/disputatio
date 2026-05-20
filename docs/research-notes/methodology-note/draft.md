@@ -1,6 +1,6 @@
 # Auditable Multi-Agent Paper Review: A Pattern Researchers Can Adopt
 
-*Draft — sections 1–5 done. Sections 6–9 pending (§7 blocked on Anthony's reply). Companion document to `methodology-note-outline.md`.*
+*Draft — sections 1–6 done. Sections 7–9 pending (§7 blocked on Anthony's reply). Companion document to `methodology-note-outline.md`.*
 
 *Last updated: 2026-05-20*
 
@@ -144,13 +144,26 @@ The five archetypes are field-agnostic by construction. They describe a referee'
 
 What this pattern gives a forker is therefore not a turnkey librarian but a decomposition strategy: separate the question-generation phase from the candidate-naming phase, separate both from the search-backend phase, and use reasoning archetypes — not topic adjacency — as the primitive that links them. The auditable disposition trail described in §6 is what makes the resulting candidate list legible to a downstream reader.
 
+## 6. Pattern 5: Auditable disposition trail
+
+The four patterns so far describe how candidate findings are produced, contested, and isolated from comparison knowledge. The fifth pattern is about what happens to the ones that do not survive. Every candidate that enters the pipeline but does not ship to the final panel is preserved on disk with a structured record: the original concern, the phase at which it was rejected, the rule or annotator that rejected it, and a one-sentence reason. The architecture's restraint becomes a first-class artifact rather than a side-effect.
+
+Concretely, the published panel carries a `dropped_findings[]` block alongside the shipped findings. Each entry records the finding's original concern wording, its severity at the time of the drop, the drop stage (a label like `pass1_calibration`, `pass1_reannotation`, or `route_b_consensus_broken`), the structured drop reason, and the annotator's notes where applicable. The trail is part of the public output, not an internal log. A reader of the review can scroll past the shipped findings and inspect the rejection function directly.
+
+The Zhang run produced 80 raw candidate findings across the nine discovery tickets (three model families × three discovery tracks). The triage and merge step collapsed these into 34 atomic findings — each pinned to a verbatim quote that substring-matches the paper. Of those 34, 25 shipped to the final panel and 9 dropped, in three groups that map onto the three drop sites in the pipeline. Four were killed at the first calibration pass because the blinded annotator could not locate the cited quote in the paper or judged the claim unsupported by the evidence supplied — F002, for example, advertised that the paper "overstates novelty vs Hirshleifer 1990 / Breeden-Litzenberger / Ross options-spanning," but the evidence array only established that the paper claims novelty, not that the named predecessors do what the finding said. Two were killed after a polish-rewrite attempt: the annotator flagged the original as overclaiming, the editorial pass narrowed the wording, an upgraded re-annotator read the rewrite, and the rewrite still failed. Three were killed by the Route B red-team described in §3 — the consensus claims about the "constrained-efficiency" relabel, the "markets for Greeks fails under non-Gaussian" framing, and the alleged bundling of quasilinearity and non-storability — each tagged in the trail with the shared-hallucination mode that fired (two notation-collision diagnoses and one surface-pattern overfit).
+
+The reason this matters beyond bookkeeping is that a reviewer who shows its rejection criteria is a different epistemic object from a reviewer that only shows survivors. A reader of the panel can ask, in the case of any shipped finding, "what kind of concern would have been killed at this stage, and would that constrain how I read what survived?" Two distinct readers benefit. A paper author or human referee using the report can scan the trail to see which concerns the system considered and rejected — sometimes confirming a worry the author had already dismissed for the right reason, sometimes flagging a concern the human reader wishes the system had pushed harder on. A methodology auditor looking at the pipeline itself can scan the trail across multiple papers to see whether the rejection function is systematically over- or under-claiming on any particular category. The trail is the substrate for both forms of trust; it does not produce correctness, it makes the rejection function inspectable.
+
+The pattern is trivial to implement. Any pipeline that has a drop site can write a structured record at the moment a candidate is rejected — a few lines per drop site, plus a renderer that surfaces the resulting array in the published artifact. The schema we use today (concern, severity, drop stage, drop reason, annotator notes) is the minimum useful shape; richer schemas are possible and likely worth adding (a counterfactual field — "what would have had to be true for this to ship" — would help with the diagnostic use case).
+
+The hard part is using the trail to tune the rubric. The interesting questions a domain forker can ask of their own trail — is the calibrator systematically over-pruning a particular category, is Route B firing more aggressively on theory papers than empirics, are the drops concentrated in one model family's candidates — all require enough volume to see patterns. A single review's trail is nine drops; that is too small a sample for any of the diagnostics the architecture is built to enable. The pattern makes the analysis *possible*; it does not perform it. A few dozen reviews of the same shape, with disposition trails preserved, are what turn this from an audit substrate into a calibration loop.
+
 ---
 
-## Sections 6–9 — pending
+## Sections 7–9 — pending
 
 To be written:
 
-- **§6** Auditable disposition trail
 - **§7** Case study — Han-Hu-Zhang vs sealed AER Ref #2 (blocked on Anthony's reply on F003/F005/F009/F017)
 - **§8** Adopt-and-adapt guide for forking to other domains
 - **§9** Limitations and failure modes
