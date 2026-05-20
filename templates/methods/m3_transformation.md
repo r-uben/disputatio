@@ -42,9 +42,12 @@ For each transformation that revealed a problem, write an issue containing:
 
 If a transformation reveals nothing, note that explicitly — "applied transformation N to claim X, no issue found." This prevents the reader from wondering whether the method was applied at all.
 
-## Web search supports this method
+## Closed-book discipline (M3 runs in Phase 2 discovery)
 
-Transformations 6, 7, and 8 benefit directly from web search:
-- **Consequence test**: search for whether the derived prediction has been tested elsewhere
-- **Boundary test**: search for empirical ranges of the parameter
-- **Analogy test**: search for the closest related claim in the literature
+M3 is invoked from `templates/discover_narrow.md`, which is **closed-book** by design — discovery agents do not run web search in Phase 2. The eight transformations therefore all operate against the paper's own text and the agent's training-corpus knowledge only.
+
+- **Consequence test**: assess whether the paper's own derived predictions are internally consistent with what its model implies; flag if the consequence reads as falsifiable by evidence the paper does not engage.
+- **Boundary test**: evaluate against parameter ranges the paper itself names, plus the agent's training-knowledge sense of plausible empirical ranges; flag as `needs_web_verification: true` if a sharper answer requires retrieval.
+- **Analogy test**: surface the closest analogue from training-corpus knowledge; flag `needs_web_verification: true` if the analogue is uncertain. **The deep literature analogy work is the job of the Wave 1.75 `literature_engagement` track** (`templates/literature_engagement.md`), not M3 — that track runs upstream of discovery with full retrieval budget (`/chrome` MCP + gemini-flash recall) and propagates its findings to all three discovery tracks as additional context. M3 stays closed-book.
+
+A transformation finding that genuinely requires external retrieval to confirm should be emitted with `needs_web_verification: true` and a precise `verification_query`. Phase 3's verify step (Gemini, optional, controlled by `--skip-web`) handles those follow-ups separately.
