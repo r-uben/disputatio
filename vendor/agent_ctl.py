@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-agent-ctl: Non-blocking controller for Codex and Gemini CLI sessions.
+agent-ctl: Non-blocking controller for Codex and Antigravity (agy) CLI sessions.
 
 Lets Claude Code start, monitor, and kill agent processes without blocking.
-Uses `script -q` on macOS to defeat output buffering so progress is visible
-in real time. Supports multi-turn sessions via `send`.
+Supports multi-turn sessions via `send`.
+
+The `gemini` agent label is preserved as the routing key for backward
+compatibility with downstream callers (/go-team, /delegate, disputatio, DAG
+tickets) — but it now spawns `agy` (Google Antigravity CLI), not the legacy
+`gemini` binary. Antigravity's `agy` has no `--model` CLI flag, so per-call
+model selection is implemented by calling `agy-set-model` (a pty wrapper
+around the interactive `/model` picker) under a global flock before the agy
+spawn. Legacy model strings like `gemini-3.1-pro-preview` are resolved to
+their Antigravity-picker equivalents via AGY_MODEL_ALIASES.
 
 Subcommands:
     start   codex|gemini "prompt" [--model M] [--cwd /path] [--timeout S] [--flags ...]
@@ -17,6 +25,7 @@ Subcommands:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -55,15 +64,126 @@ UNSET_KEYS = {
     "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
 }
 
-# Default models per agent
+# Default models per agent.
+# For "gemini" (now agy): the string is recorded in state for the status
+# table AND resolved through AGY_MODEL_ALIASES at spawn time to drive an
+# `agy-set-model` switch under the global flock. The placeholder
+# "antigravity" maps to nothing (no switch), letting agy use whichever
+# model is currently active in encrypted state.
 DEFAULT_MODELS = {
     "codex": "gpt-5.4",
-    "gemini": "gemini-3.1-pro-preview",
+    "gemini": "antigravity",
 }
 
-# Fallback model on 429 capacity exhaustion. Empty by user preference: stay on
-# the requested model (e.g. gemini-3.1-pro-preview) and let it retry/fail
-# rather than silently downgrading to flash.
+# Antigravity stores conversations as .pb files keyed by UUID under this dir,
+# shared between the agy CLI and Antigravity 2.0 desktop app.
+ANTIGRAVITY_CONV_DIR = Path.home() / ".gemini" / "antigravity-cli" / "conversations"
+
+# Path to the pty-based model-switcher wrapper. When the ticket's `model`
+# field resolves to an Antigravity picker name, agent-ctl calls this script
+# under a flock just before spawning agy, restoring per-phase model routing.
+AGY_SET_MODEL_BIN = "agy-set-model"
+AGY_MODEL_LOCK = Path("/tmp/agy-set-model.lock")
+
+# Maps legacy gemini-CLI model strings (and a few common aliases) to the
+# exact Antigravity picker-format names that `agy-set-model` accepts.
+# Unrecognized strings → no model switch (default behavior preserved).
+AGY_MODEL_ALIASES = {
+    # Picker-format strings (pass through)
+    "Gemini 3.5 Flash (High)": "Gemini 3.5 Flash (High)",
+    "Gemini 3.5 Flash (Medium)": "Gemini 3.5 Flash (Medium)",
+    "Gemini 3.1 Pro (High)": "Gemini 3.1 Pro (High)",
+    "Gemini 3.1 Pro (Low)": "Gemini 3.1 Pro (Low)",
+    "Claude Sonnet 4.6 (Thinking)": "Claude Sonnet 4.6 (Thinking)",
+    "Claude Opus 4.6 (Thinking)": "Claude Opus 4.6 (Thinking)",
+    "GPT-OSS 120B (Medium)": "GPT-OSS 120B (Medium)",
+    # Legacy gemini-CLI names → closest Antigravity equivalent
+    "gemini-3.1-pro-preview": "Gemini 3.1 Pro (High)",
+    "gemini-3-pro-preview": "Gemini 3.1 Pro (High)",
+    "gemini-3-flash-preview": "Gemini 3.5 Flash (High)",
+    "gemini-3.1-flash-lite-preview": "Gemini 3.5 Flash (Medium)",
+    "gemini-2.5-pro": "Gemini 3.1 Pro (High)",
+    "gemini-2.5-flash": "Gemini 3.5 Flash (High)",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6 (Thinking)",
+    "claude-opus-4-6": "Claude Opus 4.6 (Thinking)",
+}
+
+
+def _resolve_agy_model(model: str | None) -> str | None:
+    """Return the Antigravity picker name for `model`, or None if no switch
+    should be performed (unrecognized name, or the placeholder 'antigravity'
+    used by DEFAULT_MODELS['gemini'])."""
+    if not model or model == "antigravity":
+        return None
+    return AGY_MODEL_ALIASES.get(model)
+
+
+def _agy_set_model_under_lock(picker_name: str, *, settle_s: float = 1.0) -> None:
+    """Acquire AGY_MODEL_LOCK, run agy-set-model, sleep `settle_s` so the
+    next agy invocation has time to read the new model from disk before
+    a concurrent caller can switch it again, then release.
+
+    Lock is held by the caller for the full duration of (set + settle).
+    Caller is responsible for spawning agy INSIDE this function's lifetime
+    if they want the model setting to apply to that spawn — use the
+    `agy_model_switch_lock` context manager below for that.
+    """
+    fd = os.open(str(AGY_MODEL_LOCK), os.O_CREAT | os.O_WRONLY, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        subprocess.run(
+            [AGY_SET_MODEL_BIN, picker_name],
+            check=False, timeout=60,
+            capture_output=True, text=True,
+        )
+        time.sleep(settle_s)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+class agy_model_switch_lock:
+    """Context manager: hold the global agy-model lock for the lifetime of
+    the with-block. Used in cmd_start / _launch_ticket so the agy spawn
+    happens inside the same critical section as the model switch.
+    """
+
+    def __init__(self, picker_name: str | None):
+        self.picker_name = picker_name
+        self.fd: int | None = None
+
+    def __enter__(self):
+        if not self.picker_name:
+            return self
+        self.fd = os.open(str(AGY_MODEL_LOCK), os.O_CREAT | os.O_WRONLY, 0o644)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        try:
+            subprocess.run(
+                [AGY_SET_MODEL_BIN, self.picker_name],
+                check=False, timeout=60,
+                capture_output=True, text=True,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            # agy-set-model missing or stuck — release and continue with
+            # whatever model agy currently has. Logged via stderr in the
+            # spawned subprocess; we don't fail the ticket on this.
+            pass
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.fd is not None:
+            # Give agy ~1s to start and read the model before another
+            # caller's switch can race us.
+            time.sleep(1.0)
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+            finally:
+                os.close(self.fd)
+                self.fd = None
+        return False
+
+# Fallback model on 429 capacity exhaustion. agy ignores -m so this is dead
+# weight for the gemini path; kept for codex (also empty by user preference).
 FALLBACK_MODELS: dict[str, str] = {}
 
 # Default timeout (seconds) — 5 minutes
@@ -125,31 +245,32 @@ def reap_finished(state: dict) -> dict:
     return state
 
 
-# Regex to extract Gemini session UUID from --list-sessions output
-GEMINI_UUID_RE = re.compile(
-    r"\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]"
-)
+def gemini_latest_uuid(cwd: str, after_iso: str | None = None) -> str | None:
+    """Return the UUID of the most recently modified Antigravity conversation.
 
+    Antigravity persists each conversation as `<UUID>.pb` under
+    ANTIGRAVITY_CONV_DIR. The shared store means UUIDs from concurrent agy
+    invocations (or the desktop app) can interleave — if `after_iso` is
+    provided, only files modified at or after that ISO-8601 timestamp count,
+    which is how we isolate "the conversation our turn just created" from
+    unrelated activity.
 
-def gemini_latest_uuid(cwd: str) -> str | None:
-    """Return the UUID of the most recently created Gemini session."""
-    env = _clean_env()
-
-    try:
-        out = subprocess.run(
-            ["gemini", "--list-sessions"],
-            cwd=cwd, env=env,
-            capture_output=True, text=True, timeout=15,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    Kept under the legacy name `gemini_latest_uuid` so callers (cmd_send) and
+    state-file fields (`gemini_uuid`) stay stable.
+    """
+    if not ANTIGRAVITY_CONV_DIR.exists():
         return None
-
-    last_uuid = None
-    for line in out.stdout.splitlines():
-        m = GEMINI_UUID_RE.search(line)
-        if m:
-            last_uuid = m.group(1)
-    return last_uuid
+    files = list(ANTIGRAVITY_CONV_DIR.glob("*.pb"))
+    if after_iso:
+        try:
+            cutoff = datetime.fromisoformat(after_iso).timestamp()
+            files = [f for f in files if f.stat().st_mtime >= cutoff]
+        except (ValueError, OSError):
+            pass
+    if not files:
+        return None
+    newest = max(files, key=lambda p: p.stat().st_mtime)
+    return newest.stem
 
 
 def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
@@ -196,44 +317,6 @@ def _launch_background(shell_cmd: str, outfile: Path, timeout: int,
     return proc.pid
 
 
-def _gemini_trusted_dirs() -> list[Path]:
-    """Return absolute paths of folders marked TRUST_FOLDER in Gemini config.
-
-    Reads ~/.gemini/trustedFolders.json (or $GEMINI_CLI_HOME/trustedFolders.json
-    when set). Missing/malformed file → empty list, which means we'll add
-    --skip-trust everywhere. That's the safe default: failing-closed would
-    silently break headless calls in any non-home cwd.
-    """
-    home = Path(os.environ.get("GEMINI_CLI_HOME", str(Path.home() / ".gemini")))
-    cfg = home / "trustedFolders.json"
-    if not cfg.exists():
-        return []
-    try:
-        data = json.loads(cfg.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
-    if not isinstance(data, dict):
-        return []
-    return [Path(p).expanduser().resolve()
-            for p, v in data.items()
-            if v == "TRUST_FOLDER"]
-
-
-def _cwd_is_gemini_trusted(cwd: str) -> bool:
-    """True if cwd (or any ancestor) is in the trusted-folders list."""
-    try:
-        cur = Path(cwd).expanduser().resolve()
-    except (OSError, ValueError):
-        return False
-    trusted = _gemini_trusted_dirs()
-    if not trusted:
-        return False
-    for ancestor in [cur, *cur.parents]:
-        if ancestor in trusted:
-            return True
-    return False
-
-
 def _clean_env() -> dict:
     """Build environment with all conflicting keys removed.
 
@@ -278,40 +361,118 @@ def build_codex_cmd(prompt: str, model: str, result_file: Path, cwd: str,
 
 
 def build_gemini_cmd(prompt: str, model: str, extra_flags: list[str] | None,
-                     cwd: str | None = None) -> list[str]:
-    """Build the gemini headless command.
+                     cwd: str | None = None,
+                     conversation_uuid: str | None = None,
+                     timeout_s: int = DEFAULT_TIMEOUT) -> list[str]:
+    """Build the Antigravity (agy) headless command.
 
-    Defaults to --approval-mode auto_edit: lets Gemini auto-approve
-    read/write/edit tools (so web_search, read_file, write_file work in
-    headless mode) but does NOT auto-approve shell commands. This is the
-    sweet spot for research/OCR/note-taking — Gemini can persist outputs
-    without being able to execute arbitrary shell.
+    Kept under the legacy name `build_gemini_cmd` so callers don't need to
+    change. The `model` argument is accepted for state-table compatibility
+    and is NOT forwarded to agy as a flag (no such flag exists) — instead,
+    cmd_start / _launch_ticket call `agy-set-model` under a flock just
+    before spawning agy, restoring per-phase model routing.
 
-    Override via --flags -y / --flags --approval-mode {plan|yolo|...}.
-    If extra_flags already specifies an approval mode (or --yolo/-y), we
-    skip the default to avoid the "cannot use both" error from gemini CLI.
+    For multi-turn follow-ups, pass `conversation_uuid` to resume that
+    specific conversation. Without it (and without --continue in extra
+    flags), each call starts a fresh conversation.
 
-    Adds --skip-trust automatically when `cwd` isn't under a folder listed
-    in ~/.gemini/trustedFolders.json. Gemini CLI ≥0.41 refuses headless
-    operation in untrusted cwds (silently downgrades approval mode to
-    'default' and then errors out), so without this guard /gemini hangs or
-    returns the trust-error message instead of a real response.
+    Legacy gemini-CLI flags are translated to agy equivalents where they
+    exist and dropped otherwise:
+      -y / --yolo            → --dangerously-skip-permissions
+      -s                     → --sandbox  (--sandbox passes through)
+      --approval-mode <X>    → dropped (no agy equivalent)
+      --skip-trust           → dropped (no agy equivalent)
+      --resume <UUID>        → --conversation <UUID>
+      -r latest / -r last    → -c (continue most recent)
+    Unknown flags pass through unchanged.
+
+    Workspace plumbing (added because agy ignores process cwd and runs in
+    ~/.gemini/antigravity-cli/scratch by default):
+      - When `cwd` is provided, `--add-dir <cwd>` is appended so files in
+        the caller's workspace are reachable via @-references.
+      - When `cwd` contains a GEMINI.md file AND this is a fresh start
+        (no conversation_uuid and no -c/--continue in extra_flags), the
+        prompt is prefixed with a read-GEMINI.md directive. This restores
+        the legacy gemini-CLI behavior of auto-loading worker manuals from
+        the cwd. On resume turns, the manual is already in conversation
+        context — skipping the prefix avoids re-issuing the instruction.
     """
-    cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text"]
+    is_resume = bool(conversation_uuid) or (
+        extra_flags is not None
+        and any(f in ("-c", "--continue") for f in extra_flags)
+    )
+    if cwd and not is_resume:
+        gemini_md = Path(cwd) / "GEMINI.md"
+        if gemini_md.exists():
+            prompt = (
+                "First, read @./GEMINI.md and follow every rule in it as if it "
+                "were part of this prompt. Only after you have internalized "
+                "those rules, proceed with the actual task below.\n\n"
+                "---\n\n"
+                f"{prompt}"
+            )
+
+    cmd = ["agy"]
+    if conversation_uuid:
+        cmd.extend(["--conversation", conversation_uuid])
+    cmd.extend(["-p", prompt])
+    # Inner agy timeout. Give it the full session budget so the outer
+    # process-group kill in _launch_background is the authoritative stop;
+    # cap at 1h since agy clamps anyway and very long jobs should be split.
+    inner_timeout = min(max(int(timeout_s), 60), 3600)
+    cmd.extend(["--print-timeout", f"{inner_timeout}s"])
 
     extra = list(extra_flags) if extra_flags else []
-    user_set_mode = any(
-        f in ("-y", "--yolo", "--approval-mode") or f.startswith("--approval-mode=")
-        for f in extra
-    )
-    if not user_set_mode:
-        cmd.extend(["--approval-mode", "auto_edit"])
+    translated: list[str] = []
+    i = 0
+    while i < len(extra):
+        f = extra[i]
+        if f in ("-y", "--yolo"):
+            translated.append("--dangerously-skip-permissions")
+            i += 1
+            continue
+        if f == "--approval-mode":
+            # Skip flag and its value
+            i += 2
+            continue
+        if f.startswith("--approval-mode="):
+            i += 1
+            continue
+        if f == "--skip-trust":
+            i += 1
+            continue
+        if f == "-s":
+            translated.append("--sandbox")
+            i += 1
+            continue
+        if f == "--resume" and i + 1 < len(extra):
+            translated.extend(["--conversation", extra[i + 1]])
+            i += 2
+            continue
+        if f == "-r" and i + 1 < len(extra):
+            val = extra[i + 1]
+            if val in ("latest", "last"):
+                translated.append("-c")
+            else:
+                translated.extend(["--conversation", val])
+            i += 2
+            continue
+        if f in ("-c", "--continue"):
+            translated.append("-c")
+            i += 1
+            continue
+        translated.append(f)
+        i += 1
 
-    user_set_trust = any(f == "--skip-trust" for f in extra)
-    if not user_set_trust and cwd and not _cwd_is_gemini_trusted(cwd):
-        cmd.append("--skip-trust")
+    cmd.extend(translated)
 
-    cmd.extend(extra)
+    # Make the caller's workspace reachable. agy ignores process cwd and runs
+    # in its own scratch dir, so without --add-dir, @-references and file
+    # reads against the caller's workspace silently fail. Skip if the caller
+    # already passed --add-dir to avoid duplicate workspace entries.
+    if cwd and not any(f == "--add-dir" for f in (extra_flags or [])):
+        cmd.extend(["--add-dir", cwd])
+
     return cmd
 
 
@@ -338,12 +499,19 @@ def _build_shell_cmd(agent: str, agent_cmd: list[str], prompt: str,
         quoted = " ".join(_quote(c) for c in cmd_without_prompt)
         return f"cat {_quote(str(prompt_file))} | {quoted}"
     else:
-        # Gemini: remove the prompt value (index 2) but keep -p flag (index 1).
-        # Gemini CLI: -p/--prompt "Appended to input on stdin (if any)."
-        # So we pass -p "" and pipe the prompt file to stdin.
-        # cmd = ["gemini", "-p", prompt, "-m", model, "-o", "text", "--yolo"]
+        # agy: blank the prompt arg (the token right after -p / --print /
+        # --prompt) and pipe the file to stdin. agy treats -p with an empty
+        # arg as "read prompt from stdin" the same way the old gemini CLI did.
+        # The prompt's position varies with --conversation/-c being present,
+        # so locate the -p flag explicitly instead of hard-coding index 2.
         cmd_fixed = list(agent_cmd)
-        cmd_fixed[2] = ""  # replace prompt text with empty string, keep -p at [1]
+        prompt_idx = None
+        for idx, tok in enumerate(cmd_fixed):
+            if tok in ("-p", "--print", "--prompt"):
+                prompt_idx = idx + 1
+                break
+        if prompt_idx is not None and prompt_idx < len(cmd_fixed):
+            cmd_fixed[prompt_idx] = ""
         quoted = " ".join(_quote(c) for c in cmd_fixed)
         return f"cat {_quote(str(prompt_file))} | {quoted}"
 
@@ -376,7 +544,8 @@ def cmd_start(args) -> None:
                                     extra_flags=args.flags)
     elif agent == "gemini":
         agent_cmd = build_gemini_cmd(prompt=args.prompt, model=model,
-                                     extra_flags=args.flags, cwd=cwd)
+                                     extra_flags=args.flags, cwd=cwd,
+                                     timeout_s=timeout)
     else:
         sys.exit(
             f"agent-ctl: unknown agent '{agent}'. "
@@ -387,7 +556,22 @@ def cmd_start(args) -> None:
 
     env = _clean_env()
     shell_cmd = _build_shell_cmd(agent, agent_cmd, args.prompt)
-    pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
+    # Truncate any stale per-session files left over from a prior use of
+    # this sid. Without this, cmd_result preferentially returns the prior
+    # codex --output-last-message content instead of the new turn's reply.
+    outfile.write_text("")
+    if result_file.exists():
+        result_file.write_text("")
+
+    # For agy ("gemini" agent): if the requested model resolves to an
+    # Antigravity picker name, switch via agy-set-model under a global
+    # flock so concurrent gemini tickets don't race on the (sticky,
+    # globally-scoped) model selection. The lock spans the spawn so a
+    # second ticket can't switch the model out from under agy before it
+    # has read it.
+    picker_name = _resolve_agy_model(model) if agent == "gemini" else None
+    with agy_model_switch_lock(picker_name):
+        pid = _launch_background(shell_cmd, outfile, timeout, cwd, env)
 
     state[sid] = {
         "pid": pid,
@@ -435,9 +619,11 @@ def cmd_send(args) -> None:
     timeout = args.timeout or meta.get("timeout", DEFAULT_TIMEOUT)
     turn = meta.get("turn", 1) + 1
 
-    # For Gemini: capture UUID from previous turn if not yet captured
+    # For Antigravity: capture UUID from previous turn if not yet captured.
+    # Use the session start time as a lower bound so concurrent agy/desktop
+    # activity doesn't steal another conversation's UUID.
     if agent == "gemini" and not meta.get("gemini_uuid"):
-        uuid = gemini_latest_uuid(cwd)
+        uuid = gemini_latest_uuid(cwd, after_iso=meta.get("started"))
         if uuid:
             meta["gemini_uuid"] = uuid
 
@@ -446,6 +632,19 @@ def cmd_send(args) -> None:
     outfile = OUTPUT_DIR / f"session-{sid}.txt"
     result_file = OUTPUT_DIR / f"session-{sid}-result.md"
 
+    # Snapshot the previous turn's output so cmd_result can subtract it from
+    # the new turn's full transcript. agy --conversation prints the entire
+    # conversation history (all prior assistant turns + the new one) on each
+    # invocation; without this snapshot, every result call would replay the
+    # whole chain.
+    prev_history = ""
+    if agent == "gemini" and outfile.exists():
+        try:
+            prev_history = outfile.read_text()
+        except OSError:
+            prev_history = ""
+    meta["prev_history"] = prev_history
+
     # Clear previous output files for this turn
     outfile.write_text("")
     if result_file.exists():
@@ -453,12 +652,14 @@ def cmd_send(args) -> None:
 
     if agent == "gemini":
         uuid = meta.get("gemini_uuid")
-        resume_flags = ["--resume", uuid] if uuid else ["-r", "latest"]
-        # Reuse build_gemini_cmd so follow-ups keep --approval-mode auto_edit
-        # and pick up --skip-trust when needed. Without this, every send-turn
-        # silently downgraded to default approval and re-hit the trust check.
+        # Pass the UUID directly to build_gemini_cmd. If we never captured
+        # one (e.g. turn 1 never wrote a .pb file we could see), fall back
+        # to `-c` (continue most recent) via extra_flags.
+        extra = [] if uuid else ["-c"]
         cmd = build_gemini_cmd(prompt=args.msg, model=model,
-                               extra_flags=resume_flags, cwd=cwd)
+                               extra_flags=extra, cwd=cwd,
+                               conversation_uuid=uuid,
+                               timeout_s=timeout)
     elif agent == "codex":
         cmd = ["codex", "exec"]
         git_dir = Path(cwd) / ".git"
@@ -527,32 +728,41 @@ def cmd_check(args) -> None:
         print("(output file not created yet)")
 
 
-_RESULT_RIPGREP_NOISE = re.compile(
-    r"Ripgrep is not available\. Falling back to GrepTool\.\s*"
-)
-
-
 def _clean_result(text: str) -> str:
-    """Strip wrapper-induced noise from raw session output.
+    """Normalize raw session output.
 
-    `script -q /dev/null` runs the agent inside a pty and replays the
-    typescript verbatim — leading `^D` (literal caret+D) plus `\\b`
-    backspace characters appear on the first line, line endings are `\\r\\n`,
-    and Gemini emits a 'Ripgrep is not available...' diagnostic during
-    startup that has nothing to do with the answer. Normalize all of this
-    so the user sees just the real response.
+    Light cleanup: `\\r\\n` → `\\n`, strip outer whitespace. The historical
+    pty-wrapper noise (leading `^D`, backspaces, ripgrep diagnostic) is no
+    longer produced — we dropped the `script` wrapper, and agy `-p` writes
+    clean text. The replacements are kept as cheap safety nets.
     """
     cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
-    cleaned = cleaned.lstrip()
-    # Leading EOT in either raw (0x04) or printable (^D) form
-    if cleaned.startswith("\x04"):
-        cleaned = cleaned[1:]
-    if cleaned.startswith("^D"):
-        cleaned = cleaned[2:]
-    # Backspaces emitted by the pty after the EOT marker
-    cleaned = cleaned.lstrip("\b")
-    cleaned = _RESULT_RIPGREP_NOISE.sub("", cleaned, count=1)
     return cleaned.strip()
+
+
+def _strip_history_echo(content: str, prev_history: str) -> str:
+    """For agy resume turns: subtract the previously-seen conversation echo.
+
+    `agy --conversation <UUID> -p "..."` replays every prior assistant turn
+    before the new response. cmd_send snapshots the pre-turn outfile into
+    `prev_history`; this function removes that prefix so the caller sees
+    only the new turn.
+
+    Robust to trailing-whitespace drift between the snapshot and the new
+    run (agy occasionally re-emits with slightly different trailing
+    newlines). Falls back to returning the full content if no clean prefix
+    match is found.
+    """
+    if not prev_history:
+        return content
+    cleaned_prev = prev_history.strip()
+    cleaned_content = content.strip()
+    if not cleaned_prev or not cleaned_content:
+        return cleaned_content
+    if cleaned_content.startswith(cleaned_prev):
+        remainder = cleaned_content[len(cleaned_prev):]
+        return remainder.lstrip("\n").strip()
+    return cleaned_content
 
 
 def cmd_result(args) -> None:
@@ -566,16 +776,25 @@ def cmd_result(args) -> None:
 
     meta = state[sid]
 
-    # For Codex: prefer --output-last-message result file (clean, no spinner noise)
-    result_file = Path(meta.get("result_file", ""))
-    if result_file.exists() and result_file.read_text().strip():
-        print(_clean_result(result_file.read_text()))
-        return
+    # For Codex: prefer --output-last-message result file (clean, no spinner
+    # noise). agy doesn't use result_file at all, so for "gemini" sessions
+    # always go straight to outfile — otherwise stale codex content from a
+    # reused session id wins.
+    if meta.get("agent") == "codex":
+        result_file = Path(meta.get("result_file", ""))
+        if result_file.exists() and result_file.read_text().strip():
+            print(_clean_result(result_file.read_text()))
+            return
 
-    # Fall back to raw output (also primary path for Gemini, which uses -o text)
+    # Fall back to raw output (primary path for agy `-p`)
     outfile = Path(meta["outfile"])
     if outfile.exists() and outfile.read_text().strip():
         content = _clean_result(outfile.read_text())
+        # For resumed agy turns, the file contains the full conversation
+        # echo; strip the prior-turn snapshot so only the new response
+        # surfaces. No-op for fresh turns (prev_history empty/missing).
+        if meta.get("agent") == "gemini" and meta.get("prev_history"):
+            content = _strip_history_echo(content, meta["prev_history"])
         if content:
             print(content)
             return
@@ -1026,12 +1245,18 @@ def _launch_ticket(ticket: dict, cwd: str, state: dict) -> str:
                                     extra_flags=None)
     else:
         agent_cmd = build_gemini_cmd(prompt=prompt, model=model,
-                                     extra_flags=None, cwd=ticket_cwd)
+                                     extra_flags=None, cwd=ticket_cwd,
+                                     timeout_s=timeout)
 
     env = _clean_env()
     shell_cmd = _build_shell_cmd(agent, agent_cmd, prompt,
                                  ticket_id=ticket["id"])
-    pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
+    # Mirror cmd_start: per-phase model routing for agy tickets serializes
+    # under the global agy-set-model lock so concurrent DAG tickets don't
+    # clobber each other's model selection.
+    picker_name = _resolve_agy_model(model) if agent == "gemini" else None
+    with agy_model_switch_lock(picker_name):
+        pid = _launch_background(shell_cmd, outfile, timeout, ticket_cwd, env)
 
     state[sid] = {
         "pid": pid,
@@ -1131,24 +1356,28 @@ def cmd_run_dag(args) -> None:
                     if outfile and Path(outfile).exists():
                         log_text = Path(outfile).read_text(errors="replace")
 
-                    # Gemini OAuth expired silently. Retrying just produces
-                    # the same FatalCancellationError. Halt the whole DAG
-                    # with an actionable message so the user can re-auth.
+                    # Antigravity / Gemini OAuth expired silently. Retrying
+                    # just reproduces the same error. Halt the DAG with an
+                    # actionable message so the user can re-auth via the
+                    # Antigravity desktop app (or `agy` once interactively).
                     if agent == "gemini" and (
                         "FatalCancellationError" in log_text
                         or "Authentication cancelled" in log_text
                         or "Opening authentication page" in log_text
+                        or "not authenticated" in log_text.lower()
+                        or "reauth" in log_text.lower()
                     ):
                         _save_tickets(tickets_path, tickets)
                         sys.exit(
-                            f"\n[{tid}] Gemini OAuth has expired or was "
-                            f"cancelled.\n\n"
+                            f"\n[{tid}] Antigravity OAuth has expired or "
+                            f"was cancelled.\n\n"
                             f"  Session log: {outfile}\n\n"
-                            f"  Fix: open a terminal and run\n"
-                            f"      gemini -p 'ping'\n"
-                            f"  to trigger the OAuth flow. Once you have "
-                            f"signed in, re-run this skill — the DAG will "
-                            f"resume from the failed ticket."
+                            f"  Fix: open the Antigravity desktop app and "
+                            f"re-sign-in, OR run\n"
+                            f"      agy -p 'ping'\n"
+                            f"  to refresh credentials. Once authed, re-run "
+                            f"this skill — the DAG will resume from the "
+                            f"failed ticket."
                         )
 
                     attempt = ticket.get("attempt", 0) + 1
@@ -1289,6 +1518,14 @@ def cmd_cleanup(args) -> None:
         patterns.append("codex exec")
     if not agent_filter or agent_filter == "gemini":
         patterns.append("gemini -p")
+
+    # Also find and kill orphaned agent processes by pattern. For "gemini"
+    # we look for the agy binary (current backend); the legacy `gemini -p`
+    # pattern is also retained so any old session still lingering gets
+    # cleaned up too.
+    if not agent_filter or agent_filter == "gemini":
+        patterns = [p for p in patterns if not p.startswith("gemini")]
+        patterns.extend(["agy -p", "agy --conversation", "agy -c", "gemini -p"])
 
     for pattern in patterns:
         try:

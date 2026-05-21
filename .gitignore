@@ -10,6 +10,8 @@ TODO.md
 # Runtime state from /disputatio and agent-ctl runs invoked at the repo root.
 # Per-paper artifacts belong inside the Obsidian workspace, not here.
 .claude/
+# Symlink dir agy creates inside trusted workspaces (points to ~/.gemini config).
+.antigravitycli/
 # Subagent definitions are repo content, not runtime state — track them.
 !.claude/agents/
 !.claude/agents/**

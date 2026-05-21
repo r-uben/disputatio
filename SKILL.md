@@ -71,7 +71,7 @@ The review proceeds in **eight phases (Phase 0 through Phase 7)**. Phase 7 is op
 
 Each of the three agents reads the paper once and produces a neutral **paper map**: claims, equations, propositions, assumptions, parameters, datasets, citations, section anchors, and OCR-corrupted regions. No judgments yet.
 
-**Dispatch**: codex and gemini run as external CLIs via `agent_ctl.py`; they pick up `AGENTS.md` and `GEMINI.md` respectively from the paper workspace. **The Claude family runs as the [`orient-reader`](.claude/agents/orient-reader.md) subagent** dispatched via the Agent tool, not inline — this isolates the role context from the orchestrator's working memory.
+**Dispatch**: codex and gemini run as external CLIs via `agent_ctl.py`. codex auto-loads `AGENTS.md` from its cwd; the `"gemini"` agent (now routed through Antigravity's `agy` binary) loads `GEMINI.md` via an auto-prepended read directive plus `--add-dir <cwd>` injected by `build_gemini_cmd`. Both pathways converge on the same worker-manual semantics from the paper workspace. **The Claude family runs as the [`orient-reader`](.claude/agents/orient-reader.md) subagent** dispatched via the Agent tool, not inline — this isolates the role context from the orchestrator's working memory.
 
 Raw outputs land in `_artifacts/json/orient_<agent>.json`; Claude then renders them as markdown into `0_orientation/<agent>.md`. The three maps are not merged — each agent uses its own map as its cache for the subsequent discovery passes. This preserves **model independence**: agents should not be anchored to each other's reading of the paper.
 
@@ -621,7 +621,7 @@ When no `tickets.json` exists:
 2. Determine `<paper-slug>` from the input filename.
 3. Create the current directory layout:
    `mkdir -p $PAPER/{_paper,0_orientation,0_holistic/{},1_discovery/{holistic_candidates,broad_critic,narrow_evidence},2_ranking,3_debates,4_panel,_artifacts/{prompts,json,sessions},_calibration/{prompts,annotations,rewrites,sessions},_evaluation/{prompts,annotations,sessions}}`
-4. **Copy `AGENTS.md` and `GEMINI.md` from the disputatio repo root into `$PAPER/`.** These are worker-facing operating manuals that the codex / gemini CLIs auto-load when invoked with cwd = paper workspace. Without them at the workspace root, the workers see only their global config (e.g. `~/.codex/AGENTS.md`) which is not disputatio-aware.
+4. **Copy `AGENTS.md` and `GEMINI.md` from the disputatio repo root into `$PAPER/`.** These are worker-facing operating manuals. `codex` auto-loads `AGENTS.md` from its cwd. `agy` (Antigravity, the current gemini backend in agent_ctl) does NOT auto-load files from cwd — instead, `agent_ctl.build_gemini_cmd` detects `GEMINI.md` in `--cwd`, passes `--add-dir <cwd>` so the workspace is reachable, and transparently prepends a "read @./GEMINI.md and follow its rules" directive to the prompt on fresh starts. On resume turns the prefix is skipped because the manual is already in conversation context. Net effect: behavior matches the legacy gemini-CLI auto-load — workers operate under disputatio's worker manual.
    ```bash
    # Resolve the disputatio repo path from the symlink installed by install.sh.
    DISPUTATIO_REPO="$(readlink ~/.claude/skills/disputatio 2>/dev/null || echo ~/.claude/skills/disputatio)"
@@ -782,21 +782,61 @@ Length scales the envelope roughly linearly above 60 pages — orientation, holi
 
 When emitting tickets, route models per the current pipeline:
 
-| Task | Claude | Codex | Gemini |
-|------|--------|-------|--------|
-| Orientation | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Holistic pass | opus/sonnet | gpt-5.4 | gemini-3.1-pro-preview |
-| Discovery — `holistic_candidates` | sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Discovery — `broad_critic` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
-| Discovery — `narrow_evidence` | sonnet | **gpt-5.4** (medium effort) | **gemini-3.1-pro-preview** |
+| Task | Claude | Codex | Gemini (Antigravity) |
+|------|--------|-------|----------------------|
+| Orientation | sonnet | gpt-5.4-mini | (Antigravity sticky) |
+| Holistic pass | opus/sonnet | gpt-5.4 | (Antigravity sticky) |
+| Discovery — `holistic_candidates` | sonnet | gpt-5.4-mini | (Antigravity sticky) |
+| Discovery — `broad_critic` | sonnet | **gpt-5.4** (medium effort) | (Antigravity sticky) |
+| Discovery — `narrow_evidence` | sonnet | **gpt-5.4** (medium effort) | (Antigravity sticky) |
 | Merge & rank | **opus** | — | — |
 | Baseline sentinel | **opus** | — | — |
-| Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
+| Defense | — | gpt-5.4 | (Antigravity sticky) |
 | Synthesis | **opus** | — | — |
-| Verification (web) | — | — | gemini-3.1-pro-preview |
-| Calibration pass 1 | sonnet (fallback) | **gpt-5.4-mini** | gemini-3-flash-preview (fallback) |
+| Verification (web) | — | — | (Antigravity sticky) |
+| Calibration pass 1 | sonnet (fallback) | **gpt-5.4-mini** | (Antigravity sticky, fallback) |
 | Calibration re-annotator | sonnet (fallback) | **gpt-5.4** | — |
-| Panel render | claude-opus (fallback) | — | **gemini-3.1-pro-preview** |
+| Panel render | claude-opus (fallback) | — | **(Antigravity sticky)** |
+
+**Antigravity-routing note.** As of 2026-05, the `"gemini"` agent label in
+`agent-ctl` routes to Google's Antigravity CLI (`agy`). Antigravity v1.0
+has no `--model` CLI flag — the active reasoning model is selected
+interactively via `/model` and is sticky in encrypted global state. To
+restore per-phase routing, `agent-ctl` ships a pty-based wrapper
+(`agy-set-model`) that drives the `/model` picker programmatically and
+calls it under a `/tmp/agy-set-model.lock` flock before each gemini-ticket
+spawn. Result: the per-phase column above IS mechanically enforced — old
+ticket files passing `gemini-3.1-pro-preview` actually run on
+`Gemini 3.1 Pro (High)`, `gemini-3-flash-preview` runs on
+`Gemini 3.5 Flash (High)`, etc.
+
+**Legacy alias map** (legacy gemini-CLI name → Antigravity picker name):
+
+| Legacy | Antigravity equivalent |
+|---|---|
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro (High) |
+| `gemini-3-flash-preview` | Gemini 3.5 Flash (High) |
+| `gemini-3.1-flash-lite-preview` | Gemini 3.5 Flash (Medium) |
+| `gemini-2.5-pro` | Gemini 3.1 Pro (High) |
+| `gemini-2.5-flash` | Gemini 3.5 Flash (High) |
+
+Tickets can also pass the picker names directly (e.g.
+`"model": "Gemini 3.1 Pro (High)"`).
+
+**Operational notes:**
+- The model switch adds ~6–10s to each phase boundary where the model
+  differs from the prior call. Same-model consecutive calls are no-ops
+  (~6s fast-path in `agy-set-model` for "already on target").
+- Concurrent gemini tickets in the same DAG serialize through the flock
+  during the switch + agy-spawn critical section (~10s per ticket); they
+  run in parallel after that. Net effect: small concurrency hit, full
+  correctness.
+- `agy-set-model` is a TUI driver — if Google reorders the `/model`
+  picker or changes the keymap in a future agy release, the wrapper
+  fails visibly. Update `MODELS` in `agy-set-model` and
+  `AGY_MODEL_ALIASES` in `agent_ctl.py` when that happens.
+- If `agy-set-model` is missing or times out, the ticket falls back to
+  whichever model is globally active — no DAG halt.
 
 ## Review criteria
 

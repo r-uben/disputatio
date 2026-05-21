@@ -124,7 +124,7 @@ notes/work/referee-reports/<paper-slug>/
 - **Baseline is a coverage sentinel, not a router.** Wave 2.5 single-shot opus runs in parallel with Phase 1+2; if it surfaces a conceptual-scope concern the holistic pass missed, that's a signal to strengthen the holistic pass, not a route into debate. (Active during the first v6 releases; retirement gated on 3+ papers of measurement.)
 - **Debate is escalation-only.** Four-way gate: cross-family disagreement real + evidence on both sides + severity would change on verdict + finding would be user-visible. Most findings skip debate.
 - **Calibration is the pre-publication quality gate.** Blinded per-finding annotator, demote-on-doubt, one polish rewrite per flagged finding, drop if still failing. Calibration writes onto panel rows.
-- **Single-writer rendering.** One long-context call (gemini-3.1-pro-preview default, opus fallback) reads the calibrated panel and produces panel.md + memo + optional aux in uniform voice.
+- **Single-writer rendering.** One long-context call (Antigravity with Gemini 3.1 Pro (High) as the recommended reasoning model, opus fallback) reads the calibrated panel and produces panel.md + memo + optional aux in uniform voice.
 - **Mode flag propagates to priority labels.** `--mode author` renders `fix_before_submit | watch_in_review | can_ignore`. `--mode referee` renders `endorse | verify_before_endorsing | skip`. Same engine, same panel, different label vocabulary.
 - **Dropped findings surfaced, not hidden.** Panel output explicitly lists drops from debate defenders and calibration demote-to-drop, with reasons. System demonstrates restraint.
 - **Ticket DAG orchestration** — every agent call is a ticket on disk. Claude plans, `agent-ctl run-dag` executes. Resumable, auditable, replayable.
@@ -132,9 +132,12 @@ notes/work/referee-reports/<paper-slug>/
 ### Lessons from testing (historical, kept for operational wisdom)
 
 - **Codex needs `--full-auto`** (now default in agent-ctl) to write files
-- **Gemini needs `--yolo`** (now default in agent-ctl) to write files via `write_file` tool. Without it, Gemini blocks on tool approval in headless mode.
-- **Gemini model: `gemini-3.1-pro-preview`** is the default. Server-side 429s are capacity, not quota — retrying with backoff usually resolves.
-- **Gemini writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes. `agent-ctl run-dag` auto-cleans JSON files after write.
+- **Antigravity (`agy`) replaces the legacy `gemini` CLI** as the backend for the `"gemini"` agent label in `agent-ctl`. Same agent_ctl API surface — `start gemini`, `send`, `result`, `send-or-start` — but the underlying binary is `agy`, the model store lives at `~/.gemini/antigravity-cli/conversations/`, and resume uses `--conversation <UUID>` instead of `--resume`.
+- **Antigravity needs `--dangerously-skip-permissions`** to write files headlessly (equivalent to old `--yolo`). `agent-ctl` translates `-y` / `--yolo` automatically; tickets that already pass either flag keep working.
+- **Antigravity has no `-m` / `--model` flag**, but `agent-ctl` ships an `agy-set-model` pty wrapper that drives the `/model` picker programmatically and is called under a flock before each gemini ticket. Per-phase model routing is therefore restored: ticket `model: "gemini-3.1-pro-preview"` actually switches Antigravity to `Gemini 3.1 Pro (High)` for that ticket, `gemini-3-flash-preview` switches to `Gemini 3.5 Flash (High)`, and so on. Concurrent gemini tickets serialize through the lock (~10s per switch). Unrecognized model strings or a missing `agy-set-model` binary fall back to whichever model is globally active.
+- **Antigravity OAuth lives in the desktop app.** If a DAG ticket fails with auth errors (FatalCancellationError, "not authenticated"), open the Antigravity app and re-sign-in, OR run `agy -p 'ping'` once to refresh. `agent-ctl run-dag` halts the whole DAG with an actionable message on this path so the user can re-auth before resuming.
+- **Server-side 429s are still capacity, not quota** — retrying with backoff usually resolves.
+- **Antigravity writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes (inherits the issue from the underlying Gemini models). `agent-ctl run-dag` auto-cleans JSON files after write.
 - **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise.
 - **YOU MUST use `socr` for every PDF input — no exceptions.** Not `pdftotext`, not `pdftohtml`. socr preserves equations, figure captions, and structural cues the review depends on.
 - **Canonical socr invocation:** `socr process <pdf> --unified --save-figures -o <out>`. `--unified` is the v2.3.0 page-level tiered pipeline. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
@@ -148,6 +151,6 @@ notes/work/referee-reports/<paper-slug>/
 
 - `claude` CLI authenticated (Claude Pro / Claude Code)
 - `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`
-- `gemini` CLI authenticated (Google OAuth). Default model `gemini-3.1-pro-preview`
-- `agent-ctl` at `~/.claude/skills/agent_ctl.py` with `wait`, `run-dag`, `dag-status`, `--full-auto` default for Codex
+- `agy` (Antigravity CLI) authenticated via the Antigravity desktop app (Google AI Pro OAuth). Per-phase model routing is handled automatically by `agent-ctl` via the `agy-set-model` wrapper — no manual `/model` step is required, but `agy-set-model` must be on PATH (default install: `~/.local/bin/agy-set-model`).
+- `agent-ctl` at `~/.claude/skills/agent_ctl.py` with `wait`, `run-dag`, `dag-status`, `--full-auto` default for Codex. The `"gemini"` agent label now routes to `agy` under the hood.
 - Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/` with a `work/referee-reports/` subtree

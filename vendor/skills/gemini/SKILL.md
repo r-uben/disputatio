@@ -1,158 +1,188 @@
 ---
 name: gemini
-description: Query Gemini for second opinions, web research, analysis, or debate
+description: Query Gemini (via Antigravity CLI) for second opinions, web research, analysis, or debate
 ---
 
-# Ask Gemini
+# Ask Gemini (Antigravity CLI)
 
-Query Gemini CLI (v0.28+) for second opinions, analysis, or debate. Gemini CLI is a full coding agent (like Claude Code) — not just a chat API.
+Query Google's **Antigravity CLI** (`agy`, v1.0+) for second opinions, analysis, or debate. Antigravity is a full coding agent — the successor to Gemini CLI — sharing the same harness as the Antigravity 2.0 desktop app and the same conversation store under `~/.gemini/config/projects/`.
 
-Sessions are **stateful**: agent-ctl persists them in `~/.claude/agent-sessions.json` and Gemini resumes natively (`gemini --resume <UUID>`). Default to fresh sessions, but resume on follow-ups (see "Continuing a session" below).
+Conversations are **stateful**: every prompt creates a conversation in the Antigravity store and can be resumed natively with `agy -c` (most recent) or `agy --conversation <ID>` (specific).
 
 ## Hard rules (read these first)
 
-**Showing results to the user.** Print exactly `agent_ctl.py result <id>`. Do **not** pipe through `grep`, `tail`, `head`, `sed`, or `awk`. The output is already cleaned — any filter you add strips real content and is what makes the visible output look like garbage. If `result` returns "(still running — no result yet)", wait; do not fall back to scraping the raw stdout log.
+**Non-interactive only.** Always invoke `agy -p "<prompt>"` (print mode) from the skill — never `-i`/`--prompt-interactive`, never bare `agy` (which would open a TUI). `-p` runs the prompt headless and prints the final response to stdout — nothing else.
 
-**Polling.** Never run visible `for i in $(seq …); do sleep 60; …; done` loops — they spam status lines into the transcript. The Bash tool's default timeout is 120s and a typical Gemini query (web research, code review, debate) can easily exceed that, so a naked `wait` call will time out *before* gemini finishes and look like a hang. Two safe patterns:
+**Timeout.** `agy -p` defaults to a 5-minute internal timeout (`--print-timeout 5m0s`). Bash's default timeout is 120s, so a non-trivial query (web research, code review, deep reasoning) WILL exceed it. Two safe patterns:
 
-- `agent_ctl.py wait <id> --max-wait 90` — bounded wait; exits 2 with "still running" before busting Bash's cap. Re-call until the session finishes.
-- `run_in_background: true` on a plain `agent_ctl.py wait <id>` — the harness notifies you when it returns.
+- **Short prompts (< ~90s expected)**: call `agy -p "..."` inline via Bash with `timeout: 120000` (Bash default). Fine for quick fact checks.
+- **Anything else**: call with `run_in_background: true` on the Bash tool, then wait for the harness notification. Also bump `--print-timeout` if you expect more than 5 min: `agy -p "..." --print-timeout 15m`.
 
-Use the second when you want to do other work while gemini runs. Use the first when you need to feed the result back into your next step.
+Never poll with visible `for/sleep` loops — they spam the transcript.
 
-**Resume by default.** Whenever a recent gemini session (≤ 2 hours, same `cwd`) exists, use `send-or-start`, not `start` — even for bare prompts like "does gemini agree?", "ask again", "follow up". Only use `start` when (a) no recent session exists, (b) the topic clearly changed, or (c) `send-or-start` reports ambiguity (then surface the candidates and ask).
+**Resume on follow-ups.** Whenever the user signals continuation ("ask again", "follow up", "what did it find?", "revise that") and a recent conversation exists, resume with `agy -c -p "<follow-up>"` instead of starting fresh. Note the **`-c -p` combination is required** — `agy -c` alone (no `-p`) opens an interactive TUI and fails non-interactively with a TTY error. `-c` continues the most recent conversation; `-p` keeps it headless.
 
-## Multi-account routing (vox)
+**Resumed output includes the full history.** `agy -c -p "..."` prints every prior assistant turn (one per line) followed by the new response. To extract just the latest reply, pipe through `tail -1`. Fresh `agy -p "..."` only prints the single response and needs no filter.
 
-If `$CLAUDE_CONFIG_DIR` is set to a non-default path matching `~/.claude-<suffix>` (e.g. `~/.claude-vox`), prefix every direct `gemini` invocation with `GEMINI_CLI_HOME="$HOME/.gemini-<suffix>"` so the secondary Gemini account is used. `agent-ctl` does this automatically; the raw `gemini -p` fallbacks below do NOT — add the env var manually when running under a non-default config dir.
-
-## agent-ctl (preferred)
-
-Use `agent-ctl` for all Gemini interactions. It runs Gemini in the background so you stay in control — no blocking, progress checking, cancellation.
+## Quick reference
 
 ```bash
-A="python3 ~/.claude/skills/agent_ctl.py"
+# Fresh single-shot query (default: Gemini 3.5 Flash (High), 5 min timeout)
+agy -p "Your prompt here"
 
-# Start a session (returns immediately)
-$A start gemini "Your prompt here"                                   # default: gemini-3.1-pro-preview, 300s timeout
-$A start gemini "Quick question" -m gemini-3.1-flash-lite-preview    # fast model
-$A start gemini "Analyze code" --cwd /path/to/repo                  # set working dir
-$A start gemini "Explore project" --timeout 600 --flags -y          # agent mode (auto-approve)
+# Long-running query — bump the print timeout
+agy -p "Deep research task" --print-timeout 20m
 
-# Monitor
-$A status                   # list all sessions (codex + gemini)
-$A status --json            # machine-readable for routing decisions
-$A check 01                 # tail output of session 01 — see note on buffering below
+# Continue the most recent conversation (headless — note the -p)
+agy -c -p "Follow-up that builds on the prior turn" | tail -1
 
-# Get results
-$A result 01                # get final response
+# Continue a specific conversation by ID
+agy --conversation 1381f7e3-4b78-4547-b28b-ba5f7b8bd222 -p "Follow-up" | tail -1
 
-# Control
-$A kill 01                  # kill a hung session
-$A cleanup --agent gemini   # kill all gemini sessions
-$A cleanup                  # kill ALL sessions (both agents)
+# Give agy access to extra directories (workspace context)
+agy -p "Review @./src/main.py" --add-dir /path/to/repo
+
+# Auto-approve all tool calls (use with care — agy can run shell commands)
+agy -p "Analyze repo and write a report" --dangerously-skip-permissions
+
+# Sandboxed run (restrict terminal access during the session)
+agy -p "Untrusted exploration task" --sandbox
 ```
+
+## Full flag list
+
+```
+--add-dir                       Add a directory to the workspace (repeatable)
+-c, --continue                  Continue the most recent conversation
+--conversation <ID>             Resume a specific conversation by ID
+--dangerously-skip-permissions  Auto-approve all tool permission requests
+-i, --prompt-interactive        Run an initial prompt then continue interactively (DON'T USE from this skill)
+--log-file <PATH>               Override CLI log file path
+-p, --print, --prompt           Run a single prompt non-interactively and print the response
+--print-timeout <DUR>           Timeout for print mode wait (default 5m0s)
+--sandbox                       Run in a sandbox with terminal restrictions enabled
+```
+
+Subcommands: `changelog`, `install`, `plugin` (alias `plugins`), `update`. Rarely needed from the skill.
 
 ## Continuing a session (follow-ups)
 
-Default to **fresh sessions** for new topics. **Resume** when the user signals continuation — "follow up", "ask gemini again", "continue", "revise that", "what did it find?" — and there is a unique recent gemini session in the same `cwd`.
-
-The safe primitive is `send-or-start`: it resumes a unique match, starts a new session if none exists, and **fails on ambiguity** rather than silently picking the wrong session.
+Default to **fresh sessions** for new topics. **Resume** when the user signals continuation and the previous Antigravity conversation is recent (within the working session).
 
 ```bash
-$A send-or-start gemini "Follow-up question building on prior context" --cwd /path/to/repo
-# 0 matches  → starts new session
-# 1 match    → sends as turn N+1 (preserves full context)
-# >1 matches → exits non-zero with candidate list; ASK the user which to resume
+# Most-recent continue — the common case (tail -1 strips the prior-turn echo)
+agy -c -p "Follow-up question building on prior context" | tail -1
+
+# Specific conversation
+agy --conversation <UUID> -p "Follow-up" | tail -1
 ```
 
-If `send-or-start` reports ambiguity, surface the candidate list to the user and let them pick — never auto-resolve. To bypass that and grab the most recent match anyway: `--latest`.
+Conversation IDs live in `~/.gemini/config/projects/<UUID>.json`. If you need to recover one, list the most recently modified file there. The two products (Antigravity CLI and Antigravity 2.0) share this store — conversations started in the CLI are also visible inside the desktop app via the `@conversation` dropdown (and vice versa, but only on explicit import).
 
 Heuristic for resume vs start fresh:
-- **Resume** (call `send-or-start`) whenever a gemini session in the same `cwd` finished within the last ~2 hours — this is the default for any short follow-up prompt.
-- **Start fresh** when the topic clearly changed, the user is in a different repo, or the last session is stale (default cutoff: 7 days; tune via `--max-age-hours`).
-- **Ask** when ambiguous — multiple plausible matches, or unclear whether the user is following up or starting over.
 
-Direct send (when you already know the session id):
-
-```bash
-$A send 01 "Follow-up that builds on the earlier turn"
-```
-
-### Extra flags via `--flags`
-
-Pass any `gemini` flags after `--flags`:
-
-```bash
-$A start gemini "task" --flags -y                          # agent mode (auto-approve)
-$A start gemini "task" --flags -y -s                       # agent mode + sandbox
-$A start gemini "task" --flags --approval-mode plan        # read-only exploration
-$A start gemini "Review @./src/" --flags -y                # with file references
-```
-
-## Buffering: `check` is not a stream
-
-Gemini's `-o text` mode block-buffers stdout when not writing to a TTY — empirically, the entire response lands in a single write at process exit, not line-by-line. So `agent_ctl.py check <id>` shows essentially nothing useful during execution (just the startup ripgrep warning) and the real answer appears at the moment the session goes from RUNNING to DONE. Don't try to use `check` for live progress. Wait for the session to finish, then call `result`.
-
-(This is a deliberate trade-off: agent_ctl previously wrapped agents in `script -q /dev/null` to defeat buffering, but that created a fresh session for gemini's node worker which then escaped agent_ctl's process group and survived `kill` on timeout — leaking processes that held OAuth state and polluted `gemini --list-sessions`. Losing live streaming is the right price.)
-
-## Auth
-
-Gemini CLI uses **OAuth cached credentials** (not API keys). agent-ctl automatically unsets conflicting env vars (`GOOGLE_API_KEY`, `GEMINI_API_KEY`).
-
-## Direct commands (fallback only)
-
-If agent-ctl doesn't work for some reason:
-
-```bash
-env -u GOOGLE_API_KEY -u GEMINI_API_KEY gemini -p "YOUR QUESTION" -m gemini-3.1-pro-preview -o text --skip-trust 2>/dev/null
-```
-
-`--skip-trust` is required for any cwd that isn't under a folder listed in `~/.gemini/trustedFolders.json`. agent-ctl adds it conditionally for you (only when needed); the direct fallback above hard-codes it because there's no way to detect at the shell level.
-
-## File & Multimodal Context
-
-Gemini supports `@` references for files, images, PDFs, and directories:
-
-```bash
-$A start gemini "Review @./src/main.py for bugs" --cwd /path/to/repo
-$A start gemini "Summarize @./src/ architecture" --cwd /path/to/repo --flags -y
-$A start gemini "Describe @screenshot.png" --cwd /path/to/dir
-```
-
-## Web Search & Research
-
-Gemini has built-in Google Search grounding — auto-triggers when queries need current information. This is Gemini's killer advantage.
-
-```bash
-# Auto-grounded web search
-$A start gemini "What are the latest changes to Basel IV implementation timelines?"
-
-# Deep research with agent mode
-$A start gemini "Research semiconductor supply chain trends, search multiple sources" --flags -y --timeout 600
-```
+- **Resume** (`agy -c -p "..." | tail -1`) on any short follow-up where the topic is clearly the same.
+- **Start fresh** (`agy -p "..."`) when the topic changed, or the prior session is from a different conversation context.
+- **Ask** when ambiguous — never silently resume an unrelated conversation.
 
 ## Models
 
+Antigravity does **not** expose a `-m`/`--model` flag at the CLI. The reasoning model is selected via the in-app `/model` picker (interactively) **or** via the `agy-set-model` pty wrapper (programmatically). It is **sticky in encrypted global state** — once switched, the selection persists across all future `agy` calls until changed again.
+
+```bash
+agy-set-model --list                      # show known model names
+agy-set-model "Gemini 3.1 Pro (High)"     # switch (idempotent — no-op if already on target)
+agy-set-model "Gemini 3.5 Flash (High)"   # switch back
+```
+
+`agy-set-model` is a TUI driver — it spawns `agy`, navigates the `/model` picker, commits, and verifies. Takes ~6–10s. Fails loud if the picker doesn't render. Required by `agent_ctl` for per-phase model routing (e.g. disputatio); also useful for ad-hoc switches before invoking this skill.
+
+Currently available reasoning models (live selector):
+
 | Model | Use For |
 |-------|---------|
-| `gemini-3.1-pro-preview` | Complex reasoning, deep research, code review, debate — **default** |
-| `gemini-3-flash-preview` | Mid-tier — Pro-level intelligence at Flash speed/cost |
-| `gemini-3.1-flash-lite-preview` | Quick questions, fast web searches, simple lookups |
-| `gemini-2.5-pro` | Stable fallback when preview is rate-limited |
-| `gemini-2.5-flash` | Fast stable — best price-performance for high-volume tasks |
+| **Gemini 3.5 Flash (High)** | Default — strong reasoning at Flash speed/cost |
+| Gemini 3.5 Flash (Medium) | Same model, lower thinking budget — faster, cheaper |
+| Gemini 3.1 Pro (High) | Deep research, complex reasoning, code review, debate |
+| Gemini 3.1 Pro (Low) | Pro reasoning at reduced thinking budget |
+| Claude Sonnet 4.6 (Thinking) | Cross-vendor second opinion (Anthropic) |
+| Claude Opus 4.6 (Thinking) | Cross-vendor deep-reasoning second opinion (Anthropic) |
+| GPT-OSS 120B (Medium) | Open-weights frontier model for breadth/diversity |
 
-## When to Use Gemini
+**Practical implication for this skill**: programmatic switching IS possible via `agy-set-model` (above). If a task needs Pro-grade reasoning, either (a) call `agy-set-model "Gemini 3.1 Pro (High)"` before running the query, or (b) tell the user to switch manually via the app's `/model`. Either way, the selection is sticky for all subsequent calls until changed again. There is still no `-m` flag at the CLI level — don't fabricate one.
+
+Other (non-customizable) models in the stack: **Nano Banana 2** is used internally for generative image tasks (UI mockups, diagrams).
+
+## Auth
+
+Antigravity authenticates via **Google AI Pro OAuth**, handled by the Antigravity desktop app on first launch. The CLI inherits the same credentials — no API keys, no env vars. If the CLI ever prompts for re-auth, open the Antigravity desktop app once and re-sign-in there.
+
+## File & multimodal context
+
+Two ways to give `agy` files:
+
+1. **`@` references inside the prompt** — works for files inside the current `cwd` or any `--add-dir` workspace:
+   ```bash
+   agy -p "Review @./src/main.py for bugs" --add-dir /path/to/repo
+   agy -p "Summarize @./src/ architecture" --add-dir /path/to/repo
+   agy -p "Describe @screenshot.png"
+   ```
+
+2. **`--add-dir`** to expand the workspace beyond `cwd` (repeatable):
+   ```bash
+   agy -p "Compare these two repos" --add-dir /path/repo-a --add-dir /path/repo-b
+   ```
+
+Antigravity is multimodal — `@image.png`, `@doc.pdf`, and screenshots all work as references.
+
+## Web search & research
+
+Antigravity inherits Google Search grounding from the underlying Gemini models — this auto-triggers when the model decides current information is needed. No flag is required. This is the primary reason to prefer `agy` over local-only reasoning agents.
+
+```bash
+# Auto-grounded current-events query
+agy -p "What are the latest changes to Basel IV implementation timelines?"
+
+# Deep research with auto-approve (agent will browse, search, synthesize)
+agy -p "Research semiconductor supply chain trends, gather multiple sources" \
+    --dangerously-skip-permissions --print-timeout 20m
+```
+
+For research that requires the agent to drive a browser, use `/browser` inside an interactive session — not available from `-p` print mode.
+
+## When to use Gemini (Antigravity)
 
 - **Web research** (primary advantage): live Google Search grounding
-- **Deep research reports**: agent mode to search, synthesize, write
-- **Second opinion**: cross-check analysis
+- **Deep research reports**: long-horizon agent tasks with `--print-timeout 20m` and `--dangerously-skip-permissions`
+- **Second opinion**: cross-check analysis (especially via Claude Sonnet/Opus models inside Antigravity for a real cross-vendor read)
 - **Multimodal**: screenshots, PDFs, images via `@`
-- **Debate**: present two sides, ask Gemini to argue one
+- **Debate**: present two sides, ask Antigravity to argue one
 
-## Response Handling
+## Response handling
 
-1. **Synthesize** — summarize key insights, don't paste raw output
+Fresh `agy -p "..."` prints **only the model's final response** to stdout — no banner, no progress, no JSON wrapper. Pipe-safe. Do not filter.
+
+Resumed `agy -c -p "..."` (and `--conversation <ID> -p`) prints every prior assistant turn one per line, with the new response last. Pipe through `tail -1` to extract just the latest reply. There is no JSON or banner noise — only assistant text — so `tail -1` is safe.
+
+1. **Synthesize** — summarize key insights, don't paste raw output back to the user verbatim
 2. **Compare** — contrast with your own analysis, note agreements/disagreements
-3. **Evaluate** — Gemini can be wrong; apply critical judgment
-4. **Cite** — say "Gemini suggests..." when reporting its views
+3. **Evaluate** — Antigravity can be wrong; apply critical judgment
+4. **Cite** — say "Antigravity (Gemini 3.5 Flash) suggests..." when reporting its views, since the actual model depends on the user's `/model` setting
+
+## Migration from the old Gemini CLI skill
+
+For users coming from the old `gemini -p` / `agent-ctl` workflow:
+
+| Old (gemini CLI + agent-ctl) | New (agy) |
+|---|---|
+| `agent_ctl.py start gemini "..."` | `agy -p "..."` (with `run_in_background: true` for long queries) |
+| `agent_ctl.py send-or-start gemini "..."` | `agy -c -p "..." \| tail -1` (most recent — `-c -p` required for headless) |
+| `agent_ctl.py result <id>` | (not needed — `agy -p` prints directly) |
+| `agent_ctl.py kill <id>` | `pkill -f "agy -p"` (rare; agy exits cleanly on `--print-timeout`) |
+| `-m gemini-3.1-pro-preview` | `agy-set-model "Gemini 3.1 Pro (High)"` before invoking |
+| `--flags -y` | `--dangerously-skip-permissions` |
+| `--flags -s` | `--sandbox` |
+| `gemini --resume <UUID>` | `agy --conversation <UUID> -p "..."` |
+| `gemini --list-sessions` | Read `~/.gemini/config/projects/` (mtime-sorted) |
+
+The old Gemini CLI (`gemini`) is still installed at `/opt/homebrew/lib/node_modules/@google/gemini-cli/` and remains usable as a fallback for any agent_ctl-based workflows still tied to it (e.g. `disputatio`). But for `/gemini` invocations, prefer `agy`.
