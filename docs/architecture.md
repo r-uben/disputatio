@@ -20,18 +20,24 @@ Schema (full version in `templates/emit_tickets.md`):
 
 ```json
 {
-  "id": "discover_codex_m4",
+  "id": "discover_codex_narrow_evidence",
   "type": "discover",
   "agent": "codex",
-  "prompt_path": "_artifacts/prompts/discover_codex_m4.md",
-  "inputs": ["_paper/paper.md", "_artifacts/json/orient_codex.json"],
-  "outputs": ["_artifacts/json/discover_codex_m4.json"],
-  "depends_on": ["orient_codex"],
+  "family": "openai",
+  "model": "gpt-5.4",
+  "prompt_path": "_artifacts/prompts/discover_codex_narrow_evidence.md",
+  "inputs": [
+    "_paper/paper.md",
+    "_artifacts/json/orient_codex.json",
+    "_artifacts/json/holistic_codex.json",
+    "_artifacts/json/attack_surface_index.json"
+  ],
+  "outputs": ["_artifacts/json/discover_codex_narrow_evidence.json"],
+  "depends_on": ["holistic_codex"],
   "status": "pending",
   "attempt": 0,
   "max_attempts": 2,
-  "timeout_s": 1200,
-  "model": "gpt-5.4-mini"
+  "timeout_s": 1800
 }
 ```
 
@@ -47,29 +53,35 @@ Three types of tickets coexist in the same DAG:
 
 When `run-dag` exits, Claude Code:
 1. Reads the updated `tickets.json`.
-2. Validates the wave's outputs (issue counts ≥ thresholds, JSON parse, etc.).
+2. Validates the wave's outputs (verbatim quote substring-match, JSON parse, schema check, etc.).
 3. Renders curated markdown into the numbered folders.
 4. Emits the next wave by writing new tickets and prompts.
 5. Calls `run-dag` again.
 
-This loop continues until the `final_report` ticket is `done`.
+This loop continues until the `panel_render` ticket is `done`.
 
 ---
 
 ## Wave protocol
 
-Five waves, mapping to the five phases in `SKILL.md`:
+Eight phases, mapping to the structure in `SKILL.md`. Within a wave the listed tickets run in parallel (bounded by the `--concurrent` cap); across waves the order is strict because each wave depends on the previous one's outputs.
 
 | Wave | Phase | Tickets | Concurrency |
 |---|---|---|---|
-| 1 | Orientation | 3 (one per agent) | 3 in parallel |
-| 2 | Discovery | 18 (3 agents × 6 methods, M0 + M2–M6) | 3–6 in parallel |
-| 3 | Merge & rank | 1 (Claude inline) | n/a |
-| 4 | Verification | 1 (Gemini web search, only if any issue flagged) | 1 |
-| 5+ | Debate | 3 per debated issue per round (prosecute → defend → synthesise) | 2–3 issues in parallel |
-| Final | Report | 1 (Claude inline) | n/a |
+| 1 | **Phase 0 — Orientation** | 3 (one per family) → independent paper maps | 3 in parallel |
+| 1.5 | **Phase 1 — Holistic pass** | 3 (one per family) → attack-surface lists, unioned into canonical index | 3 in parallel |
+| 1.75 | **Phase 1.75 — Lit engagement** | 3 internal passes (A1 archetype questions → A2 codex ref-finder → A3 Claude+/chrome Scholar) | sequential |
+| 2 | **Phase 2 — Discovery** | 9 = 3 families × 3 tracks (`holistic_candidates`, `broad_critic`, `narrow_evidence`) | 3 in parallel |
+| 2.5 | **Phase 2.5 — Baseline sentinel** | 1 (single-shot opus, coverage check, runs in parallel with Wave 2) | n/a |
+| 3 | **Phase 3 — Merge + rank** | 1 (Claude inline) → atomic clustering, quote validation, panel-row emission | n/a |
+| 4 | **Phase 5a — Calibration pass 1** | 1 blinded ticket per candidate row, plus polish-rewrite + re-annotation on any flagged row | 4 in parallel |
+| 4.5 | **Phase 4 — Two-route gate + debate** | 0 to ~10 debated rows; Route A = 3 tickets (prosecute → defend → synthesize); Route B = 2 tickets (defend → synthesize, no prosecutor) | 2–3 issues in parallel |
+| 5 | **Phase 5b — Calibration pass 2** | 1 ticket per debate survivor, polish/re-annotate if flagged | 4 in parallel |
+| 6 | **Phase 6 — Panel compile + render** | inline panel.json compile + 1 long-context render ticket per mode (referee, author, or both) | n/a |
 
-Within an issue's debate, tickets are strictly sequential (defense depends on prosecution, synthesis depends on defense). Across issues, debates run in parallel bounded by the concurrency cap (kept low to avoid rate-limiting the weaker model — typically Gemini).
+Within an issue's debate, tickets are strictly sequential (Route A: defense depends on prosecution; synthesis depends on defense. Route B: synthesis depends on defense). Across issues, debates run in parallel bounded by the concurrency cap (typically 2–3, kept low to avoid rate-limiting Gemini).
+
+Phase 4 fires only on rows that clear the two-route escalation gate: **Route A** triggers on cross-family disagreement with evidence on both sides plus severity sensitivity; **Route B** triggers when all three families flagged a material concern, in which case the defender runs as a red-team challenger against the consensus rather than as the paper's advocate. Most papers see 0–5 debates; many see none.
 
 ---
 
@@ -80,17 +92,24 @@ Not every task needs the strongest model. From `SKILL.md`:
 | Task | Claude | Codex | Gemini |
 |---|---|---|---|
 | Orientation | Sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Discovery (M0–M6) | Sonnet | gpt-5.4-mini | gemini-3-flash-preview |
-| Rendering (JSON → markdown) | Haiku | — | — |
+| Holistic pass | **Opus** | gpt-5.4 (high effort) | gemini-3.1-pro-preview |
+| Lit engagement A1 (archetype generator) | — | — | gemini-3.1-pro-preview |
+| Lit engagement A2 (ref finder) | — | gpt-5.4 (medium effort) | — |
+| Lit engagement A3 (Scholar fill-in) | **Opus** (with `/chrome` MCP) | — | — |
+| Discovery — `holistic_candidates` | Sonnet | gpt-5.4-mini | gemini-3-flash-preview |
+| Discovery — `broad_critic` | Sonnet | gpt-5.4 (medium effort) | gemini-3.1-pro-preview |
+| Discovery — `narrow_evidence` | Sonnet | gpt-5.4 (medium effort) | gemini-3.1-pro-preview |
+| Baseline sentinel | **Opus** | — | — |
 | Merge & rank | **Opus** | — | — |
-| Prosecution (top third) | **Opus** | — | — |
-| Prosecution (rest) | Sonnet | — | — |
-| Defense | — | gpt-5.4 | gemini-3.1-pro-preview |
-| Synthesis | **Opus** | — | — |
+| Calibration pass 1 (annotator) | — | gpt-5.4-mini | — |
+| Calibration polish-rewrite | — | — | gemini-3.1-pro-preview |
+| Calibration re-annotation (upgraded) | — | gpt-5.4 (medium effort) | — |
+| Defense (Route A or Route B red-team) | — | gpt-5.4 | gemini-3.1-pro-preview (rotating) |
+| Synthesis | — | — | gemini-3.1-pro-preview |
 | Verification (web) | — | — | gemini-3.1-pro-preview |
-| Final report | **Opus** | — | — |
+| Panel render | **Opus** | — | gemini-3.1-pro-preview (fallback) |
 
-This concentrates Opus usage on judgment-heavy tickets (merge, top prosecutions, synthesis, final). Roughly 70% of pipeline tokens flow through cheaper Sonnet / Haiku / mini / flash models.
+Heavy reasoning is concentrated on merge, synthesis, render, and baseline. Discovery splits effort by track: the conceptual `holistic_candidates` track uses cheaper models since the holistic pass already did the heavy framing work; the evidence-heavy tracks use full Codex / Gemini Pro.
 
 ---
 
@@ -105,36 +124,55 @@ notes/work/referee-reports/<paper-slug>/
 │   ├── paper.md                    # OCR'd source
 │   └── paper.pdf                   # original
 ├── 0_orientation/
-│   ├── 00_orientation.md           # cross-agent overview
+│   ├── 00_orientation.md           # cross-family overview + per-family count table
 │   ├── claude.md                   # Claude's paper map (rendered from JSON)
 │   ├── codex.md
 │   └── gemini.md
+├── 0_holistic/
+│   ├── 00_holistic.md
+│   ├── claude.md                   # Claude's holistic pass (paper spine, attack surfaces, referee questions)
+│   ├── codex.md
+│   ├── gemini.md
+│   └── attack_surface_index.md     # canonical union across families
 ├── 1_discovery/
 │   ├── 00_discovery.md
-│   ├── m0_close_reading/{claude,codex,gemini}.md
-│   ├── m2_contradictions/...
-│   └── m3..m6 likewise
+│   ├── holistic_candidates/{claude,codex,gemini}.md
+│   ├── broad_critic/{claude,codex,gemini}.md
+│   └── narrow_evidence/{claude,codex,gemini}.md
 ├── 2_ranking/
 │   ├── 00_ranking.md
-│   ├── issue_register.md           # canonical merged issue list
-│   ├── triage.md                   # rejected findings + reasons
-│   └── verification.md             # web-fact-check results
+│   ├── issue_register.md           # canonical panel-row register (atomic, ranked)
+│   ├── triage.md                   # findings dropped at merge + reasons
+│   ├── verification.md             # web-fact-check results (or no-op note)
+│   └── baseline_diff.md            # coverage diff vs the Wave 2.5 sentinel
 ├── 3_debates/
 │   ├── 00_debates.md
-│   ├── 01_<slug>/
-│   │   ├── 00_issue.md
-│   │   ├── r1_prosecute.md
-│   │   ├── r1_defend.md
-│   │   ├── r1_synthesize.md
-│   │   ├── ... (more rounds if needed)
-│   │   └── 99_summary.md
-│   └── ...
-├── 4_report/
-│   └── referee_report.md           # the deliverable
+│   ├── <finding_id>/               # one folder per escalated row
+│   │   ├── 00_issue.md             # the claim_under_challenge or prosecution target
+│   │   ├── r1_defend.md            # defender's output (Route A or Route B red-team)
+│   │   ├── r1_synthesize.md        # synthesizer's verdict
+│   │   └── 99_summary.md           # disposition (shipped to panel / dropped)
+│   └── ...                         # (r1_prosecute.md additionally for Route A rows)
+├── 4_panel/
+│   ├── panel_referee.md            # panel table view (referee priority labels)
+│   ├── panel_author.md             # panel table view (author priority labels)
+│   ├── referee_memo.md             # prose memo, referee voice
+│   ├── author_memo.md              # prose memo, author voice
+│   ├── referee_letter_draft.md     # first-draft referee letter (referee mode aux)
+│   └── revision_plan.md            # sentence-level edit table (author mode aux)
+├── _calibration/
+│   ├── 00_calibration.md           # scorecard
+│   ├── manifest_blind.json         # blind_id ↔ true_id map (PRIVATE)
+│   ├── prompts/<BF_id>.md          # one prompt per calibrated row
+│   ├── annotations/<BF_id>.json    # annotator outputs (pass 1, pass 2, reann)
+│   ├── rewrites/<BF_id>.json       # polish-rewrite outputs
+│   ├── final_findings.json         # calibrated set fed to panel compile
+│   └── dropped_pass1.json          # findings killed at calibration with reasons
 └── _artifacts/
     ├── tickets.json                # the DAG — source of truth
+    ├── engine.json                 # run-level metadata (mode, families, opsec policy)
     ├── prompts/<ticket_id>.md      # one prompt per ticket
-    ├── json/<ticket_id>.json       # one structured output per ticket
+    ├── json/<ticket_id>.json       # one structured output per ticket (incl. panel.json)
     └── sessions/<ticket_id>.log    # auto-archived agent reasoning trace
 ```
 
@@ -159,7 +197,8 @@ The skill works idempotently on:
 - Paper folder already exists → reuse it.
 - `_paper/paper.md` already exists → skip OCR.
 - Orientation outputs exist → skip Phase 0.
-- Discovery outputs exist for some agents/methods → only re-run the missing ones.
+- Holistic outputs exist → skip Phase 1.
+- Discovery outputs exist for some family/track combinations → only re-run the missing ones.
 
 You can interrupt and resume at any phase boundary with no loss of work.
 
@@ -167,14 +206,14 @@ You can interrupt and resume at any phase boundary with no loss of work.
 
 ## Cross-agent independence
 
-A core design principle: **the three agents must not see each other's reasoning during discovery.**
+A core design principle: **the three families must not see each other's reasoning during orientation, holistic, and discovery.**
 
-- Each agent gets only the paper text plus its own paper map (orient_<agent>.json) as inputs. Never another agent's map.
-- Claude Code (the orchestrator) does see everything, but its role during discovery is to dispatch tickets, not to share content between agents.
-- Cross-agent agreement on an issue during merge gets weighted ×2 in ranking — agreement across architectures is more meaningful than five methods on one model converging (which is correlated by construction).
-- Three agents × six methods = 18 nominally-independent passes. In practice some correlation remains (all three are language models trained on similar corpora), but the design intent is to maximise variance.
+- Each family gets only the paper text plus its own paper map (`orient_<family>.json`) and its own holistic pass (`holistic_<family>.json`) as inputs. Never another family's outputs.
+- The canonical attack-surface index is a structural union of the three families' holistic outputs (built by the orchestrator inline). Discovery tickets see this union as shared context, but the union is a deduplication of independently-produced lists — it does not introduce cross-family contamination of the per-family reasoning artifacts.
+- Cross-family agreement on a finding during merge gets weighted ×2 in ranking — agreement across architectures is more meaningful than three tracks on one family converging (which is correlated by construction).
+- Three families × three tracks = 9 nominally-independent discovery passes. Some correlation remains (all three are LLMs trained on overlapping corpora), but the design intent is to maximise variance.
 
-Role rotation during debate (Claude prosecutes round 1, Codex defends, Gemini synthesises; rotates each round) preserves the same property: every model plays every role across rounds, so no single model gets the last word.
+Role rotation during Route A debate (Claude prosecutes round 1, Codex defends, Gemini synthesises; rotates each round) preserves the same property: every model plays every role across rounds, so no single model gets the last word. Route B is one-shot by construction: Codex defends as red-team challenger, Gemini synthesises — no rotation, no round 2.
 
 ---
 
@@ -186,19 +225,29 @@ When `/disputatio <path>` is invoked, Claude Code runs a state machine:
 READ tickets.json
 MATCH state → action
 
-no tickets.json                              → INIT (create folders, OCR, emit wave 1)
-orient_claude pending                        → execute Claude's orientation inline
-orient_codex or orient_gemini pending        → run-dag to launch external orientations
-all orient done, no discover tickets         → render orientation, emit wave 2
-discover_claude_* pending                    → run Claude discovery inline (or via subagents)
-discover_codex_* or discover_gemini_*        → run-dag for external discoveries
-all discover done, no merge_rank             → render discovery, execute merge_rank inline
-merge_rank done, no verify                   → emit verify ticket (or skip if no flags)
-verify done, no debate tickets               → emit wave 5 (round-1 debate tickets)
-debate tickets pending                       → execute Claude tickets inline; run-dag for others
-                                                after each synthesis: emit next round if "continue"
-all debate terminal, no final_report         → execute final_report inline
-final_report done                            → EXIT, review complete
+no tickets.json                              → INIT (create folders, OCR, emit Wave 1)
+orient_* pending                             → Claude executes its own ticket inline as
+                                                a subagent; run-dag launches codex/gemini
+all orient done, no holistic tickets         → render 0_orientation, emit Wave 1.5
+holistic_* pending                           → dispatch as Wave 1
+all holistic done                            → render 0_holistic, union into the canonical
+                                                attack_surface_index, emit Wave 1.75
+literature_engagement_* pending              → run A1 (gemini) → A2 (codex) → A3 (Claude
+                                                + /chrome MCP); orchestrator synthesises
+literature_engagement complete                → emit Wave 2 (9 discovery + 1 baseline)
+discover_* / baseline_review pending         → Claude tickets inline; run-dag for the rest
+all discovery done, no merge_rank            → render 1_discovery, execute merge_rank inline
+merge_rank done                              → render 2_ranking; emit calibration Pass 1
+calibration Pass 1 done                      → apply two-route gate; emit debate tickets
+                                                for gate-clearers (0 to ~10); rest go direct
+                                                to panel
+debate tickets pending                       → run-dag (defend → synthesize per row);
+                                                Route B is one-shot, Route A may iterate to
+                                                round 2 if synthesis returns "split"/"escalate"
+all debate terminal                          → render 3_debates, emit calibration Pass 2
+                                                on debate survivors
+calibration Pass 2 done                      → compile panel.json inline, emit panel_render
+panel_render done                            → 4_panel/ written, review marked complete
 ```
 
 The loop is purely state-driven: read disk, match state, do one thing, write to disk. No multi-step sequential protocol. This makes resumption trivial — re-invoke and the same state produces the same next action.

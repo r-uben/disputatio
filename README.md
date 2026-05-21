@@ -47,8 +47,9 @@ The short version: install the three CLI agents, clone this repo, run `./install
 Defaults:
 - `--mode author` — produces `fix_before_submit / watch_in_review / can_ignore` priority labels plus an optional revision plan.
 - `--mode referee` — produces `endorse / verify_before_endorsing / skip` labels plus an optional referee-letter draft.
-- `--max-debate-rounds 2` — escalation-only debate on contested findings; most findings do not trigger debate.
-- Web verification enabled — external claims are fact-checked before calibration.
+- `--mode both` — render both memos off the same calibrated panel.
+- `--max-debate-rounds 2` — escalation-only debate; most findings do not trigger it.
+- Web verification is conditional — Gemini fact-checks only findings whose `needs_web_verification` flag survives merge, with OPSEC-gated query templates. Disable with `--skip-web`.
 
 A run on a typical economics or statistics paper takes **~2 hours wall clock** end-to-end.
 
@@ -167,17 +168,22 @@ A self-contained Obsidian folder per paper:
 ```
 notes/work/referee-reports/<paper-slug>/
 ├── review.md                     ← top-level index, phase status, mode
-├── _paper/paper.md               ← OCR'd source
-├── 0_holistic/                   ← cross-architecture paper map and attack-surface index
-├── 1_discovery/                  ← broad critic + narrow evidence-judgment sweeps
-├── 2_ranking/                    ← merged atomic findings with verdict history
-├── 3_debates/                    ← only contested findings that triggered escalation
-├── 4_panel/                      ← panel.json + author memo + referee memo
-├── _calibration/                 ← blinded per-finding annotations + demotion log
+├── _paper/paper.md               ← OCR'd source (+ any methodology appendices)
+├── 0_orientation/                ← per-family paper maps (3 independent reads)
+├── 0_holistic/                   ← per-family attack-surface lists + canonical union index
+├── 1_discovery/                  ← 9 outputs = 3 families × 3 tracks
+│   ├── holistic_candidates/
+│   ├── broad_critic/
+│   └── narrow_evidence/
+├── 2_ranking/                    ← merged atomic findings, issue register, triage, baseline diff
+├── 3_debates/                    ← per-finding folders for the 0–10 rows that escalated
+├── 4_panel/                      ← panel table + mode-specific memo + auxiliary
+├── _calibration/                 ← blinded per-row annotations, polish-rewrites, dispositions
 └── _artifacts/
     ├── tickets.json              ← the DAG (source of truth for orchestration)
+    ├── engine.json               ← run-level metadata (mode, families, OPSEC policy)
     ├── prompts/                  ← every prompt sent
-    ├── json/                     ← raw structured outputs
+    ├── json/                     ← raw structured outputs (incl. panel.json — the canonical machine artifact)
     └── sessions/                 ← raw agent reasoning traces
 ```
 
@@ -187,7 +193,7 @@ The panel is what a reader looks at first. The memo is a single-writer summary. 
 
 ## How it works (one paragraph)
 
-Three model families (Claude, Codex, Gemini) produce a holistic conceptual pass per paper — paper spine, main claims, attack surfaces, likely referee questions. Nine discovery tickets (three holistic + three broad critic + three narrow evidence-judgment, one per family) generate candidate findings against that map, with each concern forced through an evidence compiler that pins a verbatim quote, location, and whether support is direct or inferred. Atomic merge clusters cross-family duplicates without bundling distinct concerns; a programmatic validator rejects any cluster whose quote does not substring-match the paper. Contested findings (cross-family disagreement with severity that would change on verdict) escalate to a structured prosecute-defend-synthesize round; everything else ships to calibration directly. A blinded annotator evaluates every candidate report entry; overclaimed findings are rewritten narrower or demoted one tier; unsupported findings are dropped before the user sees them. A single writer renders the panel into author or referee memo prose. The pipeline is resumable, auditable, and mode-agnostic — the same engine writes both packets.
+Three model families (Claude, Codex, Gemini) each produce an independent paper map and then a holistic conceptual pass — paper spine, main claims, attack surfaces, likely referee questions — whose attack surfaces the orchestrator unions into a canonical index. Nine discovery tickets (three families × three tracks: `holistic_candidates`, `broad_critic`, `narrow_evidence`) generate candidate findings against that index, with each concern forced through an evidence compiler that pins a verbatim quote, location, and whether support is direct or inferred. A single-shot opus baseline runs in parallel as a coverage sentinel. Atomic merge clusters cross-family duplicates without bundling distinct concerns; a programmatic validator rejects any cluster whose quote does not substring-match the paper. Every surviving candidate then enters a blinded calibration pass — an independent annotator checks the quote and the claim; overclaimed findings are rewritten narrower (and re-annotated by an upgraded model), unsupported findings are dropped before the reader sees them. The surviving set is fed through a two-route escalation gate: cross-family disagreement on a stakes-sensitive finding triggers a prosecute-defend-synthesize debate (Route A); a material concern that all three families independently flagged triggers a red-team challenge against the consensus to test for shared misreading (Route B). Debate survivors get a second calibration pass on the synthesizer's narrowed claim. A single long-context writer renders the calibrated panel into a markdown table plus a mode-specific prose memo (author or referee), with the drop trail surfaced rather than hidden. The pipeline is resumable, auditable, and mode-agnostic — the same engine produces both packets.
 
 ---
 
