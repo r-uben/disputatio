@@ -9,7 +9,7 @@ this repo does **not** ship them:
 |------|-----------|----------|----------------|
 | `skills/codex`  | second-opinion skill (OpenAI / Codex CLI) | no (symlink, ignored) | `~/.config/ai-skills/codex` |
 | `skills/gemini` | second-opinion skill (Google / Antigravity CLI) | no (symlink, ignored) | `~/.config/ai-skills/gemini` |
-| `agent_ctl.py`  | multi-agent orchestrator + ticket-DAG runner | no (symlink, ignored) | `~/.claude/skills/agent_ctl.py` |
+| `agent_ctl.py`  | multi-agent orchestrator + ticket-DAG runner | no (symlink, ignored) | `~/.config/ai-skills/agent_ctl.py` |
 | `agy-set-model` | pty wrapper around agy's interactive `/model` picker | **yes** | this repo (no home elsewhere) |
 | `README.md`     | this file | **yes** | this repo |
 
@@ -45,5 +45,7 @@ python3 ~/.claude/skills/agent_ctl.py <subcommand> --help
 ```
 
 The maintainer edits the canonical file directly at
-`~/.claude/skills/agent_ctl.py`; the old `scripts/sync-agent-ctl.sh`
-copy-into-vendor step is retired now that `vendor/agent_ctl.py` is a symlink.
+`~/.config/ai-skills/agent_ctl.py` (also symlinked to
+`~/.claude/skills/agent_ctl.py`, so existing references keep working); the old
+`scripts/sync-agent-ctl.sh` copy-into-vendor step is retired now that
+`vendor/agent_ctl.py` is a symlink.

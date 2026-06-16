@@ -32,8 +32,8 @@ _outreach/
 docs/archive/
 
 # Vendored helpers are symlinks to their canonical homes, NOT committed
-# snapshots: codex/gemini live in ~/.config/ai-skills/, agent_ctl.py in
-# ~/.claude/skills/. The symlinks resolve to maintainer-local absolute paths
+# snapshots: codex/gemini/agent_ctl.py all live in ~/.config/ai-skills/ (a
+# private git repo). The symlinks resolve to maintainer-local absolute paths
 # and would dangle for anyone else, so they must never be tracked or pushed.
 # Cloners: run `./install.sh` (links the disputatio skill only) and bring your
 # own codex/gemini/agent_ctl.py. (vendor/agy-set-model + vendor/README.md stay
