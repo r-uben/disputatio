@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# install.sh — wire disputatio (and optionally its vendored helpers) into Claude Code.
+# install.sh — wire the disputatio skill into Claude Code.
 #
-# Symlinks the repo's skill files into ~/.claude/skills/ so the repo is the
-# single source of truth. Existing files at the destination are backed up
-# with a .bak.<timestamp> suffix; nothing is overwritten silently.
+# Symlinks the disputatio skill into ~/.claude/skills/. Existing files at the
+# destination are backed up with a .bak.<timestamp> suffix; nothing is
+# overwritten silently.
 #
 # Modes:
-#   install            symlink disputatio + vendored helpers (codex, gemini, agent_ctl).
-#   install --minimal  symlink ONLY the disputatio skill. Useful if you maintain
-#                      your own codex/gemini skills and agent_ctl.py outside this repo.
-#   uninstall          remove the symlinks this script created and restore the
-#                      most recent .bak file at each destination, if any.
+#   install            symlink ONLY the disputatio skill into ~/.claude/skills/.
+#   install --minimal  alias for `install` (kept for backwards compatibility).
+#   uninstall          remove the symlinks this script created (incl. legacy
+#                      vendored links) and restore the most recent .bak file.
 #   --help             usage.
 #
-# Important: the vendored copies under vendor/skills/{codex,gemini}/ and
-# vendor/agent_ctl.py are pinned snapshots, not the upstream source of truth.
-# If you maintain those skills independently, prefer `install --minimal` so
-# this repo does not silently overwrite your live versions.
+# Note: codex/gemini/agent_ctl.py are NO LONGER bundled here — they are
+# git-ignored symlinks to their canonical homes (~/.config/ai-skills/ and
+# ~/.claude/skills/). A clone does not ship them; provide your own. See
+# vendor/README.md.
 
 set -euo pipefail
 
@@ -108,36 +107,32 @@ usage() {
     cat <<EOF
 usage: ./install.sh [install|install --minimal|uninstall]
 
-  install              (default) symlink disputatio + vendored codex/gemini/agent_ctl
-                       into ~/.claude/skills/. Existing files are backed up first.
-  install --minimal    symlink ONLY the disputatio skill. Use this if you maintain
-                       your own codex/gemini skills and agent_ctl.py upstream and
-                       do not want this repo's vendored snapshots to overwrite them.
-  uninstall            remove the symlinks this script created and restore the most
-                       recent .bak file at each destination, if any.
+  install              symlink ONLY the disputatio skill into ~/.claude/skills/.
+                       Existing files are backed up first. codex/gemini/agent_ctl.py
+                       are not bundled — provide your own (see vendor/README.md).
+  install --minimal    alias for install (kept for backwards compatibility).
+  uninstall            remove the symlinks this script created (incl. legacy
+                       vendored links) and restore the most recent .bak file.
 EOF
 }
 
 case "$MODE" in
     install)
         require_dir "$CLAUDE_SKILLS"
-        if [[ "$SUBMODE" == "--minimal" ]]; then
-            cyan "installing disputatio (minimal mode — vendored helpers skipped)"
-            LINKS=("${CORE_LINKS[@]}")
-        else
-            cyan "installing disputatio + vendored helpers into ${CLAUDE_SKILLS}"
-            yellow "  (vendored copies will replace existing codex/gemini/agent_ctl.py;"
-            yellow "   existing files are backed up. Use './install.sh install --minimal'"
-            yellow "   if you want to keep your own versions.)"
-            LINKS=("${CORE_LINKS[@]}" "${VENDOR_LINKS[@]}")
-        fi
+        # Vendored helpers (codex/gemini/agent_ctl.py) are no longer shipped —
+        # they live at their canonical homes and are git-ignored here. install
+        # links ONLY the disputatio skill; bring your own helpers. --minimal is
+        # accepted as a no-op alias for the previous behaviour.
+        cyan "installing the disputatio skill into ${CLAUDE_SKILLS}"
+        cyan "  (codex/gemini/agent_ctl.py are not bundled — provide your own; see vendor/README.md)"
+        LINKS=("${CORE_LINKS[@]}")
         for pair in "${LINKS[@]}"; do
             backup_then_link "${pair%%:*}" "${pair#*:}"
         done
         echo
         verify_clis
         echo
-        green "Done. Restart Claude Code to pick up the skills, then try:"
+        green "Done. Restart Claude Code to pick up the skill, then try:"
         echo "  /disputatio /path/to/paper.pdf --mode author"
         ;;
     --uninstall|uninstall)
