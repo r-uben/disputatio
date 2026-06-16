@@ -1,72 +1,49 @@
 # vendor/
 
-Pinned snapshots of dependencies disputatio uses at runtime. The upstream versions live in the maintainer's `~/.claude/skills/` and may evolve faster than the disputatio release cadence; the copies here are what shipped with the current disputatio commit.
+Runtime helpers disputatio uses. **As of the symlink refactor, the skills and
+the orchestrator are no longer committed here** — they are symlinks to their
+canonical homes on the maintainer's machine and are git-ignored, so a clone of
+this repo does **not** ship them:
 
-## Drift policy
+| Path | What it is | Tracked? | Canonical home |
+|------|-----------|----------|----------------|
+| `skills/codex`  | second-opinion skill (OpenAI / Codex CLI) | no (symlink, ignored) | `~/.config/ai-skills/codex` |
+| `skills/gemini` | second-opinion skill (Google / Antigravity CLI) | no (symlink, ignored) | `~/.config/ai-skills/gemini` |
+| `agent_ctl.py`  | multi-agent orchestrator + ticket-DAG runner | no (symlink, ignored) | `~/.claude/skills/agent_ctl.py` |
+| `agy-set-model` | pty wrapper around agy's interactive `/model` picker | **yes** | this repo (no home elsewhere) |
+| `README.md`     | this file | **yes** | this repo |
 
-These files are **not** disputatio's intellectual core — they are general-purpose helpers (a multi-agent orchestrator and two second-opinion skills) that happen to be useful here. By bundling them, disputatio buys easier installation at the cost of letting the snapshots drift behind their upstream versions.
+Rationale: the skills and orchestrator are general-purpose helpers, not
+disputatio's intellectual core. Keeping a single source of truth (and not a
+drifting committed copy) matters more than bundling them. The symlinks point at
+maintainer-local absolute paths, so they would dangle for anyone else — hence
+they are git-ignored and never pushed.
 
-When you are someone other than the maintainer, you have two choices:
+## Installing (you are not the maintainer)
 
-1. **Use the bundled versions** (default). Run `./install.sh` from the repo root. Vendored copies symlink into `~/.claude/skills/` and you get a self-contained working setup. You will not see upstream improvements until the next disputatio release pulls them in.
-2. **Use your own versions**. Run `./install.sh install --minimal`, which links only the disputatio skill itself. Manage `codex`, `gemini`, and `agent_ctl.py` independently in `~/.claude/skills/`. Disputatio will resolve them at runtime via Claude Code's normal skill discovery.
+A fresh clone gives you `agy-set-model` and this README, but **not** `codex`,
+`gemini`, or `agent_ctl.py`. To run disputatio:
 
-## Layout
+1. Provide your own `codex` and `gemini` skills and `agent_ctl.py` in
+   `~/.claude/skills/` (or wherever Claude Code discovers skills). Disputatio
+   resolves them at runtime via normal skill discovery.
+2. Run `./install.sh` from the repo root — it links the **disputatio** skill
+   into `~/.claude/skills/` and nothing else.
 
-```
-vendor/
-├── agent_ctl.py        # multi-agent orchestrator (1310 lines)
-├── skills/
-│   ├── codex/SKILL.md  # second-opinion skill (OpenAI / Codex CLI)
-│   └── gemini/SKILL.md # second-opinion skill (Google / Gemini CLI)
-└── README.md           # this file
-```
+disputatio needs `agent_ctl.py` at a path Claude Code can run (it shells out to
+`agent_ctl.py run-dag`). Make sure your copy is on that path.
 
 ## `agent_ctl.py`
 
-Subprocess manager for Codex and Gemini CLI sessions. The disputatio skill needs this at runtime to launch external agents and execute the ticket DAG.
-
-### Source of truth
-
-`~/.claude/skills/agent_ctl.py` (the maintainer's local Claude Code skills directory).
-
-This `vendor/` copy is a **synced snapshot** committed for two reasons:
-
-1. **Public users** can read the dependency without having access to the maintainer's machine.
-2. **Reproducibility** — the version of `agent_ctl.py` that ships with a given disputatio commit is pinned alongside it.
-
-### Installation (public users)
-
-To use disputatio you need this script at `~/.claude/skills/agent_ctl.py`. From a fresh checkout:
+Subprocess manager for Codex and Antigravity (agy) CLI sessions. disputatio
+needs it at runtime to launch external agents and execute the ticket DAG.
+`run-dag` is what disputatio uses 99% of the time; the lower-level commands
+(`start`, `wait`, `result`) exist for ad-hoc agent calls.
 
 ```bash
-mkdir -p ~/.claude/skills
-cp vendor/agent_ctl.py ~/.claude/skills/agent_ctl.py
-chmod +x ~/.claude/skills/agent_ctl.py
+python3 ~/.claude/skills/agent_ctl.py <subcommand> --help
 ```
 
-Verify by running:
-
-```bash
-python3 ~/.claude/skills/agent_ctl.py --help
-```
-
-You should see the `start / send / check / result / kill / status / wait / run-dag / dag-status / cleanup` subcommand list.
-
-### Updating (maintainer)
-
-When you edit `~/.claude/skills/agent_ctl.py`, refresh the vendored copy:
-
-```bash
-./scripts/sync-agent-ctl.sh
-```
-
-This is a one-liner that copies the source into `vendor/agent_ctl.py`. Commit the diff so the public copy stays current.
-
-### Subcommands
-
-`run-dag` is what disputatio uses 99% of the time. The lower-level commands (`start`, `wait`, `result`) exist for ad-hoc agent calls. Full reference:
-
-```bash
-python3 vendor/agent_ctl.py <subcommand> --help
-```
+The maintainer edits the canonical file directly at
+`~/.claude/skills/agent_ctl.py`; the old `scripts/sync-agent-ctl.sh`
+copy-into-vendor step is retired now that `vendor/agent_ctl.py` is a symlink.

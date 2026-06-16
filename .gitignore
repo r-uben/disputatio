@@ -30,3 +30,17 @@ _outreach/
 # Local bench corpus snapshot (paper PDFs, third-party reviews). Working-tree
 # only — must never be tracked. Removed from the repo on 2026-05-11.
 docs/archive/
+
+# Vendored helpers are symlinks to their canonical homes, NOT committed
+# snapshots: codex/gemini live in ~/.config/ai-skills/, agent_ctl.py in
+# ~/.claude/skills/. The symlinks resolve to maintainer-local absolute paths
+# and would dangle for anyone else, so they must never be tracked or pushed.
+# Cloners: run `./install.sh` (links the disputatio skill only) and bring your
+# own codex/gemini/agent_ctl.py. (vendor/agy-set-model + vendor/README.md stay
+# tracked — agy-set-model has no home outside this repo.)
+vendor/agent_ctl.py
+vendor/skills/codex
+vendor/skills/gemini
+
+# macOS noise
+.DS_Store
