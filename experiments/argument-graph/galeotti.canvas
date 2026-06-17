@@ -1,0 +1,1419 @@
+{
+  "nodes": [
+    {
+      "id": "C1",
+      "type": "text",
+      "text": "**C1** [claim]\nOptimal incentive targeting is characterized by decomposing interventions into network principal components.",
+      "x": 0,
+      "y": 630,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N1",
+      "type": "text",
+      "text": "**N1** [result]\nCorollary 1: similarity ratios are ordered decreasing under complements and increasing under substitutes.",
+      "x": 330,
+      "y": 630,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "prop_3",
+      "type": "text",
+      "text": "**prop_3** [proposition]\nProposition 3: mean-shift uncertainty reduces to the deterministic problem at the expected status quo vector.",
+      "x": 660,
+      "y": 630,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "C2",
+      "type": "text",
+      "text": "**C2** [claim]\nStrategic complements emphasize top principal components, while strategic substitutes emphasize bottom principal components.",
+      "x": 0,
+      "y": 420,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "C5",
+      "type": "text",
+      "text": "**C5** [claim]\nUnder incomplete information, the same principal-component ordering extends through mean shifts and variance control.",
+      "x": 330,
+      "y": 420,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "prop_1",
+      "type": "text",
+      "text": "**prop_1** [proposition]\nProposition 1: small-budget ratios converge to alpha ratios; large-budget interventions converge to first or last principal component.",
+      "x": 660,
+      "y": 420,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "C3",
+      "type": "text",
+      "text": "**C3** [claim]\nFor large budgets, optimal interventions become simple and align with a single principal component.",
+      "x": 0,
+      "y": 210,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "prop_2",
+      "type": "text",
+      "text": "**prop_2** [proposition]\nProposition 2: sufficient budget bounds make simple interventions nearly welfare-optimal and close in cosine similarity.",
+      "x": 330,
+      "y": 210,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "prop_oa1",
+      "type": "text",
+      "text": "**prop_oa1** [proposition]\nProposition OA1: for general small-budget costs satisfying OA2, similarity ratios converge to alpha ratios.",
+      "x": 660,
+      "y": 210,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "C4",
+      "type": "text",
+      "text": "**C4** [claim]\nThe budget threshold for simple near-optimal interventions is governed by the top or bottom spectral gap.",
+      "x": 0,
+      "y": 0,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "C6",
+      "type": "text",
+      "text": "**C6** [claim]\nThe principal-component logic extends beyond the baseline model to broader costs, externalities, nonsymmetric matrices, and linear-cost cases.",
+      "x": 330,
+      "y": 0,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N8",
+      "type": "text",
+      "text": "**N8** [definition]\nSimilarity ratio divides optimal-intervention similarity by status-quo similarity for a component.",
+      "x": 0,
+      "y": 840,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "thm_1",
+      "type": "text",
+      "text": "**thm_1** [proposition]\nTheorem 1: optimal intervention similarities are proportional to status quo similarity and an eigenvalue-budget multiplier.",
+      "x": 330,
+      "y": 840,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "eq_6",
+      "type": "text",
+      "text": "**eq_6** [equation]\nBudget equation pinning down the Lagrange multiplier mu.",
+      "x": 0,
+      "y": 1470,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "prop_4",
+      "type": "text",
+      "text": "**prop_4** [proposition]\nProposition 4: variance-control interventions rank variance allocation across principal components by alpha and by the sign of w.",
+      "x": 330,
+      "y": 1470,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "N24",
+      "type": "text",
+      "text": "**N24** [result]\nFor nonsymmetric G, the relevant decomposition becomes singular vectors rather than G's eigenvectors.",
+      "x": 0,
+      "y": 2310,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "PA",
+      "type": "text",
+      "text": "**PA** [assumption]\nProperty A: aggregate equilibrium utility is proportional to squared equilibrium actions.",
+      "x": 330,
+      "y": 2310,
+      "width": 270,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "eq_3",
+      "type": "text",
+      "text": "**eq_3** [equation]\nClosed-form equilibrium a* = [I - beta G]^{-1}b.",
+      "x": 660,
+      "y": 2310,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "prop_oa2",
+      "type": "text",
+      "text": "**prop_oa2** [proposition]\nProposition OA2: OA2 plus homogeneity makes intervention costs orthogonally invariant.",
+      "x": 990,
+      "y": 2310,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "eq_7",
+      "type": "text",
+      "text": "**eq_7** [equation]\nNetwork multiplier alpha_ell = (1 - beta lambda_ell)^{-2}.",
+      "x": 0,
+      "y": 1890,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "eq_8",
+      "type": "text",
+      "text": "**eq_8** [equation]\nExpected welfare under incomplete information decomposes by principal-component means and variances.",
+      "x": 330,
+      "y": 1890,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "prop_oa3",
+      "type": "text",
+      "text": "**prop_oa3** [proposition]\nProposition OA3: under linear intervention costs, the optimum targets a single individual.",
+      "x": 660,
+      "y": 1890,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "A1",
+      "type": "text",
+      "text": "**A1** [assumption]\nThe adjacency matrix G is symmetric.",
+      "x": 0,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "A2",
+      "type": "text",
+      "text": "**A2** [assumption]\nThe spectral radius of beta G is less than 1 and G has distinct eigenvalues.",
+      "x": 330,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "A3",
+      "type": "text",
+      "text": "**A3** [assumption]\nThe planner's bliss point is not already reachable: either w<0 with insufficient budget or w>0.",
+      "x": 660,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "A4",
+      "type": "text",
+      "text": "**A4** [assumption]\nMean-shift interventions have squared Euclidean cost and other random interventions are infeasible.",
+      "x": 990,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "A5",
+      "type": "text",
+      "text": "**A5** [assumption]\nVariance-control costs are mean-neutral and invariant to orthogonal rotations around the mean.",
+      "x": 1320,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N10",
+      "type": "text",
+      "text": "**N10** [mechanism]\nStrategic spillovers can be complements or substitutes, changing whether neighbors' incentives move together or against each other.",
+      "x": 1650,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N17",
+      "type": "text",
+      "text": "**N17** [definition]\nIncomplete-information intervention chooses a random vector B over standalone marginal returns.",
+      "x": 1980,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N2",
+      "type": "text",
+      "text": "**N2** [definition]\nBaseline game: simultaneous-move continuous-action network game.",
+      "x": 2310,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N3",
+      "type": "text",
+      "text": "**N3** [definition]\nStandalone marginal return b_i is the part of marginal return independent of others' actions.",
+      "x": 2640,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N4",
+      "type": "text",
+      "text": "**N4** [definition]\nIntervention changes the status quo vector of standalone marginal returns subject to a budget.",
+      "x": 2970,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N5",
+      "type": "text",
+      "text": "**N5** [definition]\nPrincipal components are the eigenvectors that diagonalize the symmetric interaction matrix G.",
+      "x": 3300,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N6",
+      "type": "text",
+      "text": "**N6** [definition]\nProjection onto a principal component gives a vector's magnitude in that component.",
+      "x": 3630,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N7",
+      "type": "text",
+      "text": "**N7** [definition]\nCosine similarity measures how aligned two nonzero vectors are.",
+      "x": 3960,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "OA1",
+      "type": "text",
+      "text": "**OA1** [assumption]\nOnline Appendix OA1: total interaction is constant across individuals.",
+      "x": 4290,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "OA2",
+      "type": "text",
+      "text": "**OA2** [assumption]\nOnline Appendix OA2: general costs are translation-invariant, symmetric, nonnegative, locally separable, and smooth at zero.",
+      "x": 4620,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "OA3",
+      "type": "text",
+      "text": "**OA3** [assumption]\nOnline Appendix OA3: intervention costs are homogeneous under scaling.",
+      "x": 4950,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "eq_1",
+      "type": "text",
+      "text": "**eq_1** [equation]\nPayoff equation for individual utility in the linear-quadratic network game.",
+      "x": 5280,
+      "y": 2730,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N11",
+      "type": "text",
+      "text": "**N11** [mechanism]\nOrthogonal principal components separate intervention effects so each component can be evaluated independently.",
+      "x": 0,
+      "y": 2520,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N12",
+      "type": "text",
+      "text": "**N12** [mechanism]\nStatus quo similarity determines how much an initial incentive profile loads on each component.",
+      "x": 330,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N18",
+      "type": "text",
+      "text": "**N18** [mechanism]\nExpected welfare depends only on first and second moments of principal-component projections.",
+      "x": 660,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N19",
+      "type": "text",
+      "text": "**N19** [definition]\nMean-shift intervention adds a deterministic vector y to the random status quo.",
+      "x": 990,
+      "y": 2520,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N20",
+      "type": "text",
+      "text": "**N20** [mechanism]\nVariance-control cost neutrality makes the benefits side determine which components receive variance.",
+      "x": 1320,
+      "y": 2520,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N21",
+      "type": "text",
+      "text": "**N21** [data]\nInvestment-game example satisfies the baseline structure and Property A with welfare proportional to squared actions.",
+      "x": 1650,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N22",
+      "type": "text",
+      "text": "**N22** [data]\nLocal-public-good example satisfies the structure with strategic substitutes and positive externalities.",
+      "x": 1980,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N23",
+      "type": "text",
+      "text": "**N23** [definition]\nLinear-cost intervention problem uses an L1 budget on changes to standalone marginal returns.",
+      "x": 2310,
+      "y": 2520,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N9",
+      "type": "text",
+      "text": "**N9** [definition]\nSimple interventions allocate the whole budget along the first component under complements or the last under substitutes.",
+      "x": 2640,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "eq_2",
+      "type": "text",
+      "text": "**eq_2** [equation]\nNash equilibrium linear system [I - beta G]a* = b.",
+      "x": 2970,
+      "y": 2520,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "eq_9",
+      "type": "text",
+      "text": "**eq_9** [equation]\nExample variance-control cost depends on the total variance when the mean is fixed.",
+      "x": 3300,
+      "y": 2520,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "eq_4",
+      "type": "text",
+      "text": "**eq_4** [equation]\nPrincipal-component equilibrium response a*_ell = b_ell/(1-beta lambda_ell).",
+      "x": 0,
+      "y": 2100,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "eq_IT",
+      "type": "text",
+      "text": "**eq_IT** [equation]\nIncentive-targeting problem: choose b to maximize equilibrium welfare subject to equilibrium and budget constraints.",
+      "x": 330,
+      "y": 2100,
+      "width": 270,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "N16",
+      "type": "text",
+      "text": "**N16** [mechanism]\nSmall spectral or bottom gaps make different principal components similarly amplified, delaying simplicity.",
+      "x": 0,
+      "y": 1050,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "eq_5",
+      "type": "text",
+      "text": "**eq_5** [equation]\nTheorem 1 similarity proportionality for the optimal intervention.",
+      "x": 330,
+      "y": 1050,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N13",
+      "type": "text",
+      "text": "**N13** [mechanism]\nThe eigenvalue and budget determine a component's network multiplier in the optimal intervention.",
+      "x": 0,
+      "y": 1260,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N14",
+      "type": "text",
+      "text": "**N14** [mechanism]\nOrdering of alpha coefficients maps to eigenvalue ordering differently for complements and substitutes.",
+      "x": 0,
+      "y": 1680,
+      "width": 270,
+      "height": 120
+    },
+    {
+      "id": "N15",
+      "type": "text",
+      "text": "**N15** [mechanism]\nThe Lagrange multiplier equalizes marginal return and marginal cost across active principal components.",
+      "x": 330,
+      "y": 1680,
+      "width": 270,
+      "height": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "fromNode": "C1",
+      "toNode": "thm_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e1",
+      "fromNode": "C1",
+      "toNode": "N5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e2",
+      "fromNode": "C1",
+      "toNode": "N11",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "fromNode": "C2",
+      "toNode": "N1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e4",
+      "fromNode": "C2",
+      "toNode": "N14",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e5",
+      "fromNode": "C2",
+      "toNode": "N10",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e6",
+      "fromNode": "C3",
+      "toNode": "prop_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e7",
+      "fromNode": "C3",
+      "toNode": "N9",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e8",
+      "fromNode": "C4",
+      "toNode": "prop_2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e9",
+      "fromNode": "C4",
+      "toNode": "N16",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e10",
+      "fromNode": "C5",
+      "toNode": "prop_3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e11",
+      "fromNode": "C5",
+      "toNode": "prop_4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e12",
+      "fromNode": "C5",
+      "toNode": "eq_8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e13",
+      "fromNode": "C6",
+      "toNode": "prop_oa1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e14",
+      "fromNode": "C6",
+      "toNode": "prop_oa2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e15",
+      "fromNode": "C6",
+      "toNode": "prop_oa3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e16",
+      "fromNode": "C6",
+      "toNode": "N24",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e17",
+      "fromNode": "thm_1",
+      "toNode": "eq_5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e18",
+      "fromNode": "thm_1",
+      "toNode": "eq_6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e19",
+      "fromNode": "thm_1",
+      "toNode": "eq_IT",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e20",
+      "fromNode": "thm_1",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e21",
+      "fromNode": "thm_1",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e22",
+      "fromNode": "thm_1",
+      "toNode": "A3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e23",
+      "fromNode": "thm_1",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e24",
+      "fromNode": "thm_1",
+      "toNode": "N7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e25",
+      "fromNode": "thm_1",
+      "toNode": "N15",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e26",
+      "fromNode": "N1",
+      "toNode": "thm_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e27",
+      "fromNode": "N1",
+      "toNode": "N8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e28",
+      "fromNode": "N1",
+      "toNode": "N14",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e29",
+      "fromNode": "N1",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e30",
+      "fromNode": "N1",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e31",
+      "fromNode": "N1",
+      "toNode": "A3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e32",
+      "fromNode": "N1",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e33",
+      "fromNode": "prop_1",
+      "toNode": "thm_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e34",
+      "fromNode": "prop_1",
+      "toNode": "eq_5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e35",
+      "fromNode": "prop_1",
+      "toNode": "eq_6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e36",
+      "fromNode": "prop_1",
+      "toNode": "N1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e37",
+      "fromNode": "prop_1",
+      "toNode": "A3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e38",
+      "fromNode": "prop_2",
+      "toNode": "prop_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e39",
+      "fromNode": "prop_2",
+      "toNode": "N9",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e40",
+      "fromNode": "prop_2",
+      "toNode": "N16",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e41",
+      "fromNode": "prop_2",
+      "toNode": "thm_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e42",
+      "fromNode": "prop_2",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e43",
+      "fromNode": "prop_2",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e44",
+      "fromNode": "prop_2",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e45",
+      "fromNode": "prop_3",
+      "toNode": "eq_8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e46",
+      "fromNode": "prop_3",
+      "toNode": "A4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e47",
+      "fromNode": "prop_3",
+      "toNode": "N17",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e48",
+      "fromNode": "prop_3",
+      "toNode": "N19",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e49",
+      "fromNode": "prop_3",
+      "toNode": "thm_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e50",
+      "fromNode": "prop_3",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e51",
+      "fromNode": "prop_3",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e52",
+      "fromNode": "prop_3",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e53",
+      "fromNode": "prop_4",
+      "toNode": "eq_8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e54",
+      "fromNode": "prop_4",
+      "toNode": "A5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e55",
+      "fromNode": "prop_4",
+      "toNode": "N20",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e56",
+      "fromNode": "prop_4",
+      "toNode": "N14",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e57",
+      "fromNode": "prop_4",
+      "toNode": "N17",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e58",
+      "fromNode": "prop_4",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e59",
+      "fromNode": "prop_4",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e60",
+      "fromNode": "prop_4",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e61",
+      "fromNode": "prop_oa1",
+      "toNode": "OA2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e62",
+      "fromNode": "prop_oa1",
+      "toNode": "prop_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e63",
+      "fromNode": "prop_oa1",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e64",
+      "fromNode": "prop_oa1",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e65",
+      "fromNode": "prop_oa1",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e66",
+      "fromNode": "prop_oa2",
+      "toNode": "OA2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e67",
+      "fromNode": "prop_oa2",
+      "toNode": "OA3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e68",
+      "fromNode": "prop_oa2",
+      "toNode": "N11",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e69",
+      "fromNode": "prop_oa3",
+      "toNode": "N23",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e70",
+      "fromNode": "prop_oa3",
+      "toNode": "eq_IT",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e71",
+      "fromNode": "PA",
+      "toNode": "N21",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e72",
+      "fromNode": "PA",
+      "toNode": "N22",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e73",
+      "fromNode": "eq_2",
+      "toNode": "eq_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e74",
+      "fromNode": "eq_2",
+      "toNode": "N2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e75",
+      "fromNode": "eq_2",
+      "toNode": "N3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e76",
+      "fromNode": "eq_3",
+      "toNode": "eq_2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e77",
+      "fromNode": "eq_3",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e78",
+      "fromNode": "eq_4",
+      "toNode": "eq_3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e79",
+      "fromNode": "eq_4",
+      "toNode": "N5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e80",
+      "fromNode": "eq_4",
+      "toNode": "N6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e81",
+      "fromNode": "eq_5",
+      "toNode": "N7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e82",
+      "fromNode": "eq_5",
+      "toNode": "N12",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e83",
+      "fromNode": "eq_5",
+      "toNode": "N13",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e84",
+      "fromNode": "eq_5",
+      "toNode": "eq_7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e85",
+      "fromNode": "eq_5",
+      "toNode": "N15",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e86",
+      "fromNode": "eq_6",
+      "toNode": "eq_IT",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e87",
+      "fromNode": "eq_6",
+      "toNode": "N15",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e88",
+      "fromNode": "eq_7",
+      "toNode": "eq_4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e89",
+      "fromNode": "eq_7",
+      "toNode": "A2",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e90",
+      "fromNode": "eq_8",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e91",
+      "fromNode": "eq_8",
+      "toNode": "eq_4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e92",
+      "fromNode": "eq_8",
+      "toNode": "N17",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e93",
+      "fromNode": "eq_8",
+      "toNode": "N18",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e94",
+      "fromNode": "eq_9",
+      "toNode": "A5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e95",
+      "fromNode": "eq_IT",
+      "toNode": "N4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e96",
+      "fromNode": "eq_IT",
+      "toNode": "eq_3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e97",
+      "fromNode": "eq_IT",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e98",
+      "fromNode": "N8",
+      "toNode": "N7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e99",
+      "fromNode": "N8",
+      "toNode": "eq_5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e100",
+      "fromNode": "N9",
+      "toNode": "N5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e101",
+      "fromNode": "N9",
+      "toNode": "N4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e102",
+      "fromNode": "N11",
+      "toNode": "N5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e103",
+      "fromNode": "N11",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e104",
+      "fromNode": "N12",
+      "toNode": "N6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e105",
+      "fromNode": "N12",
+      "toNode": "N3",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e106",
+      "fromNode": "N13",
+      "toNode": "eq_7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e107",
+      "fromNode": "N13",
+      "toNode": "eq_6",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e108",
+      "fromNode": "N14",
+      "toNode": "eq_7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e109",
+      "fromNode": "N14",
+      "toNode": "N10",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e110",
+      "fromNode": "N15",
+      "toNode": "eq_IT",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e111",
+      "fromNode": "N15",
+      "toNode": "eq_7",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e112",
+      "fromNode": "N16",
+      "toNode": "N13",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e113",
+      "fromNode": "N16",
+      "toNode": "N14",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e114",
+      "fromNode": "N18",
+      "toNode": "eq_8",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e115",
+      "fromNode": "N19",
+      "toNode": "N17",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e116",
+      "fromNode": "N20",
+      "toNode": "A5",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e117",
+      "fromNode": "N21",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e118",
+      "fromNode": "N21",
+      "toNode": "eq_1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e119",
+      "fromNode": "N22",
+      "toNode": "PA",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e120",
+      "fromNode": "N22",
+      "toNode": "N10",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e121",
+      "fromNode": "N23",
+      "toNode": "N4",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e122",
+      "fromNode": "N24",
+      "toNode": "N11",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e123",
+      "fromNode": "N24",
+      "toNode": "A1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ]
+}

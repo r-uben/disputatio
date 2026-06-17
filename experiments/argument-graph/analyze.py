@@ -199,10 +199,94 @@ def analyze(doc, G, missing):
     return out, "\n".join(rep)
 
 
+def _critical_set(G, k=8):
+    return {n for n, _ in critical_nodes(G)[:k]}
+
+
+def _primitives(G):
+    return {n for n in G if G.nodes[n].get("role") == "primitive" or G.out_degree(n) == 0}
+
+
+def _depths(G):
+    """Longest dependency chain below each node (cycle-safe). 0 = primitive/sink."""
+    memo = {}
+
+    def d(n, stack):
+        if n in memo:
+            return memo[n]
+        if n in stack:
+            return 0
+        best = max((d(s, stack | {n}) + 1 for s in G.successors(n)), default=0)
+        memo[n] = best
+        return best
+
+    return {n: d(n, frozenset()) for n in G}
+
+
+def emit_mermaid(doc, G, path):
+    """Markdown + mermaid flowchart. Renders in Obsidian preview AND in any markdown
+    viewer (GitHub, IDE). Red = dominator hot-spots; green = primitives."""
+    crit, prims = _critical_set(G), _primitives(G)
+
+    def nid(n):
+        return "n_" + "".join(c if c.isalnum() else "_" for c in n)
+
+    lines = ["```mermaid", "flowchart TD"]
+    for n in G.nodes:
+        lab = (G.nodes[n].get("label") or n)[:38].replace('"', "'")
+        lines.append(f'  {nid(n)}["{n}: {lab}"]')
+    for u, v in G.edges:
+        lines.append(f"  {nid(u)} --> {nid(v)}")
+    for n in crit:
+        lines.append(f"  class {nid(n)} dom")
+    for n in prims - crit:
+        lines.append(f"  class {nid(n)} prim")
+    lines += ["  classDef dom fill:#fde2e2,stroke:#c0392b,stroke-width:3px;",
+              "  classDef prim fill:#e2f0d9,stroke:#27ae60;", "```"]
+    md = (f"# Argument graph — {doc.get('paper')}\n\n"
+          "Arrows point from a claim to what it depends on. "
+          "**Red = dominator hot-spots** (single points of failure where material findings concentrate). "
+          "**Green = primitives** (assumptions/definitions taken as given).\n\n"
+          + "\n".join(lines) + "\n")
+    with open(path, "w") as f:
+        f.write(md)
+
+
+def emit_canvas(doc, G, path):
+    """Obsidian .canvas — interactive node-edge board, laid out by dependency depth
+    (primitives at the bottom, headline at top). Dominators red, primitives green."""
+    from collections import defaultdict
+    crit, prims = _critical_set(G), _primitives(G)
+    d = _depths(G)
+    maxd = max(d.values()) if d else 0
+    layers = defaultdict(list)
+    for n in G:
+        layers[d[n]].append(n)
+    W, H, GX, GY = 270, 120, 330, 210
+    nodes = []
+    for layer, ns in layers.items():
+        y = (maxd - layer) * GY
+        for i, n in enumerate(sorted(ns)):
+            lab = G.nodes[n].get("label") or ""
+            node = {"id": n, "type": "text",
+                    "text": f"**{n}** [{G.nodes[n].get('type')}]\n{lab}",
+                    "x": i * GX, "y": y, "width": W, "height": H}
+            color = "1" if n in crit else ("4" if n in prims else None)
+            if color:
+                node["color"] = color
+            nodes.append(node)
+    edges = [{"id": f"e{i}", "fromNode": u, "toNode": v, "fromSide": "bottom", "toSide": "top"}
+             for i, (u, v) in enumerate(G.edges)]
+    with open(path, "w") as f:
+        json.dump({"nodes": nodes, "edges": edges}, f, indent=2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("graph")
     ap.add_argument("--report", help="write JSON report here")
+    ap.add_argument("--mermaid", help="write a markdown+mermaid diagram here")
+    ap.add_argument("--canvas", help="write an Obsidian .canvas here")
     args = ap.parse_args()
     doc, G, missing = load_graph(args.graph)
     out, text = analyze(doc, G, missing)
@@ -211,6 +295,12 @@ def main():
         with open(args.report, "w") as f:
             json.dump(out, f, indent=2)
         print(f"\n[report written: {args.report}]", file=sys.stderr)
+    if args.mermaid:
+        emit_mermaid(doc, G, args.mermaid)
+        print(f"[mermaid written: {args.mermaid}]", file=sys.stderr)
+    if args.canvas:
+        emit_canvas(doc, G, args.canvas)
+        print(f"[canvas written: {args.canvas}]", file=sys.stderr)
 
 
 if __name__ == "__main__":
