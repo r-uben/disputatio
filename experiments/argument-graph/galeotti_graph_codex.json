@@ -1,0 +1,1207 @@
+{
+  "paper": "galeotti-golub-goyal-2020",
+  "nodes": [
+    {
+      "id": "C1",
+      "type": "claim",
+      "label": "Optimal incentive targeting is characterized by decomposing interventions into network principal components.",
+      "quote": "decomposing any intervention into orthogonal principal components",
+      "location": "Abstract; Introduction",
+      "role": "headline"
+    },
+    {
+      "id": "C2",
+      "type": "claim",
+      "label": "Strategic complements emphasize top principal components, while strategic substitutes emphasize bottom principal components.",
+      "quote": "interventions place more weight on the top (bottom) principal components",
+      "location": "Abstract; Section 4, Corollary 1",
+      "role": "headline"
+    },
+    {
+      "id": "C3",
+      "type": "claim",
+      "label": "For large budgets, optimal interventions become simple and align with a single principal component.",
+      "quote": "For large budgets, optimal interventions are simple",
+      "location": "Abstract; Section 4.1, Proposition 1",
+      "role": "headline"
+    },
+    {
+      "id": "C4",
+      "type": "claim",
+      "label": "The budget threshold for simple near-optimal interventions is governed by the top or bottom spectral gap.",
+      "quote": "the important statistic is the gap between the top (bottom) two eigenvalues",
+      "location": "Introduction; Section 4.2, Proposition 2",
+      "role": "headline"
+    },
+    {
+      "id": "C5",
+      "type": "claim",
+      "label": "Under incomplete information, the same principal-component ordering extends through mean shifts and variance control.",
+      "quote": "the key insights about the order of targeting of principal components extend",
+      "location": "Introduction; Section 5, Propositions 3-4",
+      "role": "headline"
+    },
+    {
+      "id": "C6",
+      "type": "claim",
+      "label": "The principal-component logic extends beyond the baseline model to broader costs, externalities, nonsymmetric matrices, and linear-cost cases.",
+      "quote": "all the results developed there extend to this more general environment",
+      "location": "Online Appendix OA3",
+      "role": "headline"
+    },
+    {
+      "id": "thm_1",
+      "type": "proposition",
+      "label": "Theorem 1: optimal intervention similarities are proportional to status quo similarity and an eigenvalue-budget multiplier.",
+      "quote": "Theorem 1 provides a full characterization of the optimal intervention.",
+      "location": "Section 4, Theorem 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "N1",
+      "type": "result",
+      "label": "Corollary 1: similarity ratios are ordered decreasing under complements and increasing under substitutes.",
+      "quote": "the similarity ratio is greater, in absolute value, for the principal components",
+      "location": "Section 4, Corollary 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_1",
+      "type": "proposition",
+      "label": "Proposition 1: small-budget ratios converge to alpha ratios; large-budget interventions converge to first or last principal component.",
+      "quote": "the optimal intervention shifts individuals",
+      "location": "Section 4.1, Proposition 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_2",
+      "type": "proposition",
+      "label": "Proposition 2: sufficient budget bounds make simple interventions nearly welfare-optimal and close in cosine similarity.",
+      "quote": "simple interventions achieve most of the optimal welfare",
+      "location": "Section 4.2, Proposition 2",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_3",
+      "type": "proposition",
+      "label": "Proposition 3: mean-shift uncertainty reduces to the deterministic problem at the expected status quo vector.",
+      "quote": "the optimal intervention in the deterministic problem",
+      "location": "Section 5.1, Proposition 3",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_4",
+      "type": "proposition",
+      "label": "Proposition 4: variance-control interventions rank variance allocation across principal components by alpha and by the sign of w.",
+      "quote": "Proposition 4 (Variance control). Consider problem (IT-G)",
+      "location": "Section 5.2, Proposition 4",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_oa1",
+      "type": "proposition",
+      "label": "Proposition OA1: for general small-budget costs satisfying OA2, similarity ratios converge to alpha ratios.",
+      "quote": "the structure of interventions identified in Section 3.1 carries over",
+      "location": "Online Appendix OA3.3, Proposition OA1",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_oa2",
+      "type": "proposition",
+      "label": "Proposition OA2: OA2 plus homogeneity makes intervention costs orthogonally invariant.",
+      "quote": "the cost of intervention y is the same as the cost of an intervention obtained as an orthogonal transformation of y",
+      "location": "Online Appendix OA3.3, Proposition OA2",
+      "role": "intermediate"
+    },
+    {
+      "id": "prop_oa3",
+      "type": "proposition",
+      "label": "Proposition OA3: under linear intervention costs, the optimum targets a single individual.",
+      "quote": "will target a single individual",
+      "location": "Online Appendix OA3.3, Proposition OA3",
+      "role": "intermediate"
+    },
+    {
+      "id": "A1",
+      "type": "assumption",
+      "label": "The adjacency matrix G is symmetric.",
+      "quote": "The adjacency matrix G is symmetric.",
+      "location": "Section 2, Assumption 1",
+      "role": "primitive"
+    },
+    {
+      "id": "A2",
+      "type": "assumption",
+      "label": "The spectral radius of beta G is less than 1 and G has distinct eigenvalues.",
+      "quote": "The spectral radius of βG is less than 1",
+      "location": "Section 2, Assumption 2",
+      "role": "primitive"
+    },
+    {
+      "id": "A3",
+      "type": "assumption",
+      "label": "The planner's bliss point is not already reachable: either w<0 with insufficient budget or w>0.",
+      "quote": "the planner’s bliss point cannot be achieved",
+      "location": "Section 4, Assumption 3",
+      "role": "primitive"
+    },
+    {
+      "id": "PA",
+      "type": "assumption",
+      "label": "Property A: aggregate equilibrium utility is proportional to squared equilibrium actions.",
+      "quote": "The aggregate equilibrium utility is proportional to the sum of the squares",
+      "location": "Section 2, Property A",
+      "role": "primitive"
+    },
+    {
+      "id": "A4",
+      "type": "assumption",
+      "label": "Mean-shift interventions have squared Euclidean cost and other random interventions are infeasible.",
+      "quote": "The cost of implementing r.v. By is",
+      "location": "Section 5.1, Assumption 4",
+      "role": "primitive"
+    },
+    {
+      "id": "A5",
+      "type": "assumption",
+      "label": "Variance-control costs are mean-neutral and invariant to orthogonal rotations around the mean.",
+      "quote": "The cost function satisfies two properties",
+      "location": "Section 5.2, Assumption 5",
+      "role": "primitive"
+    },
+    {
+      "id": "OA1",
+      "type": "assumption",
+      "label": "Online Appendix OA1: total interaction is constant across individuals.",
+      "quote": "The total interaction is constant across individuals",
+      "location": "Online Appendix OA3.1, Assumption OA1",
+      "role": "primitive"
+    },
+    {
+      "id": "OA2",
+      "type": "assumption",
+      "label": "Online Appendix OA2: general costs are translation-invariant, symmetric, nonnegative, locally separable, and smooth at zero.",
+      "quote": "Translational invariance says that there is no dependence on the starting point.",
+      "location": "Online Appendix OA3.3, Assumption OA2",
+      "role": "primitive"
+    },
+    {
+      "id": "OA3",
+      "type": "assumption",
+      "label": "Online Appendix OA3: intervention costs are homogeneous under scaling.",
+      "quote": "There is a function f : R+ → R+ so that",
+      "location": "Online Appendix OA3.3, Assumption OA3",
+      "role": "primitive"
+    },
+    {
+      "id": "eq_1",
+      "type": "equation",
+      "label": "Payoff equation for individual utility in the linear-quadratic network game.",
+      "quote": "The payoff to individual i depends on this vector, a",
+      "location": "Section 2, Equation (1)",
+      "role": "primitive"
+    },
+    {
+      "id": "eq_2",
+      "type": "equation",
+      "label": "Nash equilibrium linear system [I - beta G]a* = b.",
+      "quote": "Any Nash equilibrium action profile",
+      "location": "Section 2, Equation (2)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_3",
+      "type": "equation",
+      "label": "Closed-form equilibrium a* = [I - beta G]^{-1}b.",
+      "quote": "the unique Nash equilibrium of the game can be characterized by",
+      "location": "Section 2, Equation (3)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_4",
+      "type": "equation",
+      "label": "Principal-component equilibrium response a*_ell = b_ell/(1-beta lambda_ell).",
+      "quote": "The principal components of G constitute a basis in which strategic effects are easily described.",
+      "location": "Section 3.1, Equation (4)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_5",
+      "type": "equation",
+      "label": "Theorem 1 similarity proportionality for the optimal intervention.",
+      "quote": "satisfies the following proportionality",
+      "location": "Section 4, Equation (5)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_6",
+      "type": "equation",
+      "label": "Budget equation pinning down the Lagrange multiplier mu.",
+      "quote": "where µ, the shadow price of the planner’s budget",
+      "location": "Section 4, Equation (6)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_7",
+      "type": "equation",
+      "label": "Network multiplier alpha_ell = (1 - beta lambda_ell)^{-2}.",
+      "quote": "Recall that α` = (1 − βλ`)",
+      "location": "Section 4.2; defined before Theorem 1",
+      "role": "primitive"
+    },
+    {
+      "id": "eq_8",
+      "type": "equation",
+      "label": "Expected welfare under incomplete information decomposes by principal-component means and variances.",
+      "quote": "welfare is determined by the mean and variance of the realized components",
+      "location": "Section 5, Equation (8)",
+      "role": "intermediate"
+    },
+    {
+      "id": "eq_9",
+      "type": "equation",
+      "label": "Example variance-control cost depends on the total variance when the mean is fixed.",
+      "quote": "cost of implementing B with Eb = ¯b is a function of the sum of the variances",
+      "location": "Section 5.2, Equation (9)",
+      "role": "primitive"
+    },
+    {
+      "id": "eq_IT",
+      "type": "equation",
+      "label": "Incentive-targeting problem: choose b to maximize equilibrium welfare subject to equilibrium and budget constraints.",
+      "quote": "The incentive-targeting (IT) problem is given by",
+      "location": "Section 2, Problem (IT)",
+      "role": "primitive"
+    },
+    {
+      "id": "N2",
+      "type": "definition",
+      "label": "Baseline game: simultaneous-move continuous-action network game.",
+      "quote": "We consider a simultaneous-move game among individuals",
+      "location": "Section 2, Model setup",
+      "role": "primitive"
+    },
+    {
+      "id": "N3",
+      "type": "definition",
+      "label": "Standalone marginal return b_i is the part of marginal return independent of others' actions.",
+      "quote": "called i’s standalone marginal return",
+      "location": "Section 2, Model setup",
+      "role": "primitive"
+    },
+    {
+      "id": "N4",
+      "type": "definition",
+      "label": "Intervention changes the status quo vector of standalone marginal returns subject to a budget.",
+      "quote": "alter their standalone marginal benefits from status quo levels",
+      "location": "Introduction; Section 2.1",
+      "role": "primitive"
+    },
+    {
+      "id": "N5",
+      "type": "definition",
+      "label": "Principal components are the eigenvectors that diagonalize the symmetric interaction matrix G.",
+      "quote": "eigenvectors of G that diagonalize the matrix",
+      "location": "Section 3, Fact 1 and principal-components discussion",
+      "role": "primitive"
+    },
+    {
+      "id": "N6",
+      "type": "definition",
+      "label": "Projection onto a principal component gives a vector's magnitude in that component.",
+      "quote": "the projection of z onto the ` th principal component",
+      "location": "Section 3.1",
+      "role": "primitive"
+    },
+    {
+      "id": "N7",
+      "type": "definition",
+      "label": "Cosine similarity measures how aligned two nonzero vectors are.",
+      "quote": "The cosine similarity of two nonzero vectors z and y is",
+      "location": "Section 3.1, Definition 1",
+      "role": "primitive"
+    },
+    {
+      "id": "N8",
+      "type": "definition",
+      "label": "Similarity ratio divides optimal-intervention similarity by status-quo similarity for a component.",
+      "quote": "we define the similarity ratio",
+      "location": "Section 4, after Theorem 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "N9",
+      "type": "definition",
+      "label": "Simple interventions allocate the whole budget along the first component under complements or the last under substitutes.",
+      "quote": "An intervention is simple if",
+      "location": "Section 4.2, Definition 2",
+      "role": "intermediate"
+    },
+    {
+      "id": "N10",
+      "type": "mechanism",
+      "label": "Strategic spillovers can be complements or substitutes, changing whether neighbors' incentives move together or against each other.",
+      "quote": "The effects may take the form of strategic complements or strategic substitutes.",
+      "location": "Introduction; Section 2",
+      "role": "primitive"
+    },
+    {
+      "id": "N11",
+      "type": "mechanism",
+      "label": "Orthogonal principal components separate intervention effects so each component can be evaluated independently.",
+      "quote": "the effects along various principal components can be treated separately",
+      "location": "Introduction; Section 3",
+      "role": "primitive"
+    },
+    {
+      "id": "N12",
+      "type": "mechanism",
+      "label": "Status quo similarity determines how much an initial incentive profile loads on each component.",
+      "quote": "This factor summarizes how much the initial condition influences the optimal intervention",
+      "location": "Section 4, discussion of Equation (5)",
+      "role": "intermediate"
+    },
+    {
+      "id": "N13",
+      "type": "mechanism",
+      "label": "The eigenvalue and budget determine a component's network multiplier in the optimal intervention.",
+      "quote": "is determined by two quantities: the eigenvalue corresponding",
+      "location": "Section 4, discussion of Equation (5)",
+      "role": "intermediate"
+    },
+    {
+      "id": "N14",
+      "type": "mechanism",
+      "label": "Ordering of alpha coefficients maps to eigenvalue ordering differently for complements and substitutes.",
+      "quote": "the ordering of these coefficients corresponds to the eigenvalues",
+      "location": "Section 4, Corollary 1 discussion",
+      "role": "intermediate"
+    },
+    {
+      "id": "N15",
+      "type": "mechanism",
+      "label": "The Lagrange multiplier equalizes marginal return and marginal cost across active principal components.",
+      "quote": "the marginal return and the marginal cost are equalized",
+      "location": "Section 4, proof sketch for Theorem 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "N16",
+      "type": "mechanism",
+      "label": "Small spectral or bottom gaps make different principal components similarly amplified, delaying simplicity.",
+      "quote": "two different principal components in the network offer similar amplification",
+      "location": "Section 4.2, discussion of Proposition 2",
+      "role": "intermediate"
+    },
+    {
+      "id": "N17",
+      "type": "definition",
+      "label": "Incomplete-information intervention chooses a random vector B over standalone marginal returns.",
+      "quote": "The planner’s belief over states is given by P.",
+      "location": "Section 5, incomplete-information setup",
+      "role": "primitive"
+    },
+    {
+      "id": "N18",
+      "type": "mechanism",
+      "label": "Expected welfare depends only on first and second moments of principal-component projections.",
+      "quote": "determined by how it alters the first and second moments",
+      "location": "Section 5, before Equation (8)",
+      "role": "intermediate"
+    },
+    {
+      "id": "N19",
+      "type": "definition",
+      "label": "Mean-shift intervention adds a deterministic vector y to the random status quo.",
+      "quote": "the planner’s policy is given by b = ˆb + y",
+      "location": "Section 5.1",
+      "role": "primitive"
+    },
+    {
+      "id": "N20",
+      "type": "mechanism",
+      "label": "Variance-control cost neutrality makes the benefits side determine which components receive variance.",
+      "quote": "rotations of coordinates around the mean do not affect the cost",
+      "location": "Section 5.2, Assumption 5 discussion",
+      "role": "primitive"
+    },
+    {
+      "id": "N21",
+      "type": "data",
+      "label": "Investment-game example satisfies the baseline structure and Property A with welfare proportional to squared actions.",
+      "quote": "The case with β > 0 is the canonical case of investment complementarities",
+      "location": "Section 2, Example 1",
+      "role": "intermediate"
+    },
+    {
+      "id": "N22",
+      "type": "data",
+      "label": "Local-public-good example satisfies the structure with strategic substitutes and positive externalities.",
+      "quote": "This is a game of strategic substitutes and positive externalities.",
+      "location": "Section 2, Example 2",
+      "role": "intermediate"
+    },
+    {
+      "id": "N23",
+      "type": "definition",
+      "label": "Linear-cost intervention problem uses an L1 budget on changes to standalone marginal returns.",
+      "quote": "with a linear cost function",
+      "location": "Online Appendix OA3.3, IT-Linear Cost",
+      "role": "primitive"
+    },
+    {
+      "id": "N24",
+      "type": "result",
+      "label": "For nonsymmetric G, the relevant decomposition becomes singular vectors rather than G's eigenvectors.",
+      "quote": "When G is not symmetric, we employ the singular value decomposition",
+      "location": "Online Appendix OA3.2",
+      "role": "intermediate"
+    }
+  ],
+  "edges": [
+    {
+      "from": "C1",
+      "to": "thm_1",
+      "type": "supported_by",
+      "rationale": "The headline claim is the theorem's characterization of optimal-intervention component weights."
+    },
+    {
+      "from": "C1",
+      "to": "N5",
+      "type": "depends_on",
+      "rationale": "The decomposition claim requires the principal-component basis induced by the network."
+    },
+    {
+      "from": "C1",
+      "to": "N11",
+      "type": "depends_on",
+      "rationale": "The characterization is useful because orthogonality separates component effects."
+    },
+    {
+      "from": "C2",
+      "to": "N1",
+      "type": "supported_by",
+      "rationale": "Corollary 1 states the component-ordering result by sign of beta."
+    },
+    {
+      "from": "C2",
+      "to": "N14",
+      "type": "depends_on",
+      "rationale": "The complements/substitutes contrast follows from how alpha ordering maps to eigenvalue ordering."
+    },
+    {
+      "from": "C2",
+      "to": "N10",
+      "type": "depends_on",
+      "rationale": "The distinction between top and bottom components is meaningful only through strategic complements versus substitutes."
+    },
+    {
+      "from": "C3",
+      "to": "prop_1",
+      "type": "supported_by",
+      "rationale": "Proposition 1 gives the limiting large-budget convergence to first or last principal component."
+    },
+    {
+      "from": "C3",
+      "to": "N9",
+      "type": "depends_on",
+      "rationale": "The claim invokes the paper's definition of a simple intervention."
+    },
+    {
+      "from": "C4",
+      "to": "prop_2",
+      "type": "supported_by",
+      "rationale": "Proposition 2 provides the sufficient budget conditions for near-optimal simple interventions."
+    },
+    {
+      "from": "C4",
+      "to": "N16",
+      "type": "depends_on",
+      "rationale": "The budget threshold interpretation rests on the spectral or bottom gap mechanism."
+    },
+    {
+      "from": "C5",
+      "to": "prop_3",
+      "type": "supported_by",
+      "rationale": "Proposition 3 gives the mean-shift incomplete-information extension."
+    },
+    {
+      "from": "C5",
+      "to": "prop_4",
+      "type": "supported_by",
+      "rationale": "Proposition 4 gives the variance-control incomplete-information extension."
+    },
+    {
+      "from": "C5",
+      "to": "eq_8",
+      "type": "depends_on",
+      "rationale": "Both incomplete-information results use the expected-welfare mean-variance decomposition."
+    },
+    {
+      "from": "C6",
+      "to": "prop_oa1",
+      "type": "supported_by",
+      "rationale": "Proposition OA1 shows the small-budget ranking survives more general cost functions."
+    },
+    {
+      "from": "C6",
+      "to": "prop_oa2",
+      "type": "supported_by",
+      "rationale": "Proposition OA2 explains when the cost structure preserves orthogonal decomposition."
+    },
+    {
+      "from": "C6",
+      "to": "prop_oa3",
+      "type": "supported_by",
+      "rationale": "Proposition OA3 identifies how linear costs change the structure of optimal targeting."
+    },
+    {
+      "from": "C6",
+      "to": "N24",
+      "type": "supported_by",
+      "rationale": "The nonsymmetric-matrix extension replaces eigenvectors with singular vectors."
+    },
+    {
+      "from": "thm_1",
+      "to": "eq_5",
+      "type": "derives_from",
+      "rationale": "Equation (5) is the formal similarity characterization stated in Theorem 1."
+    },
+    {
+      "from": "thm_1",
+      "to": "eq_6",
+      "type": "derives_from",
+      "rationale": "The theorem needs the budget equation that determines the shadow price."
+    },
+    {
+      "from": "thm_1",
+      "to": "eq_IT",
+      "type": "requires",
+      "rationale": "The theorem solves the incentive-targeting optimization problem."
+    },
+    {
+      "from": "thm_1",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "Symmetry lets the paper diagonalize G into orthogonal principal components."
+    },
+    {
+      "from": "thm_1",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The spectral-radius condition guarantees the inverse equilibrium operator and positive denominators."
+    },
+    {
+      "from": "thm_1",
+      "to": "A3",
+      "type": "requires",
+      "rationale": "The nontriviality assumption keeps the planner from already attaining the bliss point."
+    },
+    {
+      "from": "thm_1",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "Property A makes welfare a quadratic form in equilibrium actions."
+    },
+    {
+      "from": "thm_1",
+      "to": "N7",
+      "type": "requires",
+      "rationale": "The theorem is stated in terms of cosine similarity to components."
+    },
+    {
+      "from": "thm_1",
+      "to": "N15",
+      "type": "derives_from",
+      "rationale": "The first-order condition equalizes marginal return and marginal cost through the shadow price."
+    },
+    {
+      "from": "N1",
+      "to": "thm_1",
+      "type": "derives_from",
+      "rationale": "The ordering corollary applies the theorem's similarity-ratio formula."
+    },
+    {
+      "from": "N1",
+      "to": "N8",
+      "type": "requires",
+      "rationale": "The corollary is expressed in terms of the similarity ratio r*_ell."
+    },
+    {
+      "from": "N1",
+      "to": "N14",
+      "type": "derives_from",
+      "rationale": "The result follows by ordering alpha coefficients across eigenvalues."
+    },
+    {
+      "from": "N1",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "The component ordering presumes the symmetric-matrix principal-component basis."
+    },
+    {
+      "from": "N1",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The alpha coefficients are well behaved because the equilibrium inverse exists."
+    },
+    {
+      "from": "N1",
+      "to": "A3",
+      "type": "requires",
+      "rationale": "The corollary inherits Theorem 1's nontriviality condition."
+    },
+    {
+      "from": "N1",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "The corollary inherits Theorem 1's welfare-quadratic structure."
+    },
+    {
+      "from": "prop_1",
+      "to": "thm_1",
+      "type": "derives_from",
+      "rationale": "The limiting results are obtained from Theorem 1's expressions as C tends to zero or infinity."
+    },
+    {
+      "from": "prop_1",
+      "to": "eq_5",
+      "type": "derives_from",
+      "rationale": "The asymptotic component similarities use the proportionality expression."
+    },
+    {
+      "from": "prop_1",
+      "to": "eq_6",
+      "type": "derives_from",
+      "rationale": "The shadow-price limits are read from the budget equation."
+    },
+    {
+      "from": "prop_1",
+      "to": "N1",
+      "type": "depends_on",
+      "rationale": "The large-budget direction follows the same component ordering as Corollary 1."
+    },
+    {
+      "from": "prop_1",
+      "to": "A3",
+      "type": "requires",
+      "rationale": "Proposition 1 inherits Theorem 1's nontrivial optimization condition."
+    },
+    {
+      "from": "prop_2",
+      "to": "prop_1",
+      "type": "depends_on",
+      "rationale": "The near-simple finite-budget bound quantifies the large-budget convergence in Proposition 1."
+    },
+    {
+      "from": "prop_2",
+      "to": "N9",
+      "type": "requires",
+      "rationale": "The proposition compares the optimum to the paper's simple intervention."
+    },
+    {
+      "from": "prop_2",
+      "to": "N16",
+      "type": "derives_from",
+      "rationale": "The sufficient condition is interpreted through the spectral or bottom gap."
+    },
+    {
+      "from": "prop_2",
+      "to": "thm_1",
+      "type": "derives_from",
+      "rationale": "Its welfare and similarity bounds use the optimal intervention characterized by Theorem 1."
+    },
+    {
+      "from": "prop_2",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "The spectral-gap quantities require ordered eigenvalues of a symmetric matrix."
+    },
+    {
+      "from": "prop_2",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The alpha terms in the bounds require the equilibrium operator to be invertible."
+    },
+    {
+      "from": "prop_2",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "The welfare comparison uses squared-equilibrium-action welfare."
+    },
+    {
+      "from": "prop_3",
+      "to": "eq_8",
+      "type": "derives_from",
+      "rationale": "The mean-shift result uses expected welfare's dependence on component means and variances."
+    },
+    {
+      "from": "prop_3",
+      "to": "A4",
+      "type": "requires",
+      "rationale": "The proposition is specifically for the squared-cost mean-shift feasible set."
+    },
+    {
+      "from": "prop_3",
+      "to": "N17",
+      "type": "requires",
+      "rationale": "The result is formulated for the random-vector incomplete-information problem."
+    },
+    {
+      "from": "prop_3",
+      "to": "N19",
+      "type": "requires",
+      "rationale": "The policy class is deterministic mean shifts of the status quo random variable."
+    },
+    {
+      "from": "prop_3",
+      "to": "thm_1",
+      "type": "instantiates",
+      "rationale": "It applies the deterministic optimal intervention formula to E[bhat]."
+    },
+    {
+      "from": "prop_3",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "The incomplete-information extension uses the same principal-component decomposition."
+    },
+    {
+      "from": "prop_3",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The equilibrium mapping and alpha coefficients require Assumption 2."
+    },
+    {
+      "from": "prop_3",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "Expected welfare is decomposed using Property A."
+    },
+    {
+      "from": "prop_4",
+      "to": "eq_8",
+      "type": "derives_from",
+      "rationale": "Variance-control targeting follows from the variance term in expected welfare."
+    },
+    {
+      "from": "prop_4",
+      "to": "A5",
+      "type": "requires",
+      "rationale": "The result needs mean-neutral, rotationally symmetric intervention costs."
+    },
+    {
+      "from": "prop_4",
+      "to": "N20",
+      "type": "depends_on",
+      "rationale": "Directional cost neutrality lets the benefit-side alpha ordering determine variance allocation."
+    },
+    {
+      "from": "prop_4",
+      "to": "N14",
+      "type": "derives_from",
+      "rationale": "The variance allocation ranking uses the same alpha ordering across components."
+    },
+    {
+      "from": "prop_4",
+      "to": "N17",
+      "type": "requires",
+      "rationale": "The proposition is stated for random interventions over standalone marginal returns."
+    },
+    {
+      "from": "prop_4",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "The variance directions are principal components of the symmetric interaction matrix."
+    },
+    {
+      "from": "prop_4",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The ranking relies on the well-defined equilibrium response coefficients."
+    },
+    {
+      "from": "prop_4",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "The expected-welfare formula uses Property A."
+    },
+    {
+      "from": "prop_oa1",
+      "to": "OA2",
+      "type": "requires",
+      "rationale": "The proposition is explicitly about cost functions satisfying Assumption OA2."
+    },
+    {
+      "from": "prop_oa1",
+      "to": "prop_1",
+      "type": "derives_from",
+      "rationale": "Its limiting small-budget ranking matches Proposition 1's alpha-ratio limit."
+    },
+    {
+      "from": "prop_oa1",
+      "to": "PA",
+      "type": "requires",
+      "rationale": "The extension keeps the same welfare-quadratic structure."
+    },
+    {
+      "from": "prop_oa1",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "The principal-component ranking requires the symmetric matrix basis."
+    },
+    {
+      "from": "prop_oa1",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The alpha terms require a well-defined equilibrium response."
+    },
+    {
+      "from": "prop_oa2",
+      "to": "OA2",
+      "type": "requires",
+      "rationale": "The orthogonal-invariance conclusion assumes the regularity conditions in OA2."
+    },
+    {
+      "from": "prop_oa2",
+      "to": "OA3",
+      "type": "requires",
+      "rationale": "Homogeneity is the additional condition that turns OA2 costs into norm-based costs."
+    },
+    {
+      "from": "prop_oa2",
+      "to": "N11",
+      "type": "depends_on",
+      "rationale": "Norm-based costs preserve the orthogonal decomposition used in the main analysis."
+    },
+    {
+      "from": "prop_oa3",
+      "to": "N23",
+      "type": "requires",
+      "rationale": "The one-target conclusion is specific to the linear-cost intervention problem."
+    },
+    {
+      "from": "prop_oa3",
+      "to": "eq_IT",
+      "type": "instantiates",
+      "rationale": "The linear-cost problem is a variant of the incentive-targeting problem."
+    },
+    {
+      "from": "N24",
+      "to": "N11",
+      "type": "depends_on",
+      "rationale": "The nonsymmetric extension keeps the decomposition logic but changes the basis to singular vectors."
+    },
+    {
+      "from": "N24",
+      "to": "A1",
+      "type": "depends_on",
+      "rationale": "The extension is defined by relaxing the symmetry condition in Assumption 1."
+    },
+    {
+      "from": "eq_2",
+      "to": "eq_1",
+      "type": "derives_from",
+      "rationale": "The linear best-response system is the first-order condition of the payoff equation."
+    },
+    {
+      "from": "eq_2",
+      "to": "N2",
+      "type": "requires",
+      "rationale": "The equilibrium condition is for the simultaneous-move network game."
+    },
+    {
+      "from": "eq_2",
+      "to": "N3",
+      "type": "requires",
+      "rationale": "Standalone marginal returns enter the equilibrium system as b."
+    },
+    {
+      "from": "eq_3",
+      "to": "eq_2",
+      "type": "derives_from",
+      "rationale": "The closed form is obtained by inverting the linear equilibrium system."
+    },
+    {
+      "from": "eq_3",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "Assumption 2 ensures the inverse exists and the equilibrium is unique."
+    },
+    {
+      "from": "eq_4",
+      "to": "eq_3",
+      "type": "derives_from",
+      "rationale": "Projecting the closed-form equilibrium into the eigenbasis yields componentwise responses."
+    },
+    {
+      "from": "eq_4",
+      "to": "N5",
+      "type": "requires",
+      "rationale": "The equation is expressed in the principal-component basis."
+    },
+    {
+      "from": "eq_4",
+      "to": "N6",
+      "type": "requires",
+      "rationale": "The terms b_ell and a_ell are projections onto principal components."
+    },
+    {
+      "from": "eq_5",
+      "to": "N7",
+      "type": "requires",
+      "rationale": "The equation relates cosine similarities."
+    },
+    {
+      "from": "eq_5",
+      "to": "N12",
+      "type": "depends_on",
+      "rationale": "One factor is status quo similarity to each component."
+    },
+    {
+      "from": "eq_5",
+      "to": "N13",
+      "type": "depends_on",
+      "rationale": "The other factor is the eigenvalue-budget multiplier."
+    },
+    {
+      "from": "eq_5",
+      "to": "eq_7",
+      "type": "requires",
+      "rationale": "The multiplier uses alpha_ell."
+    },
+    {
+      "from": "eq_5",
+      "to": "N15",
+      "type": "derives_from",
+      "rationale": "The proportionality comes from first-order conditions that equalize marginal return and cost."
+    },
+    {
+      "from": "eq_6",
+      "to": "eq_IT",
+      "type": "derives_from",
+      "rationale": "The equation is the binding budget constraint expressed in component coordinates."
+    },
+    {
+      "from": "eq_6",
+      "to": "N15",
+      "type": "requires",
+      "rationale": "The same Lagrange multiplier from marginal equalization appears in the budget equation."
+    },
+    {
+      "from": "eq_7",
+      "to": "eq_4",
+      "type": "derives_from",
+      "rationale": "Alpha is the squared amplification factor from the principal-component equilibrium response."
+    },
+    {
+      "from": "eq_7",
+      "to": "A2",
+      "type": "requires",
+      "rationale": "The denominator is positive under the spectral-radius condition."
+    },
+    {
+      "from": "eq_8",
+      "to": "PA",
+      "type": "derives_from",
+      "rationale": "Expected welfare is obtained by applying Property A to random equilibrium actions."
+    },
+    {
+      "from": "eq_8",
+      "to": "eq_4",
+      "type": "derives_from",
+      "rationale": "Principal-component equilibrium responses convert component means and variances into welfare."
+    },
+    {
+      "from": "eq_8",
+      "to": "N17",
+      "type": "requires",
+      "rationale": "The expression concerns random standalone marginal returns under incomplete information."
+    },
+    {
+      "from": "eq_8",
+      "to": "N18",
+      "type": "identifies",
+      "rationale": "The equation identifies the first and second moments as the relevant statistics."
+    },
+    {
+      "from": "eq_9",
+      "to": "A5",
+      "type": "instantiates",
+      "rationale": "The total-variance cost is an example satisfying the variance-control cost restriction."
+    },
+    {
+      "from": "eq_IT",
+      "to": "N4",
+      "type": "requires",
+      "rationale": "The problem formalizes intervention as a constrained change from the status quo."
+    },
+    {
+      "from": "eq_IT",
+      "to": "eq_3",
+      "type": "requires",
+      "rationale": "The planner's constraint embeds the equilibrium mapping from incentives to actions."
+    },
+    {
+      "from": "eq_IT",
+      "to": "PA",
+      "type": "depends_on",
+      "rationale": "The subsequent tractable objective uses Property A to express welfare in action squares."
+    },
+    {
+      "from": "N8",
+      "to": "N7",
+      "type": "requires",
+      "rationale": "The similarity ratio divides two cosine similarities."
+    },
+    {
+      "from": "N8",
+      "to": "eq_5",
+      "type": "derives_from",
+      "rationale": "The ratio isolates the non-status-quo factor in Equation (5)."
+    },
+    {
+      "from": "N9",
+      "to": "N5",
+      "type": "requires",
+      "rationale": "Simple interventions are defined by the first or last principal component."
+    },
+    {
+      "from": "N9",
+      "to": "N4",
+      "type": "requires",
+      "rationale": "A simple intervention is a particular change to standalone marginal returns."
+    },
+    {
+      "from": "N11",
+      "to": "N5",
+      "type": "requires",
+      "rationale": "Separability is obtained by using the principal-component basis."
+    },
+    {
+      "from": "N11",
+      "to": "A1",
+      "type": "requires",
+      "rationale": "Orthogonal diagonalization follows from the symmetry of G."
+    },
+    {
+      "from": "N12",
+      "to": "N6",
+      "type": "requires",
+      "rationale": "Status quo similarity is computed by projecting the status quo vector on each component."
+    },
+    {
+      "from": "N12",
+      "to": "N3",
+      "type": "depends_on",
+      "rationale": "The status quo vector consists of standalone marginal returns."
+    },
+    {
+      "from": "N13",
+      "to": "eq_7",
+      "type": "depends_on",
+      "rationale": "The network multiplier is alpha_ell."
+    },
+    {
+      "from": "N13",
+      "to": "eq_6",
+      "type": "depends_on",
+      "rationale": "The multiplier also depends on the budget through mu."
+    },
+    {
+      "from": "N14",
+      "to": "eq_7",
+      "type": "derives_from",
+      "rationale": "The ordering by sign of beta follows from alpha_ell as a function of lambda_ell."
+    },
+    {
+      "from": "N14",
+      "to": "N10",
+      "type": "depends_on",
+      "rationale": "The sign of beta determines whether the game has complements or substitutes."
+    },
+    {
+      "from": "N15",
+      "to": "eq_IT",
+      "type": "derives_from",
+      "rationale": "The marginal equalization condition is the first-order condition of the constrained optimization."
+    },
+    {
+      "from": "N15",
+      "to": "eq_7",
+      "type": "depends_on",
+      "rationale": "Marginal returns in each component are scaled by alpha_ell."
+    },
+    {
+      "from": "N16",
+      "to": "N13",
+      "type": "depends_on",
+      "rationale": "Similarity of amplification across components is similarity of their multiplier terms."
+    },
+    {
+      "from": "N16",
+      "to": "N14",
+      "type": "depends_on",
+      "rationale": "Which gap matters is determined by complements versus substitutes."
+    },
+    {
+      "from": "N18",
+      "to": "eq_8",
+      "type": "derives_from",
+      "rationale": "The mean-variance mechanism is read directly from Equation (8)."
+    },
+    {
+      "from": "N19",
+      "to": "N17",
+      "type": "requires",
+      "rationale": "The mean-shift policy is a restriction on the incomplete-information random vector."
+    },
+    {
+      "from": "N20",
+      "to": "A5",
+      "type": "derives_from",
+      "rationale": "Directional neutrality is the interpretation of Assumption 5's rotation invariance."
+    },
+    {
+      "from": "N21",
+      "to": "PA",
+      "type": "instantiates",
+      "rationale": "The investment-game example verifies welfare is proportional to squared equilibrium actions."
+    },
+    {
+      "from": "N21",
+      "to": "eq_1",
+      "type": "instantiates",
+      "rationale": "The investment game is a concrete payoff instance of the baseline equation."
+    },
+    {
+      "from": "N22",
+      "to": "PA",
+      "type": "instantiates",
+      "rationale": "The local-public-good example also satisfies Property A."
+    },
+    {
+      "from": "N22",
+      "to": "N10",
+      "type": "instantiates",
+      "rationale": "It supplies a strategic-substitutes application of the framework."
+    },
+    {
+      "from": "PA",
+      "to": "N21",
+      "type": "supported_by",
+      "rationale": "The paper motivates Property A by first verifying it in the investment-game example."
+    },
+    {
+      "from": "PA",
+      "to": "N22",
+      "type": "supported_by",
+      "rationale": "The paper also motivates Property A through the local-public-good example."
+    },
+    {
+      "from": "N23",
+      "to": "N4",
+      "type": "instantiates",
+      "rationale": "The linear-cost model is an alternative budget technology for changing standalone marginal returns."
+    }
+  ]
+}

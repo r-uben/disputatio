@@ -1,0 +1,441 @@
+{
+  "paper": "galeotti-golub-goyal-2020",
+  "n_nodes": 57,
+  "n_edges": 124,
+  "is_dag": false,
+  "cycles": [
+    [
+      "N18",
+      "eq_8"
+    ],
+    [
+      "N21",
+      "PA"
+    ],
+    [
+      "PA",
+      "N22"
+    ]
+  ],
+  "load_bearing": [
+    {
+      "id": "eq_1",
+      "dependents": 31,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "N3",
+      "dependents": 29,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "N2",
+      "dependents": 28,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "N5",
+      "dependents": 28,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "eq_2",
+      "dependents": 27,
+      "betweenness": 0.0162,
+      "tier": "critical"
+    },
+    {
+      "id": "A2",
+      "dependents": 27,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "N10",
+      "dependents": 27,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "eq_3",
+      "dependents": 26,
+      "betweenness": 0.0254,
+      "tier": "critical"
+    },
+    {
+      "id": "PA",
+      "dependents": 25,
+      "betweenness": 0.0269,
+      "tier": "critical"
+    },
+    {
+      "id": "N21",
+      "dependents": 25,
+      "betweenness": 0.0066,
+      "tier": "critical"
+    },
+    {
+      "id": "N22",
+      "dependents": 25,
+      "betweenness": 0.0054,
+      "tier": "critical"
+    },
+    {
+      "id": "N6",
+      "dependents": 25,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "eq_4",
+      "dependents": 23,
+      "betweenness": 0.0229,
+      "tier": "critical"
+    },
+    {
+      "id": "N4",
+      "dependents": 22,
+      "betweenness": 0.0,
+      "tier": "critical"
+    },
+    {
+      "id": "eq_7",
+      "dependents": 20,
+      "betweenness": 0.0188,
+      "tier": "high"
+    },
+    {
+      "id": "eq_IT",
+      "dependents": 19,
+      "betweenness": 0.0318,
+      "tier": "high"
+    },
+    {
+      "id": "N15",
+      "dependents": 17,
+      "betweenness": 0.0079,
+      "tier": "high"
+    },
+    {
+      "id": "eq_6",
+      "dependents": 16,
+      "betweenness": 0.0084,
+      "tier": "high"
+    },
+    {
+      "id": "A1",
+      "dependents": 16,
+      "betweenness": 0.0,
+      "tier": "high"
+    },
+    {
+      "id": "N13",
+      "dependents": 15,
+      "betweenness": 0.0055,
+      "tier": "high"
+    },
+    {
+      "id": "N12",
+      "dependents": 14,
+      "betweenness": 0.0075,
+      "tier": "high"
+    },
+    {
+      "id": "N7",
+      "dependents": 14,
+      "betweenness": 0.0,
+      "tier": "high"
+    },
+    {
+      "id": "eq_5",
+      "dependents": 13,
+      "betweenness": 0.0254,
+      "tier": "high"
+    },
+    {
+      "id": "A3",
+      "dependents": 12,
+      "betweenness": 0.0,
+      "tier": "high"
+    },
+    {
+      "id": "thm_1",
+      "dependents": 11,
+      "betweenness": 0.0315,
+      "tier": "high"
+    },
+    {
+      "id": "N14",
+      "dependents": 11,
+      "betweenness": 0.0078,
+      "tier": "high"
+    },
+    {
+      "id": "N8",
+      "dependents": 8,
+      "betweenness": 0.0017,
+      "tier": "medium"
+    },
+    {
+      "id": "N1",
+      "dependents": 7,
+      "betweenness": 0.0122,
+      "tier": "medium"
+    },
+    {
+      "id": "N17",
+      "dependents": 6,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_1",
+      "dependents": 5,
+      "betweenness": 0.0232,
+      "tier": "medium"
+    },
+    {
+      "id": "eq_8",
+      "dependents": 4,
+      "betweenness": 0.0119,
+      "tier": "medium"
+    },
+    {
+      "id": "N11",
+      "dependents": 4,
+      "betweenness": 0.0015,
+      "tier": "medium"
+    },
+    {
+      "id": "A5",
+      "dependents": 4,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "N18",
+      "dependents": 4,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "N9",
+      "dependents": 3,
+      "betweenness": 0.0019,
+      "tier": "medium"
+    },
+    {
+      "id": "OA2",
+      "dependents": 3,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "N16",
+      "dependents": 2,
+      "betweenness": 0.003,
+      "tier": "medium"
+    },
+    {
+      "id": "N23",
+      "dependents": 2,
+      "betweenness": 0.0003,
+      "tier": "medium"
+    },
+    {
+      "id": "A4",
+      "dependents": 2,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "OA3",
+      "dependents": 2,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "N19",
+      "dependents": 2,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "N20",
+      "dependents": 2,
+      "betweenness": 0.0,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_2",
+      "dependents": 1,
+      "betweenness": 0.0078,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_oa1",
+      "dependents": 1,
+      "betweenness": 0.0073,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_3",
+      "dependents": 1,
+      "betweenness": 0.0049,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_4",
+      "dependents": 1,
+      "betweenness": 0.0025,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_oa3",
+      "dependents": 1,
+      "betweenness": 0.0021,
+      "tier": "medium"
+    },
+    {
+      "id": "prop_oa2",
+      "dependents": 1,
+      "betweenness": 0.0008,
+      "tier": "medium"
+    },
+    {
+      "id": "N24",
+      "dependents": 1,
+      "betweenness": 0.0005,
+      "tier": "medium"
+    },
+    {
+      "id": "C1",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "C2",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "C3",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "C4",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "C5",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "C6",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "OA1",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    },
+    {
+      "id": "eq_9",
+      "dependents": 0,
+      "betweenness": 0.0,
+      "tier": "low"
+    }
+  ],
+  "critical_nodes": [
+    {
+      "id": "prop_1",
+      "gates": 26
+    },
+    {
+      "id": "thm_1",
+      "gates": 22
+    },
+    {
+      "id": "N1",
+      "gates": 15
+    },
+    {
+      "id": "prop_oa1",
+      "gates": 15
+    },
+    {
+      "id": "prop_3",
+      "gates": 12
+    },
+    {
+      "id": "prop_2",
+      "gates": 10
+    },
+    {
+      "id": "PA",
+      "gates": 3
+    },
+    {
+      "id": "prop_4",
+      "gates": 3
+    },
+    {
+      "id": "eq_7",
+      "gates": 2
+    },
+    {
+      "id": "eq_3",
+      "gates": 2
+    },
+    {
+      "id": "eq_5",
+      "gates": 2
+    },
+    {
+      "id": "eq_2",
+      "gates": 1
+    },
+    {
+      "id": "eq_IT",
+      "gates": 1
+    },
+    {
+      "id": "N22",
+      "gates": 1
+    },
+    {
+      "id": "eq_4",
+      "gates": 1
+    },
+    {
+      "id": "eq_8",
+      "gates": 1
+    },
+    {
+      "id": "prop_oa3",
+      "gates": 1
+    },
+    {
+      "id": "prop_oa2",
+      "gates": 1
+    }
+  ],
+  "gap_candidates": [],
+  "framing_overreach_candidates": [],
+  "n_components": 2
+}
