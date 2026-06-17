@@ -1,0 +1,262 @@
+#!/opt/homebrew/bin/python3
+"""agy-set-model — programmatically switch the active Antigravity (agy) model.
+
+agy v1.0 has no `--model` CLI flag; model selection lives behind the
+interactive `/model` picker. This wrapper spawns agy in a pty, navigates
+the picker, commits the change, and exits cleanly. The new selection is
+sticky in encrypted state and applies to all future agy invocations
+(including headless `agy -p` and downstream callers like `agent_ctl`).
+
+Usage:
+    agy-set-model "Gemini 3.1 Pro (High)"
+    agy-set-model --list
+
+Exits 0 on confirmed switch (picker closed cleanly), non-zero on any
+unexpected state (model not found, picker didn't render, etc.).
+
+This driver is timing-sensitive — agy is a Bubbletea TUI, not a stable
+CLI. If Google reorders the picker or changes the keymap in a future
+release, this script breaks visibly rather than silently doing the
+wrong thing.
+"""
+from __future__ import annotations
+import argparse
+import os
+import re
+import sys
+import time
+
+try:
+    import pexpect
+except ImportError:
+    sys.exit("agy-set-model: pexpect is required. Install with: "
+             "python3 -m pip install --user --break-system-packages pexpect")
+
+MODELS = [
+    "Gemini 3.5 Flash (High)",
+    "Gemini 3.5 Flash (Medium)",
+    "Gemini 3.1 Pro (High)",
+    "Gemini 3.1 Pro (Low)",
+    "Claude Sonnet 4.6 (Thinking)",
+    "Claude Opus 4.6 (Thinking)",
+    "GPT-OSS 120B (Medium)",
+]
+
+ANSI_RE = re.compile(
+    r"\x1b\[[\?\>=]?[0-9;]*[a-zA-Z\$]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|\x1b[\(\)\*\+][\w012]"
+    r"|\x1b[=>DEMNOPV78]"
+    r"|[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]"
+)
+
+
+def clean(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
+def find_model_index(target: str) -> int:
+    for i, name in enumerate(MODELS):
+        if name == target:
+            return i
+    # Case/space-insensitive fallback
+    norm = re.sub(r"\s+", "", target).lower()
+    for i, name in enumerate(MODELS):
+        if re.sub(r"\s+", "", name).lower() == norm:
+            return i
+    sys.exit(
+        f"agy-set-model: unknown model '{target}'.\n"
+        f"Known models:\n  - " + "\n  - ".join(MODELS)
+    )
+
+
+def detect_current(buffer: str) -> str | None:
+    """Return the name of the model currently marked (current) in the picker
+    output, or None if the marker isn't found."""
+    for line in clean(buffer).splitlines():
+        m = re.search(r"^(?:>\s*)?(.+?)\s+\(current\)\s*$", line.strip())
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def switch(target: str, *, verbose: bool = False) -> None:
+    target_idx = find_model_index(target)
+
+    env = os.environ.copy()
+    env.setdefault("TERM", "xterm-256color")
+
+    child = pexpect.spawn(
+        "agy",
+        encoding=None,
+        timeout=20,
+        dimensions=(40, 120),
+        env=env,
+    )
+
+    def vprint(msg: str) -> None:
+        if verbose:
+            print(f"[agy-set-model] {msg}", file=sys.stderr, flush=True)
+
+    accumulated = bytearray()
+
+    def collect(t: float) -> str:
+        """Keep reading for up to t seconds, returning whatever rendered."""
+        end = time.time() + t
+        chunks = bytearray()
+        while time.time() < end:
+            try:
+                buf = child.read_nonblocking(size=1 << 16, timeout=0.3)
+                if buf:
+                    chunks.extend(buf)
+                    accumulated.extend(buf)
+            except pexpect.exceptions.TIMEOUT:
+                continue
+            except pexpect.exceptions.EOF:
+                break
+        return chunks.decode(errors="replace")
+
+    def wait_for(needle: str, timeout: float) -> str:
+        """Read incrementally until `needle` appears in the cleaned output
+        or timeout. Returns the cleaned accumulated text."""
+        end = time.time() + timeout
+        text = ""
+        while time.time() < end:
+            try:
+                buf = child.read_nonblocking(size=1 << 16, timeout=0.4)
+                if buf:
+                    accumulated.extend(buf)
+            except pexpect.exceptions.TIMEOUT:
+                pass
+            except pexpect.exceptions.EOF:
+                break
+            text = clean(bytes(accumulated).decode(errors="replace"))
+            if needle in text:
+                return text
+        return text
+
+    def type_command(text: bytes) -> None:
+        """Type a slash-command character by character; agy's slash-picker
+        sometimes loses /model\\r if sent in one shot."""
+        for byte in text:
+            child.send(bytes([byte]))
+            time.sleep(0.04)
+
+    try:
+        # Stage 1: wait for the chat prompt to be ready
+        vprint("waiting for chat prompt...")
+        startup_text = wait_for("? for shortcuts", timeout=12.0)
+        if "? for shortcuts" not in startup_text:
+            vprint("chat prompt marker not seen; proceeding anyway")
+        # Extra settle time before typing
+        time.sleep(0.5)
+        accumulated.clear()
+
+        # Stage 2: open the picker
+        vprint("typing /model")
+        type_command(b"/model")
+        time.sleep(0.3)
+        child.send(b"\r")
+
+        picker_text = wait_for("Switch Model", timeout=8.0)
+        if "Switch Model" not in picker_text:
+            vprint("picker not rendered — dump:")
+            print(clean(bytes(accumulated).decode(errors="replace")),
+                  file=sys.stderr)
+            child.close(force=True)
+            sys.exit("agy-set-model: model picker didn't render")
+
+        current = detect_current(picker_text)
+        vprint(f"current model = {current!r}")
+
+        if current is None:
+            child.close(force=True)
+            sys.exit("agy-set-model: could not detect current-model line")
+
+        if current == target:
+            vprint(f"already on {target} — closing picker")
+            child.send(b"\x1b")
+            collect(1.0)
+            child.send(b"/quit\r")
+            collect(2.0)
+            child.close(force=True)
+            print(f"agy: already on {target}")
+            return
+
+        current_idx = find_model_index(current)
+        delta = target_idx - current_idx
+        vprint(f"navigating from index {current_idx} to {target_idx} "
+               f"({delta:+d})")
+
+        arrow = b"\x1b[B" if delta > 0 else b"\x1b[A"
+        for _ in range(abs(delta)):
+            child.send(arrow)
+            time.sleep(0.18)
+
+        # Let picker repaint with new highlight
+        collect(0.8)
+
+        # Stage 3: commit
+        vprint("sending Enter")
+        accumulated.clear()
+        child.send(b"\r")
+        # The picker closes and returns to the chat prompt
+        wait_for("? for shortcuts", timeout=6.0)
+
+        # Stage 4: verify by reopening the picker
+        vprint("verifying selection")
+        accumulated.clear()
+        type_command(b"/model")
+        time.sleep(0.3)
+        child.send(b"\r")
+        verify_text = wait_for("Switch Model", timeout=6.0)
+        new_current = detect_current(verify_text)
+        vprint(f"after-switch current = {new_current!r}")
+
+        # Close verification picker + exit agy
+        child.send(b"\x1b")
+        collect(0.5)
+        child.send(b"/quit\r")
+        collect(2.0)
+        child.close(force=True)
+
+        if new_current != target:
+            sys.exit(
+                f"agy-set-model: switch failed. Wanted {target!r}, "
+                f"picker reports {new_current!r}."
+            )
+
+        print(f"agy: switched to {target}")
+    except pexpect.exceptions.ExceptionPexpect as e:
+        try:
+            child.close(force=True)
+        except Exception:
+            pass
+        sys.exit(f"agy-set-model: pexpect error: {e}")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Switch the active Antigravity reasoning model."
+    )
+    p.add_argument("model", nargs="?",
+                   help="Target model name, e.g. 'Gemini 3.1 Pro (High)'.")
+    p.add_argument("--list", action="store_true",
+                   help="List known model names and exit.")
+    p.add_argument("--verbose", "-v", action="store_true",
+                   help="Print stage-by-stage progress to stderr.")
+    args = p.parse_args()
+
+    if args.list:
+        for name in MODELS:
+            print(name)
+        return
+
+    if not args.model:
+        p.error("model name is required (or --list)")
+
+    switch(args.model, verbose=args.verbose)
+
+
+if __name__ == "__main__":
+    main()
