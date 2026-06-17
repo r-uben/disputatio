@@ -1,0 +1,13 @@
+{
+  "_status": "List prices, USD per million tokens. Claude values are ballpark; gpt-5.x / gemini-3.x are null = UNPRICED until verified against provider pricing. Subscription routing makes MARGINAL cost ~$0 — these are API-equivalent comparators for placing disputatio vs Refine on a cost-quality frontier. VERIFY before reporting any headline EUR/paper.",
+  "prices": {
+    "claude-opus":   {"in_per_mtok": 15.0, "out_per_mtok": 75.0},
+    "claude-sonnet": {"in_per_mtok": 3.0,  "out_per_mtok": 15.0},
+    "claude-haiku":  {"in_per_mtok": 0.80, "out_per_mtok": 4.0},
+    "gpt-5.5":      null,
+    "gpt-5.4":      null,
+    "gpt-5.4-mini": null,
+    "gemini-pro":   null,
+    "gemini-flash": null
+  }
+}
