@@ -252,9 +252,11 @@ def emit_mermaid(doc, G, path):
         f.write(md)
 
 
-def emit_canvas(doc, G, path):
-    """Obsidian .canvas — interactive node-edge board, laid out by dependency depth
-    (primitives at the bottom, headline at top). Dominators red, primitives green."""
+def emit_canvas(doc, G, path, findings=None):
+    """Obsidian .canvas — node-edge board laid out by dependency depth (primitives at
+    the bottom, headline at top). Dominators red (color 1), primitives green (4). If
+    `findings` is given, hang each concern as an orange (2) card off the node it targets
+    — the head-to-head audit surface: you see concerns cluster on the red dominators."""
     from collections import defaultdict
     crit, prims = _critical_set(G), _primitives(G)
     d = _depths(G)
@@ -262,21 +264,35 @@ def emit_canvas(doc, G, path):
     layers = defaultdict(list)
     for n in G:
         layers[d[n]].append(n)
-    W, H, GX, GY = 270, 120, 330, 210
-    nodes = []
+    W, H, GX, GY = 270, 120, 360, 230
+    nodes, pos = [], {}
     for layer, ns in layers.items():
         y = (maxd - layer) * GY
         for i, n in enumerate(sorted(ns)):
+            x = i * GX
+            pos[n] = (x, y)
             lab = G.nodes[n].get("label") or ""
             node = {"id": n, "type": "text",
                     "text": f"**{n}** [{G.nodes[n].get('type')}]\n{lab}",
-                    "x": i * GX, "y": y, "width": W, "height": H}
+                    "x": x, "y": y, "width": W, "height": H}
             color = "1" if n in crit else ("4" if n in prims else None)
             if color:
                 node["color"] = color
             nodes.append(node)
     edges = [{"id": f"e{i}", "fromNode": u, "toNode": v, "fromSide": "bottom", "toSide": "top"}
              for i, (u, v) in enumerate(G.edges)]
+    if findings:
+        fx = max((nd["x"] for nd in nodes), default=0) + 700
+        for i, f in enumerate(findings):
+            cid = f"finding_{f['id']}"
+            nodes.append({"id": cid, "type": "text",
+                          "text": f"**{f['id']}**  ({f.get('severity', '?')}/{f.get('category', '?')})\n{f.get('concern', '')}",
+                          "x": fx, "y": i * (H + 50), "width": 330, "height": H, "color": "2"})
+            tgt = f.get("node")
+            if tgt in pos:
+                edges.append({"id": f"fe_{f['id']}", "fromNode": tgt, "toNode": cid,
+                              "fromSide": "right", "toSide": "left", "color": "2",
+                              "label": f.get("category", "")})
     with open(path, "w") as f:
         json.dump({"nodes": nodes, "edges": edges}, f, indent=2)
 
@@ -287,8 +303,13 @@ def main():
     ap.add_argument("--report", help="write JSON report here")
     ap.add_argument("--mermaid", help="write a markdown+mermaid diagram here")
     ap.add_argument("--canvas", help="write an Obsidian .canvas here")
+    ap.add_argument("--findings", help="findings JSON to overlay onto the canvas")
     args = ap.parse_args()
     doc, G, missing = load_graph(args.graph)
+    findings = None
+    if args.findings:
+        with open(args.findings) as f:
+            findings = json.load(f).get("findings", [])
     out, text = analyze(doc, G, missing)
     print(text)
     if args.report:
@@ -299,8 +320,9 @@ def main():
         emit_mermaid(doc, G, args.mermaid)
         print(f"[mermaid written: {args.mermaid}]", file=sys.stderr)
     if args.canvas:
-        emit_canvas(doc, G, args.canvas)
-        print(f"[canvas written: {args.canvas}]", file=sys.stderr)
+        emit_canvas(doc, G, args.canvas, findings=findings)
+        print(f"[canvas written: {args.canvas}]"
+              + (f" with {len(findings)} findings overlaid" if findings else ""), file=sys.stderr)
 
 
 if __name__ == "__main__":

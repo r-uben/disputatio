@@ -1,0 +1,14 @@
+{
+  "paper": "galeotti-golub-goyal-2020",
+  "side": "disputatio",
+  "note": "The 7 MATERIAL findings from disputatio's v71 panel, mapped to the argument-graph node each concerns (see RESULTS.md). Overlay shows them clustering on the dominator hot-spots.",
+  "findings": [
+    {"id": "F003", "node": "thm_1",    "severity": "material", "category": "proof",      "concern": "Theorem 1 omits a genericity hypothesis used in its proof's change of variables"},
+    {"id": "F001", "node": "prop_1",   "severity": "material", "category": "framing",     "concern": "Abstract's 'simplicity' claim overstates what Proposition 1 establishes"},
+    {"id": "F004", "node": "prop_2",   "severity": "material", "category": "robustness",  "concern": "Prop 2's near-optimal simple-intervention result hinges on a budget threshold"},
+    {"id": "F010", "node": "prop_4",   "severity": "material", "category": "framing",     "concern": "Prop 4 variance-ordering depends on the directional neutrality of Assumption 5"},
+    {"id": "F012", "node": "prop_oa1", "severity": "material", "category": "notation",    "concern": "OA3.1 reparameterization denominator should be the status-quo component"},
+    {"id": "F008", "node": "prop_oa1", "severity": "material", "category": "notation",    "concern": "Lemma OA1 Perron eigenvector entries: sqrt(n) should be 1/sqrt(n)"},
+    {"id": "F005", "node": "C1",       "severity": "material", "category": "robustness",  "concern": "Methodological-contribution framing (principal-components decomposition)"}
+  ]
+}
