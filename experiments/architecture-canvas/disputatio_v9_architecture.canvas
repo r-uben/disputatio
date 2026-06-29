@@ -1,0 +1,335 @@
+{
+  "nodes": [
+    {
+      "id": "init",
+      "type": "text",
+      "text": "**0 \u00b7 Init / OCR / preflight\nsocr; copy worker manuals**",
+      "x": 380,
+      "y": 0,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "orient",
+      "type": "text",
+      "text": "**0 \u00b7 Orientation\n3 independent paper maps (parallel)**",
+      "x": 380,
+      "y": 210,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "holistic",
+      "type": "text",
+      "text": "**1 \u00b7 Holistic pass\nspine + attack-surface index \u00b7 3 families**",
+      "x": 380,
+      "y": 420,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "graph_x",
+      "type": "text",
+      "text": "**1.25 \u00b7 Argument-graph extraction  [NEW]\n>=2 extractors, evidence-anchored nodes/edges**",
+      "x": 380,
+      "y": 630,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "graph_a",
+      "type": "text",
+      "text": "**1.3 \u00b7 Graph analysis  [NEW]\ndominators + ordinal heat buckets (networkx, ~free)**",
+      "x": 380,
+      "y": 840,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "lit",
+      "type": "text",
+      "text": "**1.75 \u00b7 Literature-lite\ncapped frontier+web, soft-fail, non-blocking**",
+      "x": 380,
+      "y": 1050,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "disc_hc",
+      "type": "text",
+      "text": "**2 \u00b7 holistic_candidates\nconceptual-scope concerns**",
+      "x": 0,
+      "y": 1260,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "disc_bc",
+      "type": "text",
+      "text": "**2 \u00b7 broad_critic + scope/framing\ncontradictions, overreach**",
+      "x": 380,
+      "y": 1260,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "disc_ne",
+      "type": "text",
+      "text": "**2 \u00b7 narrow_evidence + M8 + obligations + validity\nTARGETED at graph dominators**",
+      "x": 760,
+      "y": 1260,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "evid",
+      "type": "text",
+      "text": "**2 \u00b7 Evidence compiler\nverbatim-quote validation (deterministic)**",
+      "x": 380,
+      "y": 1470,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "merge",
+      "type": "text",
+      "text": "**3 \u00b7 Merge / rank / web-verify\ncarry graph_prior as metadata**",
+      "x": 380,
+      "y": 1680,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "calib",
+      "type": "text",
+      "text": "**\u00b7 Unified contract calibration\nsmall bulk + frontier re-annotator on material\nREPLACES 3g/3v/3s/3e/5a**",
+      "x": 380,
+      "y": 1890,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "gate",
+      "type": "text",
+      "text": "**4 \u00b7 Escalation gate\nRoute A (4 conds) \u00b7 Route B (consensus) \u00b7 skip**",
+      "x": 380,
+      "y": 2100,
+      "width": 330,
+      "height": 120,
+      "color": "6"
+    },
+    {
+      "id": "debate",
+      "type": "text",
+      "text": "**4 \u00b7 Debate\nprosecute->defend->synthesize / red-team**",
+      "x": 0,
+      "y": 2310,
+      "width": 330,
+      "height": 120,
+      "color": "1"
+    },
+    {
+      "id": "final",
+      "type": "text",
+      "text": "**5b \u00b7 Finalize\ncapture surviving_text -> final_findings.json**",
+      "x": 380,
+      "y": 2520,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "render",
+      "type": "text",
+      "text": "**6 \u00b7 Panel + render + Canvas heatmap\nrenderer cannot invent findings**",
+      "x": 380,
+      "y": 2730,
+      "width": 330,
+      "height": 120,
+      "color": "4"
+    },
+    {
+      "id": "legend",
+      "type": "text",
+      "text": "**disputatio v9 \u2014 target architecture**\n\nColour = model tier:\n\ud83d\udd34 frontier / judgment (cost targets)\n\ud83d\udfe2 mechanical / cheap-able (small/local)\n\ud83d\udfe1 opt-in / dev\n\ud83d\udfe3 decision gate\n\nArrows point in flow order. Source: docs/log/2026-06-18_v9-architecture.md",
+      "x": -460,
+      "y": 0,
+      "width": 420,
+      "height": 280,
+      "color": "5"
+    },
+    {
+      "id": "bench",
+      "type": "text",
+      "text": "**_benchmark harness (dev)**\n8-stage head-to-head + cost ledger\nthe dual ruler \u2014 measures quality + EUR/paper",
+      "x": -460,
+      "y": 630,
+      "width": 420,
+      "height": 120,
+      "color": "3"
+    },
+    {
+      "id": "cut",
+      "type": "text",
+      "text": "**Folded in / cut (v9):**\nv8 audit tracks 1.5/2.5/2.6 -> discovery sub-tasks (checks kept)\n2.7 exposition -> cut from default (gated on benchmark)\n5 calibrators -> 1 unified node",
+      "x": 1140,
+      "y": 1890,
+      "width": 420,
+      "height": 150,
+      "color": "2"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "fromNode": "init",
+      "toNode": "orient",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e1",
+      "fromNode": "orient",
+      "toNode": "holistic",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e2",
+      "fromNode": "holistic",
+      "toNode": "graph_x",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "fromNode": "graph_x",
+      "toNode": "graph_a",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e4",
+      "fromNode": "graph_a",
+      "toNode": "lit",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e5",
+      "fromNode": "lit",
+      "toNode": "disc_hc",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e6",
+      "fromNode": "lit",
+      "toNode": "disc_bc",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e7",
+      "fromNode": "lit",
+      "toNode": "disc_ne",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e8",
+      "fromNode": "graph_a",
+      "toNode": "disc_ne",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "targets dominators",
+      "color": "2"
+    },
+    {
+      "id": "e9",
+      "fromNode": "disc_hc",
+      "toNode": "evid",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e10",
+      "fromNode": "disc_bc",
+      "toNode": "evid",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e11",
+      "fromNode": "disc_ne",
+      "toNode": "evid",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e12",
+      "fromNode": "evid",
+      "toNode": "merge",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e13",
+      "fromNode": "merge",
+      "toNode": "calib",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e14",
+      "fromNode": "calib",
+      "toNode": "gate",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e15",
+      "fromNode": "gate",
+      "toNode": "debate",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "Route A / B",
+      "color": "2"
+    },
+    {
+      "id": "e16",
+      "fromNode": "gate",
+      "toNode": "final",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "skip / no escalation",
+      "color": "2"
+    },
+    {
+      "id": "e17",
+      "fromNode": "debate",
+      "toNode": "final",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e18",
+      "fromNode": "final",
+      "toNode": "render",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ]
+}
