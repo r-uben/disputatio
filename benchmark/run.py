@@ -22,6 +22,21 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+STAGES_DIR = Path(__file__).parent / "stages"
+STAGE_FILES = {  # stage name -> template file (benchmark/stages/, verbatim refine prompts)
+    "extract": "1_extract.md", "classify": "2_classify.md", "anchor_check": "3_anchor_check.md",
+    "align": "4_align.md", "rank": "5_rank.md", "judge": "6_judge.md",
+}
+
+
+def load_stage_prompt(stage, **placeholders):
+    """Load a stage template from benchmark/stages/ and fill its {placeholders}."""
+    text = (STAGES_DIR / STAGE_FILES[stage]).read_text()
+    for key, val in placeholders.items():
+        text = text.replace("{" + key + "}", val)
+    return text
 
 FAMILY = {  # model -> provider family, for the self-bias filter
     "gpt-5.5": "openai", "gpt-5.4": "openai", "gpt-5.4-mini": "openai",
@@ -101,12 +116,13 @@ def aggregate(x_concerns, y_concerns, align, judge_verdicts, x_label="disputatio
 def call_model(agent, prompt, stage, usage_log, model=None):
     """Run one model call via agent-ctl, append usage to the ledger log, return text.
     NOTE: token accounting is approximate (agent-ctl doesn't expose exact usage yet) —
-    we estimate from prompt/response length until real usage is wired."""
+    we estimate from prompt/response length until real usage is wired.
+    NOTE: agent-ctl `start` is async (returns a session id); a real implementation
+    must `wait`/`result` before this returns text. Stubbed until the first live run."""
     cmd = ["python3", "/Users/rubenffuertes/.claude/skills/agent_ctl.py", "start", agent, prompt]
     if model:
         cmd += ["-m", model]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=600).stdout
-    # TODO: agent-ctl start returns a session id; real impl waits + reads result.
     approx_in = len(prompt) // 4
     approx_out = len(out) // 4
     usage_log.append({"stage": stage, "model": model or agent, "in": approx_in, "out": approx_out})

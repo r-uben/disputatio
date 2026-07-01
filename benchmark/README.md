@@ -25,8 +25,11 @@ Data contracts: `schemas.md`.
 
 - [x] Cost ledger (`cost_ledger.py`) + price config (`model_prices.json`, prices to verify)
 - [x] Data-contract schemas (`schemas.md`)
-- [ ] Stage prompts (extract / classify / anchor-check / align / rank / judge) as agent-ctl tickets
-- [ ] Orchestrator wiring (`_benchmark/` sub-DAG, sibling to `_evaluation/`)
+- [x] Verbatim refine.ink appendix captured (`refine_appendix.md`) — faithful-reimplementation reference
+- [x] Deterministic core: bucketing, residual diff, flip-averaged judge, self-bias filter, aggregation (`run.py`, `--selftest` green)
+- [x] Stage prompts, verbatim from the appendix (`stages/1_extract.md` … `stages/6_judge.md`)
+- [x] Judge routing decided: disputatio is cross-architecture (anthropic+openai+google), so GPT/Gemini judges are ALWAYS self-bias-disqualified on a disputatio match. Primary panel = **Grok + Kimi** (neutral), flip-averaged. GPT-5.5+Gemini run only as a caveated secondary panel. See `stages/6_judge.md` header note.
+- [ ] Wire live `--run` (real agent-ctl calls + XML/JSON parsing — `call_model` is currently a stub)
 - [ ] First run on an arXiv econ-preprint pair (disputatio panel vs single-shot baseline)
 
 ## Run the cost ledger
