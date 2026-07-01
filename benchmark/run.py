@@ -118,7 +118,14 @@ def call_model(agent, prompt, stage, usage_log, model=None):
     NOTE: token accounting is approximate (agent-ctl doesn't expose exact usage yet) —
     we estimate from prompt/response length until real usage is wired.
     NOTE: agent-ctl `start` is async (returns a session id); a real implementation
-    must `wait`/`result` before this returns text. Stubbed until the first live run."""
+    must `wait`/`result` before this returns text. Stubbed until the first live run.
+    NOTE (2026-07-02 live run, ricco2026): a ~162K-char single inline CLI-argument
+    prompt asking codex to batch-classify 37 items returned an empty root in 27s
+    (vs 257s for a similarly-sized but simpler generative prompt) — looks like an
+    argument-size failure mode, not a reasoning failure. Fix that worked reliably:
+    keep the prompt SHORT and have codex (a full agentic CLI with --cwd access)
+    read the paper/concerns from files on disk instead of inlining everything.
+    Prefer disk-reference prompts over giant inline blobs for any per-batch stage."""
     cmd = ["python3", "/Users/rubenffuertes/.claude/skills/agent_ctl.py", "start", agent, prompt]
     if model:
         cmd += ["-m", model]
