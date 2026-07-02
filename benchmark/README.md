@@ -33,7 +33,9 @@ Data contracts: `schemas.md`.
 - [x] Contestant driver (`generate_disputatio.py`): orient → holistic → attack-surface index → 3 discovery tracks × 3 families → merge, fully scripted (ruler and contestant kept separate, mirroring refine's design)
 - [x] First manual thin-slice run (ricco2026, broad_critic-only): panel score 0.25 → baseline won; flagged as non-informative for the core thesis (wrong track for an identification paper) — see session log
 - [x] Full-discovery re-run on ricco2026 through the unified harness: **panel score 0.50 — tie** (up from 0.25). Judges split cleanly and order-stably (Grok→baseline on its 5 unique load-bearing identification critiques; Kimi→disputatio on specificity/anchoring density). 27 shared concerns ate most of disputatio's credit; its unique set kept only 1 load-bearing.
-- [ ] Next levers: implement refine's *harmonize* step (equalize matched-concern significance — matches may pair deep-X with shallow-Y versions), and/or add disputatio's calibration pass to the contestant driver
+- [x] Match verification + harmonize added to the ruler (`--rescore`): enforcing refine's own "same flaw, same feature — not topical adjacency" rule dropped 11/27 matches (symmetric: baseline's unique load-bearing actually GREW 5→7). Result: **panel score 1.0 — unanimous disputatio win, both judges, both orders** (Grok flipped). Mechanism: over-matching had been hiding baseline's generic filler inside "shared"; once visible in its residual, judges penalized it per refine's own vagueness criterion. Trajectory on ricco2026: 0.25 → 0.50 → 1.00.
+- Caveats (always disclose): n=1 paper, single judge sample (no error bars); the verification stage is our documented, symmetric addition — refine's own diff internals are unpublished.
+- [ ] Next: run more papers (the harness is two commands per paper) for a real sample; optional: calibration pass in the contestant driver
 
 ## Run it
 
