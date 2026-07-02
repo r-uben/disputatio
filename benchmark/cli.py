@@ -136,5 +136,48 @@ def main():
         cmd_report(args.outdir)
 
 
+def cmd_review(paper, outdir):
+    """EXPERIMENTAL standalone review — the discovery slice only (orient -> holistic ->
+    index -> 3 tracks x 3 families -> merge), rendered to markdown. The full pipeline
+    (calibration, escalation gate, debate, panel render) still runs via the /disputatio
+    skill in Claude Code; porting it to code IS the v9 milestone."""
+    from generate_disputatio import generate
+    outdir = Path(outdir)
+    merged = generate(paper, outdir)
+    lines = [f"# Review concerns — {Path(paper).stem}", "",
+             "> EXPERIMENTAL thin-slice output (discovery + merge only; not calibrated, "
+             "not debated, not a full disputatio panel — see /disputatio for the full pipeline).", ""]
+    for c in merged["concerns"]:
+        fams = ",".join(c.get("architecture_support", []))
+        anchor = c.get("anchor")
+        loc = f" — *{anchor['kind']}: {anchor['ref'][:100]}*" if anchor else ""
+        lines += [f"## {c['id']} · {c['title']}", f"({fams}){loc}", "", c["body"], ""]
+    out_md = outdir / "review_concerns.md"
+    out_md.write_text("\n".join(lines))
+    print(f"review: {len(merged['concerns'])} concerns -> {out_md}")
+
+
+def main_product():
+    """`disputatio` — the product front door (like gws/obsidian: installed, on PATH).
+
+        disputatio review <paper.md> --outdir RUN   experimental thin-slice review
+        disputatio bench <subcommand> ...           the full benchmark CLI (see `disputatio bench --help`)
+    """
+    argv = sys.argv[1:]
+    if argv and argv[0] == "bench":
+        sys.argv = [sys.argv[0] + " bench"] + argv[1:]
+        return main()
+    ap = argparse.ArgumentParser(prog="disputatio", description=main_product.__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    rv = sub.add_parser("review", help="experimental thin-slice review (discovery+merge)")
+    rv.add_argument("paper")
+    rv.add_argument("--outdir", required=True)
+    sub.add_parser("bench", help="benchmark subcommands (match/baseline/generate/score/...)")
+    args = ap.parse_args(argv)
+    if args.cmd == "review":
+        cmd_review(args.paper, args.outdir)
+
+
 if __name__ == "__main__":
     main()

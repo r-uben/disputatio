@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
+disputatio = "benchmark.cli:main_product"
 disputatio-bench = "benchmark.cli:main"
 
 [build-system]
