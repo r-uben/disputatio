@@ -29,8 +29,20 @@ Data contracts: `schemas.md`.
 - [x] Deterministic core: bucketing, residual diff, flip-averaged judge, self-bias filter, aggregation (`run.py`, `--selftest` green)
 - [x] Stage prompts, verbatim from the appendix (`stages/1_extract.md` … `stages/6_judge.md`)
 - [x] Judge routing decided: disputatio is cross-architecture (anthropic+openai+google), so GPT/Gemini judges are ALWAYS self-bias-disqualified on a disputatio match. Primary panel = **Grok + Kimi** (neutral), flip-averaged. GPT-5.5+Gemini run only as a caveated secondary panel. See `stages/6_judge.md` header note.
-- [ ] Wire live `--run` (real agent-ctl calls + XML/JSON parsing — `call_model` is currently a stub)
-- [ ] First run on an arXiv econ-preprint pair (disputatio panel vs single-shot baseline)
+- [x] Live `--run` wired end-to-end (`run.py`): extract → classify → anchor → align → residuals → flip-averaged neutral judge panel, with per-stage validation gates, retry-once-then-halt, blinding asserts, and cost logging (failures included)
+- [x] Contestant driver (`generate_disputatio.py`): orient → holistic → attack-surface index → 3 discovery tracks × 3 families → merge, fully scripted (ruler and contestant kept separate, mirroring refine's design)
+- [x] First manual thin-slice run (ricco2026, broad_critic-only): panel score 0.25 → baseline won; flagged as non-informative for the core thesis (wrong track for an identification paper) — see session log
+- [ ] Full-discovery re-run on ricco2026 through the unified harness (does 0.25 flip with narrow_evidence+M8 in?)
+
+## Run it
+
+```bash
+# contestant side (disputatio's review, scripted)
+uv run benchmark/generate_disputatio.py --paper <paper.md> --outdir <rundir>
+# ruler (score two reviews head-to-head)
+uv run benchmark/run.py --run --paper <paper.md> --x <rundir>/disputatio_concerns.json \
+    --y <baseline_review.md> --outdir <rundir>
+```
 
 ## Run the cost ledger
 

@@ -113,27 +113,310 @@ def aggregate(x_concerns, y_concerns, align, judge_verdicts, x_label="disputatio
 # MODEL-CALLING STAGES  (live in --run; shell to agent-ctl, log to cost ledger)
 # ---------------------------------------------------------------------------
 
-def call_model(agent, prompt, stage, usage_log, model=None):
-    """Run one model call via agent-ctl, append usage to the ledger log, return text.
-    NOTE: token accounting is approximate (agent-ctl doesn't expose exact usage yet) —
-    we estimate from prompt/response length until real usage is wired.
-    NOTE: agent-ctl `start` is async (returns a session id); a real implementation
-    must `wait`/`result` before this returns text. Stubbed until the first live run.
-    NOTE (2026-07-02 live run, ricco2026): a ~162K-char single inline CLI-argument
-    prompt asking codex to batch-classify 37 items returned an empty root in 27s
-    (vs 257s for a similarly-sized but simpler generative prompt) — looks like an
-    argument-size failure mode, not a reasoning failure. Fix that worked reliably:
-    keep the prompt SHORT and have codex (a full agentic CLI with --cwd access)
-    read the paper/concerns from files on disk instead of inlining everything.
-    Prefer disk-reference prompts over giant inline blobs for any per-batch stage."""
-    cmd = ["python3", "/Users/rubenffuertes/.claude/skills/agent_ctl.py", "start", agent, prompt]
+# Operational lessons encoded from the 2026-07-02 manual run on ricco2026:
+#  1. NEVER pass giant inline CLI-argument prompts (a ~162K-char batch-classify arg
+#     returned an empty root in 27s). Keep prompts SHORT; agents read inputs from
+#     files on disk (they are full agentic CLIs with --cwd access).
+#  2. Agents WRITE their outputs to files (no stdout scraping — kills the gemini
+#     JSON-escaping and truncation failure modes).
+#  3. Validate after every stage (ids complete, enums legal); retry ONCE, then halt.
+#  4. Blinding is asserted, not assumed: judge prompts must never name the systems.
+#  5. Every call (including failures) is logged to usage.jsonl.
+
+import os
+import re
+import time
+import xml.etree.ElementTree as ET
+
+REPO = Path(__file__).resolve().parent.parent
+AGENT_CTL = os.path.expanduser("~/.claude/skills/agent_ctl.py")
+
+
+class HarnessError(RuntimeError):
+    """A stage failed twice — the run halts rather than shipping bad data."""
+
+
+def _sh(cmd, timeout=None):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def log_usage(outdir, stage, model, tin, tout):
+    with open(Path(outdir) / "usage.jsonl", "a") as f:
+        f.write(json.dumps({"stage": stage, "model": model, "in": tin, "out": tout}) + "\n")
+
+
+def agent_call(prompt, stage, outdir, *, agent="codex", model=None, write=True, timeout=600):
+    """One synchronous agent-ctl call: start -> wait -> result. Short prompt, disk I/O."""
+    cmd = ["python3", AGENT_CTL, "start", agent, prompt, "--cwd", str(REPO),
+           "--timeout", str(timeout)]
     if model:
         cmd += ["-m", model]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=600).stdout
-    approx_in = len(prompt) // 4
-    approx_out = len(out) // 4
-    usage_log.append({"stage": stage, "model": model or agent, "in": approx_in, "out": approx_out})
-    return out
+    if write:
+        cmd += ["--flags", "--sandbox", "workspace-write"]
+    out = _sh(cmd).stdout
+    m = re.search(r"Session (\d+) started", out)
+    if not m:
+        raise HarnessError(f"{stage}: agent-ctl start failed:\n{out[-500:]}")
+    sid = m.group(1)
+    _sh(["python3", AGENT_CTL, "wait", sid], timeout=timeout + 120)
+    res = _sh(["python3", AGENT_CTL, "result", sid]).stdout
+    log_usage(outdir, stage, model or agent, len(prompt) // 4, len(res) // 4)
+    return res
+
+
+def kimi_call(prompt, stage, outdir, timeout=600):
+    """Direct kimi CLI call (not via agent-ctl)."""
+    r = _sh(["kimi", "-p", prompt], timeout=timeout)
+    log_usage(outdir, stage, "kimi-k2.5", len(prompt) // 4, len(r.stdout) // 4)
+    return r.stdout
+
+
+def _template_core(stage, start_marker, end_marker):
+    t = (STAGES_DIR / STAGE_FILES[stage]).read_text()
+    return t[t.index(start_marker):t.index(end_marker)].strip()
+
+
+def _with_retry(stage_name, fn):
+    """Run a stage fn (which must validate + return); retry once on failure, then halt."""
+    try:
+        return fn()
+    except HarnessError:
+        raise
+    except Exception as e:
+        print(f"[{stage_name}] attempt 1 failed ({e}); retrying once", file=sys.stderr)
+        time.sleep(5)
+        try:
+            return fn()
+        except Exception as e2:
+            raise HarnessError(f"{stage_name} failed twice: {e2}") from e2
+
+
+# ---- stage implementations (ruler). All I/O via files under outdir. ----------
+
+def stage_extract(review_path, outdir, prefix="Y"):
+    """Free-text review -> atomic concerns JSON (refine stage 1)."""
+    core = _template_core("extract", "A concern is one substantive issue", "CRITICAL OUTPUT RULES")
+    out_xml = Path(outdir) / f"extract_{prefix}.xml"
+    prompt = f"""You enumerate the substantive concerns in one referee review of a research paper (benchmark harness stage 1).
+
+Read the review at: {review_path}
+
+{core}
+
+Output format: XML, one `<concern>` element per concern, wrapped in a `<concerns>` root; title/body/anchor in CDATA; ids C1, C2, ... in order of appearance.
+
+WRITE the XML directly to the file: {out_xml}
+Do NOT print the XML in chat. After writing, reply with one line: how many concerns you wrote."""
+    def go():
+        agent_call(prompt, f"extract.{prefix}", outdir)
+        tree = ET.parse(out_xml)
+        concerns = []
+        for i, c in enumerate(tree.getroot().findall("concern"), 1):
+            a = c.find("anchor")
+            concerns.append({
+                "id": f"{prefix}{i}", "title": c.find("title").text,
+                "specificity": c.find("specificity").text,
+                "anchor": {"kind": a.get("kind"), "ref": a.text} if a is not None else None,
+                "body": c.find("body").text, "source_id": c.get("id"),
+            })
+        if not concerns:
+            raise ValueError("0 concerns extracted")
+        out = {"side": prefix, "concerns": concerns}
+        json.dump(out, open(Path(outdir) / f"concerns_{prefix}.json", "w"), indent=2)
+        return out
+    return _with_retry(f"extract.{prefix}", go)
+
+
+def stage_classify(concerns_path, outdir, prefix):
+    """4-axis classification for every concern (refine stage 2), batched via disk."""
+    core = _template_core("classify", "CRITICAL CALIBRATION RULE", "Output format:")
+    out_xml = Path(outdir) / f"classify_{prefix}.xml"
+    ids = [c["id"] for c in json.load(open(concerns_path))["concerns"]]
+    prompt = f"""You classify a BATCH of referee concerns about a research paper (benchmark harness stage 2).
+
+Read the paper at: {Path(outdir) / 'paper.md'}
+Read the concerns at: {concerns_path} (field "concerns"; ids {ids[0]}..{ids[-1]})
+
+For EACH concern independently, apply this rubric:
+
+{core}
+
+Output: XML — one `<classification id="...">` per concern (same ids, same order), all wrapped in one `<classifications>` root. Per-classification schema: <scope>internal|external_or_positioning|generic</scope>, <significance>load_bearing|substantive_local|cosmetic</significance>, <actionability>actionable|vague</actionability>, <external_factual>yes|no</external_factual>, each with a matching `<*_reasoning>` CDATA field (<=25 words).
+
+You MUST emit one classification for EVERY concern ({len(ids)} total). WRITE the XML to: {out_xml}
+Do NOT print the XML in chat. Reply with one line: count written."""
+    def go():
+        agent_call(prompt, f"classify.{prefix}", outdir)
+        t = ET.parse(out_xml)
+        els = {e.get("id"): e for e in t.getroot().findall("classification")}
+        missing = set(ids) - set(els)
+        if missing:
+            raise ValueError(f"missing ids: {sorted(missing)}")
+        out = {}
+        for cid, e in els.items():
+            row = {k: e.find(k).text for k in ("scope", "significance", "actionability", "external_factual")}
+            if row["significance"] not in ("load_bearing", "substantive_local", "cosmetic"):
+                raise ValueError(f"{cid}: bad significance {row['significance']}")
+            out[cid] = row
+        json.dump(out, open(Path(outdir) / f"labels_{prefix}.json", "w"), indent=2)
+        return out
+    return _with_retry(f"classify.{prefix}", go)
+
+
+def stage_anchor(concerns_path, outdir, prefix):
+    """Anchor-support check (refine stage 3)."""
+    core = _template_core("anchor_check", "ANCHORED means", "Output format:")
+    out_xml = Path(outdir) / f"anchor_{prefix}.xml"
+    ids = [c["id"] for c in json.load(open(concerns_path))["concerns"]]
+    prompt = f"""You decide whether each referee concern is anchored to the paper (benchmark harness stage 3).
+
+Read the paper at: {Path(outdir) / 'paper.md'}
+Read the concerns at: {concerns_path} (field "concerns")
+
+{core}
+
+Output: XML — one `<anchor_check id="...">` per concern with `<anchored>true|false</anchored>` and a CDATA `<reasoning>` (<=30 words), wrapped in `<results>`. One per EVERY concern ({len(ids)} total).
+WRITE the XML to: {out_xml}
+Do NOT print the XML in chat. Reply with one line: counts true/false."""
+    def go():
+        agent_call(prompt, f"anchor.{prefix}", outdir)
+        t = ET.parse(out_xml)
+        els = {e.get("id"): e.find("anchored").text for e in t.getroot().findall("anchor_check")}
+        missing = set(ids) - set(els)
+        if missing:
+            raise ValueError(f"missing ids: {sorted(missing)}")
+        if any(v not in ("true", "false") for v in els.values()):
+            raise ValueError("bad anchored enum")
+        out = {k: v == "true" for k, v in els.items()}
+        json.dump(out, open(Path(outdir) / f"anchored_{prefix}.json", "w"), indent=2)
+        return out
+    return _with_retry(f"anchor.{prefix}", go)
+
+
+def stage_align(outdir):
+    """Shared-concern alignment X vs Y (refine stage 4)."""
+    tmpl = (STAGES_DIR / STAGE_FILES["align"]).read_text()
+    core = tmpl[:tmpl.index("── Review X concerns")].strip()
+    out_json = Path(outdir) / "align.json"
+    prompt = f"""{core}
+
+Read Review X's concerns at: {Path(outdir) / 'concerns_X.json'} (field "concerns")
+Read Review Y's concerns at: {Path(outdir) / 'concerns_Y.json'} (field "concerns")
+
+WRITE the strict JSON (matches / x_unmatched / y_unmatched) to: {out_json}
+Do NOT print it in chat. Reply with one line: match / unmatched counts."""
+    def go():
+        agent_call(prompt, "align", outdir)
+        d = json.load(open(out_json))
+        x_ids = {c["id"] for c in json.load(open(Path(outdir) / "concerns_X.json"))["concerns"]}
+        y_ids = {c["id"] for c in json.load(open(Path(outdir) / "concerns_Y.json"))["concerns"]}
+        x_used = {m["x_id"] for m in d["matches"]} | set(d["x_unmatched"])
+        y_used = {m["y_id"] for m in d["matches"]} | set(d["y_unmatched"])
+        if x_ids - x_used or y_ids - y_used or x_used - x_ids or y_used - y_ids:
+            raise ValueError(f"id coverage broken: X missing {x_ids - x_used}, invented {x_used - x_ids}; "
+                             f"Y missing {y_ids - y_used}, invented {y_used - y_ids}")
+        return d
+    return _with_retry("align", go)
+
+
+def build_residuals(outdir, align):
+    """Deterministic: merge labels+anchors onto concerns, diff residuals, drop cosmetic for judging."""
+    sides = {}
+    for prefix in ("X", "Y"):
+        concerns = json.load(open(Path(outdir) / f"concerns_{prefix}.json"))["concerns"]
+        labels = json.load(open(Path(outdir) / f"labels_{prefix}.json"))
+        anchored = json.load(open(Path(outdir) / f"anchored_{prefix}.json"))
+        for c in concerns:
+            c.update(labels[c["id"]])
+            c["anchored"] = anchored[c["id"]]
+        sides[prefix] = concerns
+    x_res_ids, y_res_ids = residuals(align, [c["id"] for c in sides["X"]], [c["id"] for c in sides["Y"]])
+    xr = [c for c in sides["X"] if c["id"] in x_res_ids]
+    yr = [c for c in sides["Y"] if c["id"] in y_res_ids]
+    full = {"x_residual": xr, "y_residual": yr}
+    json.dump(full, open(Path(outdir) / "residuals.json", "w"), indent=2)
+    json.dump({"x_residual": yr, "y_residual": xr},
+              open(Path(outdir) / "residuals_swapped.json", "w"), indent=2)
+    return sides["X"], sides["Y"], xr, yr
+
+
+BLIND_BANNED = ("disputatio", "baseline", "single-shot", "panel")
+
+
+def stage_judge(outdir, judges=("grok", "kimi")):
+    """Flip-averaged judge panel (refine stage 6) on blind residual lists."""
+    tmpl = (STAGES_DIR / STAGE_FILES["judge"]).read_text()
+    core = tmpl[tmpl.index("You decide which of two"):tmpl.index("<paper>")].strip()
+    verdicts = []
+    for order, fname in (("xy", "residuals.json"), ("yx", "residuals_swapped.json")):
+        for judge in judges:
+            out_md = Path(outdir) / f"judge_{order}_{judge}.md"
+            prompt = f"""{core}
+
+Read the paper at: {Path(outdir) / 'paper.md'}
+Read Side X's residual concerns at: {Path(outdir) / fname} (field "x_residual") — group by "significance": load_bearing vs substantive_local; ignore cosmetic entries.
+Read Side Y's residual concerns at: {Path(outdir) / fname} (field "y_residual") — same grouping.
+
+Emit the prose body (Review X / Review Y / Contrast / Pivotal concerns), then on the final line:
+VERDICT: {{"winner": "X" | "Y" | "tie", "reason": "<one sentence>", "pivotal_concerns": ["<id>", ...]}}
+
+WRITE your full response to the file: {out_md}
+Do NOT print the analysis in chat. Reply with ONLY the one-line VERDICT JSON."""
+            for banned in BLIND_BANNED:  # blinding is asserted, not assumed
+                assert banned not in prompt.lower(), f"blinding leak: {banned!r} in judge prompt"
+            def go(judge=judge, order=order, prompt=prompt, out_md=out_md):
+                if judge == "kimi":
+                    kimi_call(prompt, f"judge.{judge}_{order}", outdir)
+                else:
+                    # write=False: --sandbox is a codex-only flag; grok writes by default
+                    agent_call(prompt, f"judge.{judge}_{order}", outdir,
+                               agent="grok", model="grok-build", write=False)
+                text = out_md.read_text()
+                m = re.search(r'VERDICT:\s*(\{.*?\})', text, re.S)
+                v = json.loads(m.group(1))
+                if v["winner"] not in ("X", "Y", "tie"):
+                    raise ValueError(f"bad winner {v['winner']}")
+                return v
+            v = _with_retry(f"judge.{judge}_{order}", go)
+            w = v["winner"]
+            if order == "yx" and w in ("X", "Y"):  # remap swapped labels to TRUE sides
+                w = "Y" if w == "X" else "X"
+            verdicts.append({"judge": judge, "order": order, "winner": w,
+                             "raw": v["winner"], "reason": v["reason"],
+                             "pivotal_concerns": v.get("pivotal_concerns")})
+    return verdicts
+
+
+def run_pipeline(paper, x_concerns, y_review, outdir, x_label="disputatio", y_label="baseline"):
+    """The full ruler. X = atomic concerns JSON (skips extract); Y = free-text review."""
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    if not (outdir / "paper.md").exists():
+        (outdir / "paper.md").write_text(Path(paper).read_text())
+
+    # X side arrives atomic (panel rows are already concerns); normalize into place.
+    xd = json.load(open(x_concerns))
+    json.dump({"side": "X", "concerns": xd["concerns"]}, open(outdir / "concerns_X.json", "w"), indent=2)
+    print(f"[1/6] extract: X pre-atomic ({len(xd['concerns'])}); extracting Y from free text")
+    stage_extract(y_review, outdir, prefix="Y")
+    print("[2/6] classify X, Y")
+    stage_classify(outdir / "concerns_X.json", outdir, "X")
+    stage_classify(outdir / "concerns_Y.json", outdir, "Y")
+    print("[3/6] anchor-check X, Y")
+    stage_anchor(outdir / "concerns_X.json", outdir, "X")
+    stage_anchor(outdir / "concerns_Y.json", outdir, "Y")
+    print("[4/6] align")
+    align = stage_align(outdir)
+    print("[5/6] residual diff")
+    xc, yc, xr, yr = build_residuals(outdir, align)
+    print(f"      residuals: X={len(xr)} {tier_counts(xr)}  Y={len(yr)} {tier_counts(yr)}")
+    print("[6/6] judge panel (flip-averaged, neutral families)")
+    verdicts = stage_judge(outdir)
+    result = aggregate(xc, yc, align, verdicts, x_label=x_label, y_label=y_label)
+    result["verdicts"] = verdicts
+    json.dump(result, open(outdir / "result.json", "w"), indent=2)
+    print(json.dumps({k: v for k, v in result.items() if k != "verdicts"}, indent=2))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -180,13 +463,14 @@ def main():
     ap.add_argument("--paper")
     ap.add_argument("--x", help="side X concerns (disputatio panel JSON)")
     ap.add_argument("--y", help="side Y review (baseline free-text)")
+    ap.add_argument("--outdir", help="run directory (holds all stage artifacts + usage.jsonl)")
     args = ap.parse_args()
     if args.selftest:
         selftest()
     elif args.run:
-        print("live --run not wired yet: needs stage prompts in benchmark/stages/ + a paper+reviews.",
-              file=sys.stderr)
-        sys.exit(2)
+        if not (args.paper and args.x and args.y and args.outdir):
+            ap.error("--run requires --paper --x --y --outdir")
+        run_pipeline(args.paper, args.x, args.y, args.outdir)
     else:
         ap.print_help()
 
