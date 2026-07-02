@@ -125,11 +125,18 @@ def aggregate(x_concerns, y_concerns, align, judge_verdicts, x_label="disputatio
 
 import os
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parent.parent
 AGENT_CTL = os.path.expanduser("~/.claude/skills/agent_ctl.py")
+
+# agent-ctl `start` has a documented session-ID race under concurrent invocation
+# (two parallel starts collide and `result` returns the wrong session's output —
+# observed live 2026-07-02 as gemini receiving codex's confirmation message).
+# Serialize starts; the long `wait` phase stays fully parallel.
+_START_LOCK = threading.Lock()
 
 
 class HarnessError(RuntimeError):
@@ -153,8 +160,10 @@ def agent_call(prompt, stage, outdir, *, agent="codex", model=None, write=True, 
         cmd += ["-m", model]
     if write:
         cmd += ["--flags", "--sandbox", "workspace-write"]
-    out = _sh(cmd).stdout
-    m = re.search(r"Session (\d+) started", out)
+    with _START_LOCK:  # see note above: concurrent starts collide on session ID
+        out = _sh(cmd).stdout
+        m = re.search(r"Session (\d+) started", out)
+        time.sleep(1.0)
     if not m:
         raise HarnessError(f"{stage}: agent-ctl start failed:\n{out[-500:]}")
     sid = m.group(1)
