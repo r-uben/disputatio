@@ -203,14 +203,12 @@ PRINT the JSON to stdout — nothing else."""
     return _with_retry("merge", go)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--paper", required=True)
-    ap.add_argument("--outdir", required=True)
-    args = ap.parse_args()
-    outdir = Path(args.outdir)
+def generate(paper, outdir):
+    """Produce disputatio's side for one paper: waves orient -> holistic -> index ->
+    discovery -> merge. Resume-safe; returns the merged concern set."""
+    outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    paper = str(Path(args.paper).resolve())
+    paper = str(Path(paper).resolve())
 
     print("[wave 1/5] orient (3 families)")
     run_wave("orient", paper, outdir, lambda f: {}, TEMPLATES / "orient.md", timeout=600)
@@ -247,6 +245,15 @@ def main():
     merged = merge_concerns(outdir)
     print(f"  merged: {merged['n_raw']} raw -> {len(merged['concerns'])} concerns")
     print("DONE:", outdir / "disputatio_concerns.json")
+    return merged
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--paper", required=True)
+    ap.add_argument("--outdir", required=True)
+    args = ap.parse_args()
+    generate(args.paper, args.outdir)
 
 
 if __name__ == "__main__":

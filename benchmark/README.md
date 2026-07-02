@@ -37,15 +37,24 @@ Data contracts: `schemas.md`.
 - Caveats (always disclose): n=1 paper, single judge sample (no error bars); the verification stage is our documented, symmetric addition — refine's own diff internals are unpublished.
 - [ ] Next: run more papers (the harness is two commands per paper) for a real sample; optional: calibration pass in the contestant driver
 
-## Run it
+## Run it — the CLI
 
 ```bash
-# contestant side (disputatio's review, scripted)
-uv run benchmark/generate_disputatio.py --paper <paper.md> --outdir <rundir>
-# ruler (score two reviews head-to-head)
-uv run benchmark/run.py --run --paper <paper.md> --x <rundir>/disputatio_concerns.json \
-    --y <baseline_review.md> --outdir <rundir>
+uv run disputatio-bench match <paper.md> --outdir <rundir>   # everything: baseline + generate + score + report
 ```
+
+Or stage by stage (each resume-safe):
+
+```bash
+uv run disputatio-bench baseline <paper.md> --outdir <rundir>   # single-shot referee (refine's verbatim prompt)
+uv run disputatio-bench generate <paper.md> --outdir <rundir>   # disputatio contestant side
+uv run disputatio-bench score    --outdir <rundir>              # ruler: classify -> anchor -> align -> verify -> judge
+uv run disputatio-bench rescore  --outdir <rundir>              # re-run verify+harmonize+judges only
+uv run disputatio-bench report   --outdir <rundir>              # verdict summary
+uv run disputatio-bench cost     --outdir <rundir>              # per-run cost ledger
+```
+
+Entry point defined in the root `pyproject.toml` (`benchmark.cli:main`).
 
 ## Run the cost ledger
 
