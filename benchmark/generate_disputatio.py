@@ -46,13 +46,19 @@ CLAUDE_MODELS = {"orient": "sonnet", "holistic": "sonnet", "holistic_candidates"
 
 
 def json_repair(text):
-    """Parse JSON with the gemini raw-LaTeX-backslash repair (known failure mode)."""
+    """Parse JSON out of agent output: strip fences, extract the outermost {...} if
+    there is surrounding prose, and repair gemini's raw-LaTeX-backslash failure mode."""
     text = re.sub(r"^```json\s*|\s*```\s*$", "", text.strip())
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
-        return json.loads(fixed)
+    candidates = [text]
+    if "{" in text and "}" in text:
+        candidates.append(text[text.find("{"):text.rfind("}") + 1])
+    for cand in candidates:
+        for attempt in (cand, re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", cand)):
+            try:
+                return json.loads(attempt)
+            except json.JSONDecodeError:
+                continue
+    raise ValueError(f"unparseable JSON (first 120 chars: {text[:120]!r})")
 
 
 def claude_call(prompt, stage, outdir, model="sonnet", timeout=900):
@@ -64,20 +70,34 @@ def claude_call(prompt, stage, outdir, model="sonnet", timeout=900):
 
 
 def family_task(family, phase, prompt, out_path, outdir, timeout=900):
-    """Run one (family, phase) call; codex/gemini write out_path themselves,
-    claude prints JSON which we save. Validate: out_path parses as JSON."""
+    """Run one (family, phase) call. codex writes out_path itself (with a chat-salvage
+    fallback — mini models sometimes print instead of writing); gemini and claude
+    PRINT JSON which we save (Antigravity can't write files headlessly without -y).
+    Resume-safe: an existing, parseable out_path is reused without a new call."""
+    out_path = Path(out_path)
+    if out_path.exists():
+        try:
+            d = json.load(open(out_path))
+            print(f"  {phase}.{family}: reusing existing output")
+            return d
+        except Exception:
+            out_path.unlink()  # corrupt leftover — regenerate
     def go():
         if family == "claude":
             raw = claude_call(prompt, f"{phase}.claude", outdir,
                               model=CLAUDE_MODELS[phase], timeout=timeout)
-            Path(out_path).write_text(json.dumps(json_repair(raw), indent=2))
-        else:
-            model = CODEX_MODELS[phase] if family == "codex" else None
-            agent_call(prompt, f"{phase}.{family}", outdir, agent=family,
-                       model=model, write=(family == "codex"), timeout=timeout)
-            # gemini may have written malformed JSON — repair in place if needed
-            txt = Path(out_path).read_text()
-            Path(out_path).write_text(json.dumps(json_repair(txt), indent=2))
+            out_path.write_text(json.dumps(json_repair(raw), indent=2))
+        elif family == "codex":
+            res = agent_call(prompt, f"{phase}.codex", outdir, agent="codex",
+                             model=CODEX_MODELS[phase], write=True, timeout=timeout)
+            if out_path.exists():
+                out_path.write_text(json.dumps(json_repair(out_path.read_text()), indent=2))
+            else:  # salvage: model printed the JSON in chat instead of writing the file
+                out_path.write_text(json.dumps(json_repair(res), indent=2))
+        else:  # gemini prints; we save
+            res = agent_call(prompt, f"{phase}.gemini", outdir, agent="gemini",
+                             write=False, timeout=timeout)
+            out_path.write_text(json.dumps(json_repair(res), indent=2))
         return json.load(open(out_path))
     return _with_retry(f"{phase}.{family}", go)
 
@@ -88,8 +108,8 @@ def phase_prompt(template, paper, extra_inputs, out_path, family):
     write_clause = (
         f"WRITE your output JSON directly to the file: {out_path}\n"
         "Do NOT print the JSON in chat; reply with a one-line summary."
-        if family != "claude" else
-        "PRINT the output JSON to stdout — nothing else, no prose, no markdown fence."
+        if family == "codex" else
+        "PRINT the output JSON — the complete JSON object and nothing else: no prose, no markdown fence."
     )
     return f"""You are one family worker in disputatio's benchmark thin-slice run (issue #53).
 
