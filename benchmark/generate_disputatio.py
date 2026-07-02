@@ -143,6 +143,14 @@ def run_wave(phase, paper, outdir, extra_inputs_fn, template, timeout=900):
 def build_index(paper, outdir):
     """Union the 3 holistic passes into one attack-surface index (orchestrator step)."""
     out_path = Path(outdir) / "attack_surface_index.json"
+    if out_path.exists():
+        try:
+            d = json.load(open(out_path))
+            if d.get("attack_surfaces"):
+                print("  index: reusing existing")
+                return d
+        except Exception:
+            out_path.unlink()
     prompt = f"""Build disputatio's canonical attack-surface index (union step after the holistic wave).
 
 Read the three holistic passes: {outdir}/holistic_claude.json, {outdir}/holistic_codex.json, {outdir}/holistic_gemini.json
