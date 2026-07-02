@@ -328,6 +328,78 @@ Do NOT print it in chat. Reply with one line: match / unmatched counts."""
     return _with_retry("align", go)
 
 
+def stage_verify_matches(outdir):
+    """Enforce refine's own alignment rule on every match: 'X[i] is matched to Y[j] if
+    both raise the same flaw in the same paper feature... Mere topical adjacency does
+    not count.' The 2026-07-02 ricco2026 run showed the aligner violating this (a precise
+    exclusion-restriction critique matched to generic 'essential robustness checks are
+    missing'). Verification is SYMMETRIC — dropped matches return BOTH concerns to their
+    sides' residuals — so it cannot favor either contestant."""
+    out_json = Path(outdir) / "align_verified.json"
+    align = json.load(open(Path(outdir) / "align.json"))
+    prompt = f"""You verify concern-alignment matches for a paper-review benchmark (quality-control pass on stage 4).
+
+Read the paper at: {Path(outdir) / 'paper.md'}
+Read Review X's concerns at: {Path(outdir) / 'concerns_X.json'} (field "concerns")
+Read Review Y's concerns at: {Path(outdir) / 'concerns_Y.json'} (field "concerns")
+Read the proposed matches at: {Path(outdir) / 'align.json'} (field "matches")
+
+For EACH proposed match, apply this rule strictly: a match is VALID only if both concerns raise the SAME substantive flaw about the SAME paper feature (equation, table, figure, claim, gap, design decision). Mere topical adjacency does NOT count — if the two concerns touch the same area but raise different specific flaws, or one is a precise technical critique and the other is a generic complaint that happens to overlap in topic, the match is INVALID.
+
+Output strict JSON:
+{{"verified": [{{"x_id": "...", "y_id": "...", "verdict": "keep"|"drop", "reason": "<one short clause>"}}]}}
+One entry per proposed match, same order. Do not invent ids.
+
+WRITE the JSON to: {out_json}
+Do NOT print it in chat. Reply with one line: kept/dropped counts."""
+    def go():
+        agent_call(prompt, "verify_matches", outdir)
+        v = json.load(open(out_json))["verified"]
+        proposed = {(m["x_id"], m["y_id"]) for m in align["matches"]}
+        got = {(e["x_id"], e["y_id"]) for e in v}
+        if proposed != got:
+            raise ValueError(f"coverage broken: missing {proposed - got}, invented {got - proposed}")
+        keep = {(e["x_id"], e["y_id"]) for e in v if e["verdict"] == "keep"}
+        kept = [m for m in align["matches"] if (m["x_id"], m["y_id"]) in keep]
+        dropped = [dict(m, drop_reason=next(e["reason"] for e in v
+                                            if (e["x_id"], e["y_id"]) == (m["x_id"], m["y_id"])))
+                   for m in align["matches"] if (m["x_id"], m["y_id"]) not in keep]
+        x_all = {c["id"] for c in json.load(open(Path(outdir) / "concerns_X.json"))["concerns"]}
+        y_all = {c["id"] for c in json.load(open(Path(outdir) / "concerns_Y.json"))["concerns"]}
+        out = {"matches": kept,
+               "x_unmatched": sorted(x_all - {m["x_id"] for m in kept}),
+               "y_unmatched": sorted(y_all - {m["y_id"] for m in kept}),
+               "dropped_matches": dropped}
+        json.dump(out, open(out_json, "w"), indent=2)
+        print(f"      verify: kept {len(kept)}, dropped {len(dropped)} adjacency matches")
+        return out
+    return _with_retry("verify_matches", go)
+
+
+def harmonize(outdir, align):
+    """refine stage 'Harmonize: equalize significance of matched concerns' (undocumented
+    prompt; we implement the deterministic reading of classify's own rule 'if two
+    reviewers raise the same concern about the same paper feature, the labels MUST
+    match'). Reconcile matched pairs to the HIGHER significance — symmetric, and matched
+    concerns are excluded from residuals anyway, so this is bookkeeping for reported
+    stats, not verdict-critical."""
+    rank = {"load_bearing": 2, "substantive_local": 1, "cosmetic": 0}
+    inv = {v: k for k, v in rank.items()}
+    changes = []
+    labels = {p: json.load(open(Path(outdir) / f"labels_{p}.json")) for p in ("X", "Y")}
+    for m in align["matches"]:
+        sx, sy = labels["X"][m["x_id"]]["significance"], labels["Y"][m["y_id"]]["significance"]
+        if sx != sy:
+            hi = inv[max(rank[sx], rank[sy])]
+            changes.append({"x_id": m["x_id"], "y_id": m["y_id"], "from": [sx, sy], "to": hi})
+            labels["X"][m["x_id"]]["significance"] = hi
+            labels["Y"][m["y_id"]]["significance"] = hi
+    for p in ("X", "Y"):
+        json.dump(labels[p], open(Path(outdir) / f"labels_{p}.json", "w"), indent=2)
+    json.dump(changes, open(Path(outdir) / "harmonize.json", "w"), indent=2)
+    return changes
+
+
 def build_residuals(outdir, align):
     """Deterministic: merge labels+anchors onto concerns, diff residuals, drop cosmetic for judging."""
     sides = {}
@@ -352,14 +424,14 @@ def build_residuals(outdir, align):
 BLIND_BANNED = ("disputatio", "baseline", "single-shot", "panel")
 
 
-def stage_judge(outdir, judges=("grok", "kimi")):
+def stage_judge(outdir, judges=("grok", "kimi"), suffix=""):
     """Flip-averaged judge panel (refine stage 6) on blind residual lists."""
     tmpl = (STAGES_DIR / STAGE_FILES["judge"]).read_text()
     core = tmpl[tmpl.index("You decide which of two"):tmpl.index("<paper>")].strip()
     verdicts = []
     for order, fname in (("xy", "residuals.json"), ("yx", "residuals_swapped.json")):
         for judge in judges:
-            out_md = Path(outdir) / f"judge_{order}_{judge}.md"
+            out_md = Path(outdir) / f"judge{suffix}_{order}_{judge}.md"
             prompt = f"""{core}
 
 Read the paper at: {Path(outdir) / 'paper.md'}
@@ -414,13 +486,36 @@ def run_pipeline(paper, x_concerns, y_review, outdir, x_label="disputatio", y_la
     print("[3/6] anchor-check X, Y")
     stage_anchor(outdir / "concerns_X.json", outdir, "X")
     stage_anchor(outdir / "concerns_Y.json", outdir, "Y")
-    print("[4/6] align")
-    align = stage_align(outdir)
+    print("[4/6] align + match verification + harmonize")
+    stage_align(outdir)
+    align = stage_verify_matches(outdir)
+    ch = harmonize(outdir, align)
+    print(f"      harmonize: reconciled {len(ch)} label-mismatched pairs")
     print("[5/6] residual diff")
     xc, yc, xr, yr = build_residuals(outdir, align)
     print(f"      residuals: X={len(xr)} {tier_counts(xr)}  Y={len(yr)} {tier_counts(yr)}")
     print("[6/6] judge panel (flip-averaged, neutral families)")
     verdicts = stage_judge(outdir)
+    result = aggregate(xc, yc, align, verdicts, x_label=x_label, y_label=y_label)
+    result["verdicts"] = verdicts
+    json.dump(result, open(outdir / "result.json", "w"), indent=2)
+    print(json.dumps({k: v for k, v in result.items() if k != "verdicts"}, indent=2))
+    return result
+
+
+def rescore(outdir, x_label="disputatio", y_label="baseline", suffix="_r2"):
+    """Re-run verify -> harmonize -> residuals -> judge on an outdir that already has
+    extract/classify/anchor/align artifacts. Prior result is preserved as result<prev>."""
+    outdir = Path(outdir)
+    prev = outdir / "result.json"
+    if prev.exists():
+        prev.rename(outdir / f"result_pre{suffix}.json")
+    align = stage_verify_matches(outdir)
+    ch = harmonize(outdir, align)
+    print(f"harmonize: reconciled {len(ch)} pairs")
+    xc, yc, xr, yr = build_residuals(outdir, align)
+    print(f"residuals: X={len(xr)} {tier_counts(xr)}  Y={len(yr)} {tier_counts(yr)}")
+    verdicts = stage_judge(outdir, suffix=suffix)
     result = aggregate(xc, yc, align, verdicts, x_label=x_label, y_label=y_label)
     result["verdicts"] = verdicts
     json.dump(result, open(outdir / "result.json", "w"), indent=2)
@@ -473,9 +568,15 @@ def main():
     ap.add_argument("--x", help="side X concerns (disputatio panel JSON)")
     ap.add_argument("--y", help="side Y review (baseline free-text)")
     ap.add_argument("--outdir", help="run directory (holds all stage artifacts + usage.jsonl)")
+    ap.add_argument("--rescore", action="store_true",
+                    help="re-run verify+harmonize+residuals+judge on an existing outdir")
     args = ap.parse_args()
     if args.selftest:
         selftest()
+    elif args.rescore:
+        if not args.outdir:
+            ap.error("--rescore requires --outdir")
+        rescore(args.outdir)
     elif args.run:
         if not (args.paper and args.x and args.y and args.outdir):
             ap.error("--run requires --paper --x --y --outdir")
