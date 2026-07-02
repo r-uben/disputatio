@@ -32,7 +32,8 @@ Data contracts: `schemas.md`.
 - [x] Live `--run` wired end-to-end (`run.py`): extract → classify → anchor → align → residuals → flip-averaged neutral judge panel, with per-stage validation gates, retry-once-then-halt, blinding asserts, and cost logging (failures included)
 - [x] Contestant driver (`generate_disputatio.py`): orient → holistic → attack-surface index → 3 discovery tracks × 3 families → merge, fully scripted (ruler and contestant kept separate, mirroring refine's design)
 - [x] First manual thin-slice run (ricco2026, broad_critic-only): panel score 0.25 → baseline won; flagged as non-informative for the core thesis (wrong track for an identification paper) — see session log
-- [ ] Full-discovery re-run on ricco2026 through the unified harness (does 0.25 flip with narrow_evidence+M8 in?)
+- [x] Full-discovery re-run on ricco2026 through the unified harness: **panel score 0.50 — tie** (up from 0.25). Judges split cleanly and order-stably (Grok→baseline on its 5 unique load-bearing identification critiques; Kimi→disputatio on specificity/anchoring density). 27 shared concerns ate most of disputatio's credit; its unique set kept only 1 load-bearing.
+- [ ] Next levers: implement refine's *harmonize* step (equalize matched-concern significance — matches may pair deep-X with shallow-Y versions), and/or add disputatio's calibration pass to the contestant driver
 
 ## Run it
 
