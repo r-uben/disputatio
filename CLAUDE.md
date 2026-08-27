@@ -140,8 +140,8 @@ notes/work/referee-reports/<paper-slug>/
 - **Antigravity writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes (inherits the issue from the underlying Gemini models). `agent-ctl run-dag` auto-cleans JSON files after write.
 - **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise.
 - **YOU MUST use `socr` for every PDF input — no exceptions.** Not `pdftotext`, not `pdftohtml`. socr preserves equations, figure captions, and structural cues the review depends on.
-- **Canonical socr invocation:** `socr process <pdf> --unified --save-figures -o <out>`. `--unified` is the v2.3.0 page-level tiered pipeline. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
-- **If a specific page comes out wrong under `--unified`**, fix the classifier or escalation rule (socr side). Do not switch engines for the whole document. `--multi-engine mistral,gemini` is the consensus-grade alternative.
+- **Canonical socr invocation:** `socr process <pdf> --save-figures -o <out>`. Agentic per-page routing is now the only pipeline and the default, so `--unified` is a compatibility no-op — harmless to pass, but it no longer selects anything. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
+- **If a specific page comes out wrong**, fix the classifier or escalation rule (socr side). Do not switch engines for the whole document. There is no multi-engine fallback any more: socr #298 deleted `--multi-engine`, `--consensus-llm` and `--legacy-routing` along with the legacy deterministic lane, and consensus has **no replacement**. Running several engines and reconciling them was that lane's quality strategy; the agentic path escalates per page on a judge signal instead.
 - **Long prompts need temp files** — inline shell escaping breaks beyond a few KB.
 - **`$A wait <ids>` eliminates polling loops** — use it.
 - **Codex hits weekly cap every ~1 full run** on ChatGPT Pro. High-volume users need a direct API-key transport; `agent-ctl` currently supports only the OAuth path.
