@@ -140,8 +140,8 @@ notes/work/referee-reports/<paper-slug>/
 - **Antigravity writes malformed JSON** — embeds raw LaTeX with control characters and invalid escapes (inherits the issue from the underlying Gemini models). `agent-ctl run-dag` auto-cleans JSON files after write.
 - **OCR'd papers need explicit warnings** — hallucinated text blocks from unrelated documents get flagged as "errors" otherwise.
 - **YOU MUST use `socr` for every PDF input — no exceptions.** Not `pdftotext`, not `pdftohtml`. socr preserves equations, figure captions, and structural cues the review depends on.
-- **Canonical socr invocation:** `socr process <pdf> --unified --save-figures -o <out>`. `--unified` is the v2.3.0 page-level tiered pipeline. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
-- **If a specific page comes out wrong under `--unified`**, fix the classifier or escalation rule (socr side). Do not switch engines for the whole document. `--multi-engine mistral,gemini` is the consensus-grade alternative.
+- **Canonical socr invocation:** `socr process <pdf> --save-figures -o <out>`. Bare `process` is the agentic default; there is now only one pipeline (UnifiedPipeline) and `--unified` is an accepted no-op kept for compatibility. See `~/.claude/skills/ocr/SKILL.md` for the rationale.
+- **If a specific page comes out wrong**, fix the classifier or escalation rule (socr side). Do not switch engines for the whole document. There is no consensus mode on `process`: `--multi-engine` was deleted in socr #298, and `--engines` exists only on `socr benchmark run`. The one per-document lever is `--primary <engine>`, which sets the first rung of the ladder, not a cross-engine vote.
 - **Long prompts need temp files** — inline shell escaping breaks beyond a few KB.
 - **`$A wait <ids>` eliminates polling loops** — use it.
 - **Codex hits weekly cap every ~1 full run** on ChatGPT Pro. High-volume users need a direct API-key transport; `agent-ctl` currently supports only the OAuth path.
