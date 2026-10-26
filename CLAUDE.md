@@ -100,7 +100,7 @@ disputatio/
 A review lives inside the Obsidian vault, not this repo:
 
 ```
-notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT/work/referee-reports/<paper-slug>/
 ├── review.md                     # top-level index, mode, phase status
 ├── _paper/paper.md               # socr-OCR'd source
 ├── 0_orientation/                # per-agent paper maps
@@ -153,4 +153,4 @@ notes/work/referee-reports/<paper-slug>/
 - `codex` CLI authenticated (ChatGPT Pro). Default model `gpt-5.4`
 - `agy` (Antigravity CLI) authenticated via the Antigravity desktop app (Google AI Pro OAuth). Per-phase model routing is handled automatically by `agent-ctl` via the `agy-set-model` wrapper — no manual `/model` step is required, but `agy-set-model` must be on PATH (default install: `~/.local/bin/agy-set-model`).
 - `agent-ctl` at `~/.claude/skills/agent_ctl.py` with `wait`, `run-dag`, `dag-status`, `--full-auto` default for Codex. The `"gemini"` agent label now routes to `agy` under the hood.
-- Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/` with a `work/referee-reports/` subtree
+- Obsidian vault at `$OBSIDIAN_VAULT (default ~/Obsidian/knowledge)` with a `work/referee-reports/` subtree

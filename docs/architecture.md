@@ -118,7 +118,7 @@ Heavy reasoning is concentrated on merge, synthesis, render, and baseline. Disco
 Every review is a self-contained Obsidian folder. Curated markdown lives at the top level; raw machine artifacts live inside `_artifacts/`.
 
 ```
-notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT/work/referee-reports/<paper-slug>/
 ├── review.md                       # top-level index, frontmatter phase, status
 ├── _paper/
 │   ├── paper.md                    # OCR'd source

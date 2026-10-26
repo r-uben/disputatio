@@ -5,7 +5,7 @@ The Obsidian folder **is the workspace**. There is no separate scratch area. Eve
 ## Location
 
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT (default ~/Obsidian/knowledge)/work/referee-reports/<paper-slug>/
 ```
 
 Peer to live reviews:

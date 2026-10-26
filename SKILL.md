@@ -481,7 +481,7 @@ See `templates/evaluation.md` for the post-hoc protocol and `templates/evaluate.
 **The Obsidian folder IS the workspace.** There is no separate scratch area. Every review is a self-contained folder inside the Obsidian vault. Curated markdown lives in top-level numbered folders; raw machine artifacts live in `_artifacts/`, `_calibration/`, and `_evaluation/`.
 
 ```
-~/.../notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT/work/referee-reports/<paper-slug>/
 │
 ├── review.md                          # top-level index: metadata, status, TOC
 ├── _paper/
