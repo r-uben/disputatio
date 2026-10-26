@@ -5,7 +5,7 @@ Disputatio uses a ticket DAG for durable, resumable, auditable orchestration. Cl
 **The workspace is the Obsidian paper folder.** Every review lives inside a single folder:
 
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT (default ~/Obsidian/knowledge)/work/referee-reports/<paper-slug>/
 ```
 
 
@@ -809,7 +809,7 @@ For aggregated findings (`aggregated: true` with `sub_findings`), each sub-findi
 
 ## Run sequence
 
-Let `$PAPER` = the absolute path of the paper folder inside the Obsidian vault, e.g. `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/work/referee-reports/caballero-simsek-2024`.
+Let `$PAPER` = the absolute path of the paper folder inside the Obsidian vault, e.g. `$OBSIDIAN_VAULT/work/referee-reports/caballero-simsek-2024` (default `~/Obsidian/knowledge/work/referee-reports/caballero-simsek-2024`).
 
 From Claude's perspective, the end-to-end flow is:
 

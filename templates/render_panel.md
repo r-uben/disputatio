@@ -41,7 +41,7 @@ date: YYYY-MM-DD
 **Frontmatter rules (strict):**
 
 - The three fields above (`tags`, `mode`, `date`) are the ONLY fields allowed. Do not add a `version` field, a `n_findings` field, an `engine` field, or any other metadata not listed here.
-- `<paper-slug>` is the directory name under `notes/work/referee-reports/`, with any trailing internal version suffix stripped. Strip any suffix matching `_v\d+` (e.g. `galeotti-golub-goyal-2020_v7` → `galeotti-golub-goyal-2020`). Version suffixes are internal workflow bookkeeping and must not surface in user-facing artifacts.
+- `<paper-slug>` is the directory name under `$OBSIDIAN_VAULT/work/referee-reports/`, with any trailing internal version suffix stripped. Strip any suffix matching `_v\d+` (e.g. `galeotti-golub-goyal-2020_v7` → `galeotti-golub-goyal-2020`). Version suffixes are internal workflow bookkeeping and must not surface in user-facing artifacts.
 - The `tags` list contains exactly four entries: `disputatio`, `panel`, the stripped paper-slug, and the mode. Do not split the slug on underscores or add derived tags.
 - The memo's H1 must read `# Author memo — <paper title>` or `# Referee memo — <paper title>`. Do not include mode annotations like "(v7, author mode)" or any version reference in the heading or the prose. Version history belongs in the repo's CHANGELOG, not in the artifact.
 

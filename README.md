@@ -98,7 +98,7 @@ To remove the symlinks and restore backups:
 
 **4. Restart Claude Code** so it picks up the new skills.
 
-**5. Set up the output location.** Disputatio writes each per-paper review folder to `<vault>/work/referee-reports/<paper-slug>/`. Default is an Obsidian vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/notes/`; any directory works.
+**5. Set up the output location.** Disputatio writes each per-paper review folder to `<vault>/work/referee-reports/<paper-slug>/`. Default is the Obsidian vault at `$OBSIDIAN_VAULT (default ~/Obsidian/knowledge)`; any directory works.
 
 **6. Verify the install.**
 
@@ -166,7 +166,7 @@ Findings dropped by calibration or by a defender in debate are preserved in the 
 A self-contained Obsidian folder per paper:
 
 ```
-notes/work/referee-reports/<paper-slug>/
+$OBSIDIAN_VAULT/work/referee-reports/<paper-slug>/
 ├── review.md                     ← top-level index, phase status, mode
 ├── _paper/paper.md               ← OCR'd source (+ any methodology appendices)
 ├── 0_orientation/                ← per-family paper maps (3 independent reads)
